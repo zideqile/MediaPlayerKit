@@ -119,6 +119,10 @@ jobs:
           echo "🔨 生成标准 Xcode iOS 工程..."
           xcodegen generate
           
+          # 修正 Xcode 15 项目兼容性 objectVersion
+          sed -i '' 's/objectVersion = 77;/objectVersion = 56;/g' MediaPlayerKitDemo.xcodeproj/project.pbxproj
+          sed -i '' 's/compatibilityVersion = "Xcode 16.0";/compatibilityVersion = "Xcode 14.0";/g' MediaPlayerKitDemo.xcodeproj/project.pbxproj
+          
           echo "📱 使用 Xcode 归档编译 iOS arm64 原生应用..."
           xcodebuild archive \
             -project MediaPlayerKitDemo.xcodeproj \
