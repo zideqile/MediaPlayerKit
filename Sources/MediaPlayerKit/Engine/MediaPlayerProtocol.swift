@@ -1,6 +1,10 @@
 import Foundation
 #if canImport(UIKit)
 import UIKit
+public typealias PlatformView = UIView
+#elseif canImport(AppKit)
+import AppKit
+public typealias PlatformView = NSView
 #endif
 import CoreMedia
 
@@ -14,12 +18,10 @@ public protocol PlayerEngineOutputDelegate: AnyObject {
     func engineDidPlayToEnd(_ engine: MediaPlayerProtocol)
 }
 
-/// 播放器内核抽象协议
+/// 播放器内核抽象协议 (支持 iOS / macOS / tvOS / visionOS 全平台)
 public protocol MediaPlayerProtocol: AnyObject {
     var outputDelegate: PlayerEngineOutputDelegate? { get set }
-    #if canImport(UIKit)
-    var renderView: UIView { get }
-    #endif
+    var renderView: PlatformView { get }
     
     var state: PlayerState { get }
     var currentPosition: TimeInterval { get }
@@ -33,13 +35,12 @@ public protocol MediaPlayerProtocol: AnyObject {
     func pause()
     func seek(to time: TimeInterval, completion: ((Bool) -> Void)?)
     func stop()
-    func reset() // 用于实例池轻量化重置
+    func reset()
     
     func setVolume(_ volume: Float)
     func setPlaybackRate(_ rate: Float)
     func setMute(_ isMuted: Bool)
     
-    // 扩展能力
     func setSubtitleURL(_ url: URL?)
     func getQoSReport() -> PlayerQoSReport?
 }

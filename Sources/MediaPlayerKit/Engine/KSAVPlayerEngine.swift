@@ -2,19 +2,19 @@ import Foundation
 import AVFoundation
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 /// 原生 AVFoundation / AVPlayer 引擎实现
 public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public weak var outputDelegate: PlayerEngineOutputDelegate?
     
-    #if canImport(UIKit)
-    public var renderView: UIView {
+    public var renderView: PlatformView {
         return containerView
     }
-    private let containerView = UIView()
+    private let containerView = PlatformView()
     private var playerLayer: AVPlayerLayer?
-    #endif
     
     public private(set) var state: PlayerState = .idle {
         didSet {
@@ -61,6 +61,9 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         super.init()
         #if canImport(UIKit)
         containerView.backgroundColor = .black
+        #elseif canImport(AppKit)
+        containerView.wantsLayer = true
+        containerView.layer?.backgroundColor = NSColor.black.cgColor
         #endif
     }
     
@@ -81,14 +84,17 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         self.player = player
         player.actionAtItemEnd = config.isLoop ? .none : .pause
         
-        #if canImport(UIKit)
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = .resizeAspect
         layer.frame = containerView.bounds
         layer.needsDisplayOnBoundsChange = true
+        
+        #if canImport(UIKit)
         containerView.layer.addSublayer(layer)
-        self.playerLayer = layer
+        #elseif canImport(AppKit)
+        containerView.layer?.addSublayer(layer)
         #endif
+        self.playerLayer = layer
         
         setupObservers(for: item)
         setupTimeObserver()
@@ -132,10 +138,8 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public func reset() {
         removeObservers()
         player?.pause()
-        #if canImport(UIKit)
         playerLayer?.removeFromSuperlayer()
         playerLayer = nil
-        #endif
         playerItem = nil
         player = nil
         state = .idle

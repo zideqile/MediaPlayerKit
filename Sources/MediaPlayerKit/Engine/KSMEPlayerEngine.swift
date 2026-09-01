@@ -1,20 +1,16 @@
 import Foundation
-#if canImport(UIKit)
-import UIKit
-#endif
 import CoreMedia
 import VideoToolbox
+import CoreGraphics
 
-/// 基于 FFmpeg + VideoToolbox + Metal + AudioUnit 的高性能自研多媒体管线引擎
+/// 基于 FFmpeg + VideoToolbox + Metal + AudioUnit 的高性能自研多媒体管线引擎 (全平台支持)
 public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     public weak var outputDelegate: PlayerEngineOutputDelegate?
     
-    #if canImport(UIKit)
-    public var renderView: UIView {
+    public var renderView: PlatformView {
         return metalView
     }
     private let metalView = MetalRenderView()
-    #endif
     
     public private(set) var state: PlayerState = .idle {
         didSet {
@@ -130,9 +126,7 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         duration = 0
         bufferedDuration = 0
         isFirstFrameRendered = false
-        #if canImport(UIKit)
         metalView.clean()
-        #endif
         state = .idle
         isInterrupted = false
     }

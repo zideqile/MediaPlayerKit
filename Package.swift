@@ -15,9 +15,12 @@ let package = Package(
             name: "MediaPlayerKit",
             targets: ["MediaPlayerKit"]
         ),
+        .executable(
+            name: "MediaPlayerKitDemo",
+            targets: ["MediaPlayerKitDemo"]
+        )
     ],
     dependencies: [
-        // 依赖 KSPlayer 稳定版本 (tag 2.3.4 或更高)
         .package(url: "https://github.com/kingslay/KSPlayer.git", from: "2.3.4"),
     ],
     targets: [
@@ -34,6 +37,11 @@ let package = Package(
                 .define("ENABLE_METAL_RENDER"),
                 .define("ENABLE_HARDWARE_ACCELERATION")
             ]
+        ),
+        .executableTarget(
+            name: "MediaPlayerKitDemo",
+            dependencies: ["MediaPlayerKit"],
+            path: "Examples/MediaPlayerKitDemo"
         ),
         .testTarget(
             name: "MediaPlayerKitTests",

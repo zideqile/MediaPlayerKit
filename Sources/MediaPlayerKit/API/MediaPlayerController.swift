@@ -1,17 +1,13 @@
 import Foundation
-#if canImport(UIKit)
-import UIKit
-#endif
+import CoreGraphics
 
-/// 播放器对外统一门面控制器 (Facade)
+/// 播放器对外统一门面控制器 (Facade - 兼容 iOS, macOS, tvOS, visionOS)
 @objc public final class MediaPlayerController: NSObject, PlayerEngineOutputDelegate {
     /// 事件与状态回调代理
     @objc public weak var delegate: MediaPlayerDelegate?
     
-    #if canImport(UIKit)
     /// 播放器渲染视图
     @objc public let playerView: MediaPlayerView
-    #endif
     
     /// 当前播放状态
     @objc public var state: PlayerState {
@@ -53,11 +49,8 @@ import UIKit
     // MARK: - 初始化
     @objc public init(config: PlayerConfig = PlayerConfig.defaultConfig()) {
         self.config = config
-        #if canImport(UIKit)
         self.playerView = MediaPlayerView()
-        #endif
         
-        // 根据配置选择初始内核 (默认为基于 FFmpeg/Metal 的 KSMEPlayerEngine)
         switch config.preferredEngine {
         case .avPlayer:
             self.engine = KSAVPlayerEngine()
@@ -72,9 +65,7 @@ import UIKit
     
     private func setupEngine() {
         self.engine.outputDelegate = self
-        #if canImport(UIKit)
         self.playerView.attachRenderView(self.engine.renderView)
-        #endif
     }
     
     // MARK: - 核心播放控制 API
