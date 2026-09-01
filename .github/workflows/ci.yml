@@ -163,20 +163,17 @@ jobs:
             security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
-            # 导入 P12 证书 (先通过 openssl 转为 macOS security 兼容的 legacy 格式)
             RAW_P12=$RUNNER_TEMP/build_certificate_raw.p12
             LEGACY_P12=$RUNNER_TEMP/build_certificate_legacy.p12
             PEM_TEMP=$RUNNER_TEMP/cert_temp.pem
             
             echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $RAW_P12
             
-            # 尝试直接导入或使用 openssl legacy 转换
-            if ! security import $RAW_P12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH 2>/dev/null; then
-              echo "🔄 转换 OpenSSL 3 PKCS#12 为 macOS 钥匙串兼容格式..."
-              openssl pkcs12 -in $RAW_P12 -passin pass:"$P12_PASSWORD" -nodes -out $PEM_TEMP
-              openssl pkcs12 -export -legacy -in $PEM_TEMP -out $LEGACY_P12 -passout pass:"$P12_PASSWORD"
-              security import $LEGACY_P12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-            fi
+            # 使用系统 OpenSSL/LibreSSL 将 Linux 生成的 P12 转换为 macOS 钥匙串格式
+            echo "🔄 解包并重新生成 macOS 兼容的 PKCS#12 证书..."
+            openssl pkcs12 -in $RAW_P12 -passin pass:"$P12_PASSWORD" -nodes -out $PEM_TEMP
+            openssl pkcs12 -export -in $PEM_TEMP -out $LEGACY_P12 -passout pass:"$P12_PASSWORD"
+            security import $LEGACY_P12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
             
             security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
