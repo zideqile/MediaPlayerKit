@@ -110,23 +110,23 @@ jobs:
           codesign --force --deep --sign - build/macOS/MediaPlayerKitDemo.app
           cd build/macOS && zip -r ../MediaPlayerKitDemo-macOS.app.zip MediaPlayerKitDemo.app
 
-      # 2. 使用 Xcode 编译真正的 iOS arm64 架构二进制并进行正式签名
+      # 2. 使用 iPhoneOS SDK 编译真正的 iOS arm64 架构二进制并进行正式签名
       - name: Build & Sign iOS Demo App
         run: |
-          # 1) 使用 xcodebuild 针对 iOS 真机 (iPhoneOS SDK) 进行编译
           echo "📱 正在使用 iPhoneOS SDK 编译 iOS arm64 架构二进制..."
-          xcodebuild build \
-            -scheme MediaPlayerKitDemo \
-            -destination "generic/platform=iOS" \
-            -configuration Release \
-            -derivedDataPath build/DerivedData_iOS \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+          IPHONEOS_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          
+          # 使用 Swift 交叉编译指定 iPhoneOS SDK 与 arm64-apple-ios14.0 架构
+          swift build -c release \
+            --triple arm64-apple-ios14.0 \
+            -Xswiftc -sdk -Xswiftc "$IPHONEOS_SDK" \
+            -Xswiftc -target -Xswiftc arm64-apple-ios14.0 \
+            --product MediaPlayerKitDemo
           
           # 寻找编译出的真实 iOS Mach-O 可执行文件
-          IOS_BIN=$(find build/DerivedData_iOS/Build/Products/Release-iphoneos -name "MediaPlayerKitDemo" -type f -perm +111 | head -n 1)
+          IOS_BIN=$(find .build -name "MediaPlayerKitDemo" -path "*arm64-apple-ios*" -type f -perm +111 | head -n 1)
           if [ -z "$IOS_BIN" ]; then
-            IOS_BIN=$(find build/DerivedData_iOS -name "MediaPlayerKitDemo" -type f -perm +111 | grep -v "macOS" | head -n 1)
+            IOS_BIN=$(find .build -name "MediaPlayerKitDemo" -type f -perm +111 | grep -v "release/MediaPlayerKitDemo" | head -n 1)
           fi
           echo "找到 iOS 可执行文件: $IOS_BIN"
           file "$IOS_BIN"
@@ -136,9 +136,9 @@ jobs:
           cp "$IOS_BIN" build/iOS/MediaPlayerKitDemo.app/MediaPlayerKitDemo
           chmod +x build/iOS/MediaPlayerKitDemo.app/MediaPlayerKitDemo
           
-          # 拷贝编译输出中的资源 (如 .bundle / .metallib)
-          find build/DerivedData_iOS/Build/Products/Release-iphoneos -maxdepth 2 -name "*.bundle" -exec cp -R {} build/iOS/MediaPlayerKitDemo.app/ \; || true
-          find build/DerivedData_iOS/Build/Products/Release-iphoneos -maxdepth 2 -name "*.metallib" -exec cp {} build/iOS/MediaPlayerKitDemo.app/ \; || true
+          # 拷贝编译输出中的资源
+          find .build -name "*.bundle" -exec cp -R {} build/iOS/MediaPlayerKitDemo.app/ \; || true
+          find .build -name "*.metallib" -exec cp {} build/iOS/MediaPlayerKitDemo.app/ \; || true
           
           # 3) 生成符合 iOS 规范的完整 Info.plist
           cat << 'PLIST' > build/iOS/MediaPlayerKitDemo.app/Info.plist
