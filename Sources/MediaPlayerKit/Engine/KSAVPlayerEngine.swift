@@ -97,15 +97,14 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public func play() {
         guard let player = player else { return }
         player.play()
-        if state == .readyToPlay || state == .paused {
+        if state == .readyToPlay || state == .paused || state == .preparing {
             state = .playing
         }
     }
     
     public func pause() {
-        guard let player = player else { return }
-        player.pause()
-        if state == .playing {
+        player?.pause()
+        if state == .playing || state == .readyToPlay || state == .preparing {
             state = .paused
         }
     }
@@ -155,9 +154,7 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         player?.isMuted = isMuted
     }
     
-    public func setSubtitleURL(_ url: URL?) {
-        // AVPlayer 外部外挂字幕加载 (WebVTT)
-    }
+    public func setSubtitleURL(_ url: URL?) {}
     
     public func getQoSReport() -> PlayerQoSReport? {
         return qosReport
@@ -190,7 +187,9 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
             
             if !self.isFirstFrameRendered && current > 0 {
                 self.isFirstFrameRendered = true
-                self.state = self.config.autoPlay ? .playing : .readyToPlay
+                if self.state != .paused {
+                    self.state = self.config.autoPlay ? .playing : .readyToPlay
+                }
                 self.outputDelegate?.engineDidRenderFirstFrame(self)
             }
         }

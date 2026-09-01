@@ -58,15 +58,14 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         workQueue.async { [weak self] in
             guard let self = self else { return }
             
-            // 1. 模拟/调度 I/O 探针与 FFmpeg avformat_open_input 流程
+            // 1. 模拟 I/O 探针与 FFmpeg avformat_open_input
             let dnsStart = CFAbsoluteTimeGetCurrent()
-            // 解析耗时记录
             report.dnsDuration = (CFAbsoluteTimeGetCurrent() - dnsStart) * 1000
-            report.tcpConnectDuration = 25.0 // ms
-            report.firstPacketDuration = 45.0 // ms
+            report.tcpConnectDuration = 25.0
+            report.firstPacketDuration = 45.0
             
-            // 2. 初始化硬件解码器 (VideoToolbox) 与 音频管线 (AudioUnit)
-            self.duration = 120.0 // 默认元数据
+            // 2. 初始化硬件解码器 (VideoToolbox)
+            self.duration = 120.0
             self.naturalSize = CGSize(width: 1920, height: 1080)
             report.videoWidth = Int(self.naturalSize.width)
             report.videoHeight = Int(self.naturalSize.height)
@@ -76,13 +75,15 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
             
             DispatchQueue.main.async {
                 if !self.isInterrupted {
-                    self.state = .readyToPlay
+                    if self.state == .preparing {
+                        self.state = .readyToPlay
+                    }
                     if !self.isFirstFrameRendered {
                         self.isFirstFrameRendered = true
                         report.firstFrameDuration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
                         self.outputDelegate?.engineDidRenderFirstFrame(self)
                     }
-                    if config.autoPlay {
+                    if config.autoPlay && self.state == .readyToPlay {
                         self.play()
                     }
                 }
@@ -97,9 +98,10 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     public func pause() {
-        guard state == .playing else { return }
-        state = .paused
-        stopPlaybackClock()
+        if state == .playing || state == .preparing || state == .readyToPlay {
+            state = .paused
+            stopPlaybackClock()
+        }
     }
     
     public func seek(to time: TimeInterval, completion: ((Bool) -> Void)?) {
@@ -135,21 +137,10 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         isInterrupted = false
     }
     
-    public func setVolume(_ volume: Float) {
-        // AudioUnit 设置增益
-    }
-    
-    public func setPlaybackRate(_ rate: Float) {
-        // SoundTouch 变调变速
-    }
-    
-    public func setMute(_ isMuted: Bool) {
-        // AudioUnit 静音
-    }
-    
-    public func setSubtitleURL(_ url: URL?) {
-        // libass 外挂字幕解析加载
-    }
+    public func setVolume(_ volume: Float) {}
+    public func setPlaybackRate(_ rate: Float) {}
+    public func setMute(_ isMuted: Bool) {}
+    public func setSubtitleURL(_ url: URL?) {}
     
     public func getQoSReport() -> PlayerQoSReport? {
         return qosReport
