@@ -32,7 +32,7 @@ jobs:
       - name: Resolve Swift Package Dependencies
         run: swift package resolve
 
-      - name: SPM Build (SDK & Demo)
+      - name: SPM Build (macOS Host)
         run: swift build -c release -v
 
       - name: Run SPM Unit Tests
@@ -110,16 +110,37 @@ jobs:
           codesign --force --deep --sign - build/macOS/MediaPlayerKitDemo.app
           cd build/macOS && zip -r ../MediaPlayerKitDemo-macOS.app.zip MediaPlayerKitDemo.app
 
-      # 2. 组装并签名 iOS 真实可执行文件 App Bundle
+      # 2. 使用 Xcode 编译真正的 iOS arm64 架构二进制并进行正式签名
       - name: Build & Sign iOS Demo App
         run: |
-          mkdir -p build/iOS/MediaPlayerKitDemo.app
+          # 1) 使用 xcodebuild 针对 iOS 真机 (iPhoneOS SDK) 进行编译
+          echo "📱 正在使用 iPhoneOS SDK 编译 iOS arm64 架构二进制..."
+          xcodebuild build \
+            -scheme MediaPlayerKitDemo \
+            -destination "generic/platform=iOS" \
+            -configuration Release \
+            -derivedDataPath build/DerivedData_iOS \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
           
-          # 拷贝编译好的二进制
-          cp .build/release/MediaPlayerKitDemo build/iOS/MediaPlayerKitDemo.app/MediaPlayerKitDemo
+          # 寻找编译出的真实 iOS Mach-O 可执行文件
+          IOS_BIN=$(find build/DerivedData_iOS/Build/Products/Release-iphoneos -name "MediaPlayerKitDemo" -type f -perm +111 | head -n 1)
+          if [ -z "$IOS_BIN" ]; then
+            IOS_BIN=$(find build/DerivedData_iOS -name "MediaPlayerKitDemo" -type f -perm +111 | grep -v "macOS" | head -n 1)
+          fi
+          echo "找到 iOS 可执行文件: $IOS_BIN"
+          file "$IOS_BIN"
+          
+          # 2) 创建标准 iOS App Bundle 结构
+          mkdir -p build/iOS/MediaPlayerKitDemo.app
+          cp "$IOS_BIN" build/iOS/MediaPlayerKitDemo.app/MediaPlayerKitDemo
           chmod +x build/iOS/MediaPlayerKitDemo.app/MediaPlayerKitDemo
           
-          # 写入匹配 Provisioning Profile 的 Info.plist
+          # 拷贝编译输出中的资源 (如 .bundle / .metallib)
+          find build/DerivedData_iOS/Build/Products/Release-iphoneos -maxdepth 2 -name "*.bundle" -exec cp -R {} build/iOS/MediaPlayerKitDemo.app/ \; || true
+          find build/DerivedData_iOS/Build/Products/Release-iphoneos -maxdepth 2 -name "*.metallib" -exec cp {} build/iOS/MediaPlayerKitDemo.app/ \; || true
+          
+          # 3) 生成符合 iOS 规范的完整 Info.plist
           cat << 'PLIST' > build/iOS/MediaPlayerKitDemo.app/Info.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -131,18 +152,38 @@ jobs:
               <string>com.yuanyuanhui.MediaPlayerKitDemo</string>
               <key>CFBundleName</key>
               <string>MediaPlayerKitDemo</string>
+              <key>CFBundleDisplayName</key>
+              <string>MediaPlayerKit</string>
               <key>CFBundlePackageType</key>
               <string>APPL</string>
               <key>CFBundleShortVersionString</key>
               <string>1.0.0</string>
               <key>CFBundleVersion</key>
               <string>1</string>
+              <key>CFBundleSupportedPlatforms</key>
+              <array>
+                  <string>iPhoneOS</string>
+              </array>
+              <key>MinimumOSVersion</key>
+              <string>14.0</string>
+              <key>DTPlatformName</key>
+              <string>iphoneos</string>
               <key>LSRequiresIPhoneOS</key>
               <true/>
               <key>UIDeviceFamily</key>
               <array>
                   <integer>1</integer>
                   <integer>2</integer>
+              </array>
+              <key>UIRequiredDeviceCapabilities</key>
+              <array>
+                  <string>arm64</string>
+              </array>
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationPortrait</string>
+                  <string>UIInterfaceOrientationLandscapeLeft</string>
+                  <string>UIInterfaceOrientationLandscapeRight</string>
               </array>
               <key>NSAppTransportSecurity</key>
               <dict>
@@ -153,17 +194,15 @@ jobs:
           </plist>
           PLIST
           
-          # 检查是否配置了 GitHub Secrets 证书
+          # 4) 提取证书与描述文件的 Entitlements 并执行正式代码签名
           if [ -n "$BUILD_CERTIFICATE_BASE64" ] && [ -n "$BUILD_PROVISION_PROFILE_BASE64" ]; then
-            echo "🔐 检测到 Apple Developer 开发者证书与描述文件，开始执行正式签名..."
+            echo "🔐 检测到 Apple Developer 开发者证书与描述文件，开始配置钥匙串与签名..."
             
-            # 创建临时钥匙串
             KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain-db
             security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
-            # 将临时钥匙串加入全局搜索列表
             security list-keychains -d user -s $KEYCHAIN_PATH login.keychain
             security default-keychain -s $KEYCHAIN_PATH
             
@@ -173,44 +212,50 @@ jobs:
             
             echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $RAW_P12
             
-            # 解包并转换为钥匙串可信任的 PKCS#12
             openssl pkcs12 -in $RAW_P12 -passin pass:"$P12_PASSWORD" -nodes -out $PEM_TEMP
             openssl pkcs12 -export -in $PEM_TEMP -out $LEGACY_P12 -passout pass:"$P12_PASSWORD"
             security import $LEGACY_P12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
             
             security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
-            # 安装描述文件
+            # 安装描述文件并提取真实 Entitlements
             PP_PATH=~/Library/MobileDevice/Provisioning\ Profiles
             mkdir -p "$PP_PATH"
             echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o "$PP_PATH/profile.mobileprovision"
             cp "$PP_PATH/profile.mobileprovision" build/iOS/MediaPlayerKitDemo.app/embedded.mobileprovision
             
-            # 提取证书公钥身份并进行正式代码签名
+            python3 -c "
+            import plistlib, re
+            with open('$PP_PATH/profile.mobileprovision', 'rb') as f:
+                content = f.read()
+            match = re.search(rb'<\?xml.*?</plist>', content, re.DOTALL)
+            if match:
+                data = plistlib.loads(match.group(0))
+                entitlements = data.get('Entitlements', {})
+                with open('build/iOS/entitlements.plist', 'wb') as out:
+                    plistlib.dump(entitlements, out)
+                print('已提取 Entitlements:', entitlements)
+            "
+            
             SIGNING_IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep "iPhone Developer" | head -1 | awk -F '"' '{print $2}')
             echo "Using Signing Identity: $SIGNING_IDENTITY"
             
             if [ -n "$SIGNING_IDENTITY" ]; then
-              codesign --force --deep --sign "$SIGNING_IDENTITY" build/iOS/MediaPlayerKitDemo.app
-              echo "✅ 正式代码签名成功完成！"
-            else
-              codesign --force --deep --sign - build/iOS/MediaPlayerKitDemo.app
+              codesign --force --deep --sign "$SIGNING_IDENTITY" --entitlements build/iOS/entitlements.plist --timestamp=none build/iOS/MediaPlayerKitDemo.app
+              echo "✅ iOS App 签名完成！"
+              codesign -dvvv build/iOS/MediaPlayerKitDemo.app
             fi
             
             security delete-keychain $KEYCHAIN_PATH || true
-          else
-            echo "⚠️ 未检测到 GitHub Secrets 证书，使用 Ad-hoc 模式签名..."
-            codesign --force --deep --sign - build/iOS/MediaPlayerKitDemo.app || true
           fi
           
-          # 打包为 iOS 模拟器安装包
+          # 5) 打包为标准 Payload 结构的 IPA 真机安装包
           cd build/iOS
-          zip -r ../MediaPlayerKitDemo-iOS-Simulator.app.zip MediaPlayerKitDemo.app
-          
-          # 打包为标准 Payload 结构的 IPA 真机安装包
           mkdir -p Payload
           cp -R MediaPlayerKitDemo.app Payload/
-          zip -r ../MediaPlayerKitDemo-iOS.ipa Payload
+          zip -qr ../MediaPlayerKitDemo-iOS.ipa Payload
+          echo "IPA 打包完成，文件大小:"
+          ls -lh ../MediaPlayerKitDemo-iOS.ipa
 
       # 3. 上传构建产物到 GitHub Actions Artifacts
       - name: Upload macOS Demo App
@@ -219,10 +264,8 @@ jobs:
           name: MediaPlayerKitDemo-macOS
           path: build/MediaPlayerKitDemo-macOS.app.zip
 
-      - name: Upload iOS Demo App (.ipa & Simulator .app)
+      - name: Upload iOS Demo App (.ipa)
         uses: actions/upload-artifact@v4
         with:
           name: MediaPlayerKitDemo-iOS
-          path: |
-            build/MediaPlayerKitDemo-iOS-Simulator.app.zip
-            build/MediaPlayerKitDemo-iOS.ipa
+          path: build/MediaPlayerKitDemo-iOS.ipa
