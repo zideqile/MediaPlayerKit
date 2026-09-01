@@ -85,7 +85,7 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = .resizeAspect
         layer.frame = containerView.bounds
-        layer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        layer.needsDisplayOnBoundsChange = true
         containerView.layer.addSublayer(layer)
         self.playerLayer = layer
         #endif
