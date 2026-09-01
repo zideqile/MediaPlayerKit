@@ -1,8 +1,5 @@
 import Foundation
 
-// 前向声明
-@class MediaPlayerController;
-
 /// 播放器统一事件与状态代理协议
 @objc public protocol MediaPlayerDelegate: AnyObject {
     /// 播放状态发生变更
