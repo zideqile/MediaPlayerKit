@@ -1,30 +1,37 @@
 import Foundation
 import AVFoundation
 
-/// 系统级 AVAudioSession 调度中心
-/// 统一管理后台播放、电话打断恢复、耳机拔出暂停与混音策略
+/// 系统级音频会话调度中心
+/// 统一管理后台播放、电话打断恢复、耳机拔出暂停与混音策略 (针对 iOS / tvOS / visionOS)
 public final class AudioSessionManager {
     public static let shared = AudioSessionManager()
     
     private init() {
+        #if os(iOS) || os(tvOS) || os(visionOS)
         setupObservers()
+        #endif
     }
     
     /// 激活播放器音频会话 (支持后台播放)
     public func activatePlaybackSession() {
+        #if os(iOS) || os(tvOS) || os(visionOS)
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.allowAirPlay, .allowBluetooth])
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             print("[MediaPlayerKit AudioSession] Activate failed: \(error)")
         }
+        #endif
     }
     
     /// 释放音频会话
     public func deactivateSession() {
+        #if os(iOS) || os(tvOS) || os(visionOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
     
+    #if os(iOS) || os(tvOS) || os(visionOS)
     private func setupObservers() {
         NotificationCenter.default.addObserver(
             self,
@@ -66,10 +73,10 @@ public final class AudioSessionManager {
         }
         
         if reason == .oldDeviceUnavailable {
-            // 耳机拔出，通知播放器暂停
             NotificationCenter.default.post(name: .MediaPlayerHeadphonesUnplugged, object: nil)
         }
     }
+    #endif
 }
 
 public extension Notification.Name {
