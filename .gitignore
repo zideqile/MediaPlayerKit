@@ -19,3 +19,12 @@ Podfile.lock
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# Sensitive credentials & personal tokens
+.github_token
+.env
+.env.*
+*.token
+*.pat
+*credential*
+secret*
