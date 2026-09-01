@@ -17,8 +17,8 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // 直接远程依赖官方 KSPlayer 稳定版本，零源码侵入，免维护享受官方更新
-        .package(url: "https://github.com/kingslay/KSPlayer.git", from: "2.5.0"),
+        // 依赖 KSPlayer 稳定版本 (tag 2.3.4 或更高)
+        .package(url: "https://github.com/kingslay/KSPlayer.git", from: "2.3.4"),
     ],
     targets: [
         .target(
