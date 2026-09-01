@@ -1,0 +1,64 @@
+name: Build & Release XCFramework
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-xcframework:
+    name: Build Universal XCFramework
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Build iOS Device Slice (arm64)
+        run: |
+          xcodebuild archive \
+            -scheme MediaPlayerKit \
+            -destination "generic/platform=iOS" \
+            -archivePath "build/MediaPlayerKit-iOS.xcarchive" \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+
+      - name: Build iOS Simulator Slice (arm64 + x86_64)
+        run: |
+          xcodebuild archive \
+            -scheme MediaPlayerKit \
+            -destination "generic/platform=iOS Simulator" \
+            -archivePath "build/MediaPlayerKit-iOS-Simulator.xcarchive" \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+
+      - name: Package XCFramework
+        run: |
+          xcodebuild -create-xcframework \
+            -framework "build/MediaPlayerKit-iOS.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
+            -framework "build/MediaPlayerKit-iOS-Simulator.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
+            -output "build/MediaPlayerKit.xcframework"
+
+      - name: Zip XCFramework
+        run: |
+          cd build
+          zip -r MediaPlayerKit.xcframework.zip MediaPlayerKit.xcframework
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaPlayerKit.xcframework
+          path: build/MediaPlayerKit.xcframework.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/MediaPlayerKit.xcframework.zip
+          generate_release_notes: true

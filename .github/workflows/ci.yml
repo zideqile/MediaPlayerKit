@@ -1,0 +1,47 @@
+name: CI / Build & Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & Test (iOS / SPM)
+    runs-on: macos-14
+    strategy:
+      matrix:
+        xcode: ['15.4', '16.0']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode ${{ matrix.xcode }}
+        run: |
+          sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Cache Swift Package Dependencies
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved', '**/Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: SPM Build
+        run: swift build -v
+
+      - name: Run SPM Unit Tests
+        run: swift test -v
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild build-for-testing \
+            -scheme MediaPlayerKit \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath .derivedData \
+            CODE_SIGNING_ALLOWED=NO
