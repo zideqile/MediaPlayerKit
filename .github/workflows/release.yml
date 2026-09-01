@@ -1,4 +1,4 @@
-name: Build & Release XCFramework
+name: Build & Release XCFramework & Demo Apps
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-xcframework:
-    name: Build Universal XCFramework
+  build-and-release:
+    name: Build XCFramework & Demo Apps
     runs-on: macos-14
 
     steps:
@@ -19,6 +19,7 @@ jobs:
         run: |
           xcodebuild -version
 
+      # 1. 打包 SDK XCFramework
       - name: Build iOS Device Slice (arm64)
         run: |
           xcodebuild archive \
@@ -45,21 +46,75 @@ jobs:
             -framework "build/MediaPlayerKit-iOS.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
             -framework "build/MediaPlayerKit-iOS-Simulator.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
             -output "build/MediaPlayerKit.xcframework"
+          cd build && zip -r MediaPlayerKit.xcframework.zip MediaPlayerKit.xcframework
 
-      - name: Zip XCFramework
+      # 2. 打包 macOS Demo App
+      - name: Build macOS Demo App
         run: |
-          cd build
-          zip -r MediaPlayerKit.xcframework.zip MediaPlayerKit.xcframework
+          mkdir -p build/macOS/MediaPlayerKitDemo.app/Contents/MacOS
+          mkdir -p build/macOS/MediaPlayerKitDemo.app/Contents/Resources
+          swift build -c release --product MediaPlayerKitDemo
+          cp .build/release/MediaPlayerKitDemo build/macOS/MediaPlayerKitDemo.app/Contents/MacOS/
+          cat << 'PLIST' > build/macOS/MediaPlayerKitDemo.app/Contents/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>MediaPlayerKitDemo</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.mediaplayerkit.demo.macos</string>
+              <key>CFBundleName</key>
+              <string>MediaPlayerKit Demo</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0.0</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>11.0</string>
+              <key>NSHighResolutionCapable</key>
+              <true/>
+          </dict>
+          </plist>
+          PLIST
+          cd build/macOS && zip -r ../MediaPlayerKitDemo-macOS.app.zip MediaPlayerKitDemo.app
 
-      - name: Upload Artifact
+      # 3. 打包 iOS Demo App
+      - name: Build iOS Demo App
+        run: |
+          xcodebuild build \
+            -scheme MediaPlayerKitDemo \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+          APP_PATH=$(find build/DerivedData -name "MediaPlayerKitDemo.app" | head -n 1)
+          if [ -d "$APP_PATH" ]; then
+            mkdir -p build/iOS
+            cp -R "$APP_PATH" build/iOS/
+            cd build/iOS
+            zip -r ../MediaPlayerKitDemo-iOS-Simulator.app.zip MediaPlayerKitDemo.app
+            mkdir -p Payload && cp -R MediaPlayerKitDemo.app Payload/
+            zip -r ../MediaPlayerKitDemo-iOS.ipa Payload
+          fi
+
+      # 4. 上传 Artifact
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: MediaPlayerKit.xcframework
-          path: build/MediaPlayerKit.xcframework.zip
+          name: Release-Artifacts
+          path: |
+            build/MediaPlayerKit.xcframework.zip
+            build/MediaPlayerKitDemo-macOS.app.zip
+            build/MediaPlayerKitDemo-iOS.ipa
 
+      # 5. 发布 GitHub Release
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/MediaPlayerKit.xcframework.zip
+          files: |
+            build/MediaPlayerKit.xcframework.zip
+            build/MediaPlayerKitDemo-macOS.app.zip
+            build/MediaPlayerKitDemo-iOS.ipa
           generate_release_notes: true
