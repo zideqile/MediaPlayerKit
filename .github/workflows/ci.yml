@@ -163,19 +163,22 @@ jobs:
             security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
+            # 将临时钥匙串加入全局搜索列表
+            security list-keychains -d user -s $KEYCHAIN_PATH login.keychain
+            security default-keychain -s $KEYCHAIN_PATH
+            
             RAW_P12=$RUNNER_TEMP/build_certificate_raw.p12
             LEGACY_P12=$RUNNER_TEMP/build_certificate_legacy.p12
             PEM_TEMP=$RUNNER_TEMP/cert_temp.pem
             
             echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $RAW_P12
             
-            # 使用系统 OpenSSL/LibreSSL 将 Linux 生成的 P12 转换为 macOS 钥匙串格式
-            echo "🔄 解包并重新生成 macOS 兼容的 PKCS#12 证书..."
+            # 解包并转换为钥匙串可信任的 PKCS#12
             openssl pkcs12 -in $RAW_P12 -passin pass:"$P12_PASSWORD" -nodes -out $PEM_TEMP
             openssl pkcs12 -export -in $PEM_TEMP -out $LEGACY_P12 -passout pass:"$P12_PASSWORD"
             security import $LEGACY_P12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
             
-            security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
             # 安装描述文件
             PP_PATH=~/Library/MobileDevice/Provisioning\ Profiles
@@ -188,7 +191,7 @@ jobs:
             echo "Using Signing Identity: $SIGNING_IDENTITY"
             
             if [ -n "$SIGNING_IDENTITY" ]; then
-              codesign --force --sign "$SIGNING_IDENTITY" --keychain $KEYCHAIN_PATH build/iOS/MediaPlayerKitDemo.app
+              codesign --force --deep --sign "$SIGNING_IDENTITY" build/iOS/MediaPlayerKitDemo.app
               echo "✅ 正式代码签名成功完成！"
             else
               codesign --force --deep --sign - build/iOS/MediaPlayerKitDemo.app
