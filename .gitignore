@@ -1,0 +1,21 @@
+# Xcode / macOS
+.DS_Store
+*/.DS_Store
+build/
+DerivedData/
+*.xcworkspace
+*.xcuserdata
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Temporary & Output files
+*.ipa
+*.dSYM.zip
+*.dSYM
