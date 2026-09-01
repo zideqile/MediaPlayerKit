@@ -15,9 +15,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
+      - name: Show Xcode Version
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
           xcodebuild -version
 
       - name: Build iOS Device Slice (arm64)
@@ -27,7 +26,8 @@ jobs:
             -destination "generic/platform=iOS" \
             -archivePath "build/MediaPlayerKit-iOS.xcarchive" \
             SKIP_INSTALL=NO \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Build iOS Simulator Slice (arm64 + x86_64)
         run: |
@@ -36,7 +36,8 @@ jobs:
             -destination "generic/platform=iOS Simulator" \
             -archivePath "build/MediaPlayerKit-iOS-Simulator.xcarchive" \
             SKIP_INSTALL=NO \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package XCFramework
         run: |
