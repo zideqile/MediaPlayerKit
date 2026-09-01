@@ -1,6 +1,8 @@
 name: MediaPlayerKitDemo
 options:
   bundleIdPrefix: com.yuanyuanhui
+  xcodeVersion: "15.0"
+  defaultConfig: Release
   deploymentTarget:
     iOS: "14.0"
     macOS: "11.0"
