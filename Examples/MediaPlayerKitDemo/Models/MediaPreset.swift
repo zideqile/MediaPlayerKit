@@ -24,6 +24,20 @@ public struct MediaPreset: Identifiable, Hashable {
             isLive: false
         ),
         MediaPreset(
+            title: "HTTP-FLV 高清直播流 (KSPlayer/FFmpeg)",
+            subtitle: "低延迟 FLV 解封装与硬件解码",
+            url: URL(string: "https://cctvtxyh5ca.v.myalicdn.com/live/cctv13_2/index.flv")!,
+            format: "HTTP-FLV",
+            isLive: true
+        ),
+        MediaPreset(
+            title: "RTMP 实时音视频流 (KSPlayer/FFmpeg)",
+            subtitle: "标准 RTMP 传输协议拉流测试",
+            url: URL(string: "rtmp://ns8.indexforce.com/home/mystream")!,
+            format: "RTMP",
+            isLive: true
+        ),
+        MediaPreset(
             title: "Tears of Steel (4K HDR 演示流)",
             subtitle: "高码率 HEVC / 宽色域 BT.2020",
             url: URL(string: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4")!,
@@ -31,8 +45,8 @@ public struct MediaPreset: Identifiable, Hashable {
             isLive: false
         ),
         MediaPreset(
-            title: "CCTV-13 高清新闻直播 (FLV/HLS)",
-            subtitle: "低延迟直播流测试",
+            title: "CCTV-13 高清新闻直播 (HLS 直播)",
+            subtitle: "央视新闻标准 HLS 直播源",
             url: URL(string: "https://cctvtxyh5ca.v.myalicdn.com/live/cctv13_2/index.m3u8")!,
             format: "HLS Live",
             isLive: true

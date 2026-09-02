@@ -79,9 +79,9 @@ import CoreGraphics
         
         self.config.preferredEngine = engineType
         switch engineType {
-        case .avPlayer, .auto:
+        case .avPlayer:
             self.engine = KSAVPlayerEngine()
-        case .mePlayer:
+        case .auto, .mePlayer:
             self.engine = KSMEPlayerEngine()
         }
         
@@ -104,15 +104,28 @@ import CoreGraphics
     @objc public func setMediaSource(url: URL) {
         self.currentURL = url
         
+        let urlString = url.absoluteString.lowercased()
+        let scheme = url.scheme?.lowercased() ?? ""
+        let ext = url.pathExtension.lowercased()
+        
+        // 智能协议路由：检测到 RTMP / FLV / RTSP 流时，自动切换至 FFmpeg 全能内核 (KSMEPlayer)
+        let isSpecialProtocol = scheme == "rtmp" || scheme == "rtsp" || ext == "flv" || urlString.contains(".flv")
+        if isSpecialProtocol && !(engine is KSMEPlayerEngine) {
+            self.stop()
+            self.playerView.detachRenderView()
+            self.engine = KSMEPlayerEngine()
+            self.setupEngine()
+        }
+        
         let playURL: URL
-        if config.enableLocalCache {
+        if config.enableLocalCache && !isSpecialProtocol {
             playURL = LocalPreloadProxy.shared.proxyURL(for: url)
         } else {
             playURL = url
         }
         
         let sessionID = UUID().uuidString
-        let engineName = (engine is KSMEPlayerEngine) ? "KSMEPlayer" : "AVPlayer"
+        let engineName = (engine is KSMEPlayerEngine) ? "KSPlayer (FFmpeg)" : "AVPlayer"
         apmTracker = QoSAPMTracker(sessionID: sessionID, mediaURL: url, engineName: engineName)
         apmTracker?.markPrepareStart()
         
