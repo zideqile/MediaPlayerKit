@@ -50,6 +50,7 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         KSOptions.firstPlayerType = KSMEPlayer.self
         KSOptions.secondPlayerType = KSMEPlayer.self
         KSOptions.canBackgroundPlay = true
+        KSOptions.isAutoPlay = true
         #if canImport(UIKit)
         playerView.delegate = self
         playerView.toolBar.isHidden = true
@@ -69,14 +70,13 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         report.isHardwareAccelerated = config.enableHardwareDecode
         self.qosReport = report
         
-        let opt = KSOptions()
-        opt.isAutoPlay = config.autoPlay
-        opt.isLoopPlay = config.isLoop
+        KSOptions.isAutoPlay = config.autoPlay
+        KSOptions.isLoopPlay = config.isLoop
         
         #if canImport(UIKit)
-        playerView.set(url: url, options: opt)
+        playerView.set(url: url)
         #elseif canImport(AppKit)
-        playerView.set(url: url, options: opt)
+        playerView.set(url: url)
         #endif
         
         if config.autoPlay {
@@ -99,8 +99,9 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     public func seek(to time: TimeInterval, completion: ((Bool) -> Void)?) {
-        playerView.seek(time: time)
-        completion?(true)
+        playerView.seek(time: time) { finished in
+            completion?(finished)
+        }
     }
     
     public func stop() {
@@ -119,9 +120,7 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     public func setVolume(_ volume: Float) {}
-    public func setPlaybackRate(_ rate: Float) {
-        playerView.playbackRate = rate
-    }
+    public func setPlaybackRate(_ rate: Float) {}
     public func setMute(_ isMuted: Bool) {}
     public func setSubtitleURL(_ url: URL?) {}
     
@@ -130,7 +129,6 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     }
 }
 
-#if canImport(UIKit)
 extension KSMEPlayerEngine: PlayerControllerDelegate {
     public func playerController(state: KSPlayerState) {
         DispatchQueue.main.async {
@@ -178,54 +176,5 @@ extension KSMEPlayerEngine: PlayerControllerDelegate {
     public func playerController(maskShow: Bool) {}
     public func playerController(action: PlayerButtonType) {}
     public func playerController(bufferedCount: Int, consumeTime: TimeInterval) {}
+    public func playerController(seek: TimeInterval) {}
 }
-#elseif canImport(AppKit)
-extension KSMEPlayerEngine: PlayerControllerDelegate {
-    public func playerController(state: KSPlayerState) {
-        DispatchQueue.main.async {
-            let mapped: PlayerState
-            switch state {
-            case .readyToPlay:
-                mapped = self.config.autoPlay ? .playing : .readyToPlay
-                if !self.isFirstFrameRendered {
-                    self.isFirstFrameRendered = true
-                    self.outputDelegate?.engineDidRenderFirstFrame(self)
-                }
-            case .buffering:
-                mapped = .buffering
-            case .bufferFinished:
-                mapped = .playing
-            case .playedToTheEnd:
-                mapped = .completed
-                self.outputDelegate?.engineDidPlayToEnd(self)
-            case .error:
-                mapped = .error
-            default:
-                mapped = .idle
-            }
-            self.state = mapped
-        }
-    }
-    
-    public func playerController(currentTime: TimeInterval, totalTime: TimeInterval) {
-        DispatchQueue.main.async {
-            self.currentPosition = currentTime
-            self.duration = totalTime
-            self.outputDelegate?.engine(self, currentTimeDidChange: currentTime, duration: totalTime)
-        }
-    }
-    
-    public func playerController(finish error: Error?) {
-        if let err = error as NSError? {
-            DispatchQueue.main.async {
-                self.state = .error
-                self.outputDelegate?.engine(self, didOccurError: err)
-            }
-        }
-    }
-    
-    public func playerController(maskShow: Bool) {}
-    public func playerController(action: PlayerButtonType) {}
-    public func playerController(bufferedCount: Int, consumeTime: TimeInterval) {}
-}
-#endif
