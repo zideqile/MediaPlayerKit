@@ -51,12 +51,7 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         KSOptions.secondPlayerType = KSMEPlayer.self
         KSOptions.canBackgroundPlay = true
         KSOptions.isAutoPlay = true
-        #if canImport(UIKit)
         playerView.delegate = self
-        playerView.toolBar.isHidden = true
-        #elseif canImport(AppKit)
-        playerView.delegate = self
-        #endif
     }
     
     public func prepare(with url: URL, config: PlayerConfig) {
@@ -74,11 +69,7 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         KSOptions.isLoopPlay = config.isLoop
         
         let opt = KSOptions()
-        #if canImport(UIKit)
         playerView.set(url: url, options: opt)
-        #elseif canImport(AppKit)
-        playerView.set(url: url, options: opt)
-        #endif
         
         if config.autoPlay {
             self.play()
