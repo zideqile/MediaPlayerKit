@@ -123,10 +123,12 @@ public final class StreamAPIService: ObservableObject {
                 
                 do {
                     let resp = try JSONDecoder().decode(NodeStreamListResponse.self, from: data)
-                    let list = resp.streams ?? []
+                    let rawList = resp.streams ?? []
+                    // 过滤掉带 @ 字符的流 id
+                    let list = rawList.filter { !$0.streamid.contains("@") }
                     self.streamList = list
                     if list.isEmpty {
-                        self.streamListError = "当前节点暂无活跃推流"
+                        self.streamListError = "当前节点暂无可展示的推流 (已过滤内部流)"
                     } else {
                         self.streamListError = nil
                     }
