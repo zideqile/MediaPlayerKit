@@ -73,10 +73,11 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         KSOptions.isAutoPlay = config.autoPlay
         KSOptions.isLoopPlay = config.isLoop
         
+        let opt = KSOptions()
         #if canImport(UIKit)
-        playerView.set(url: url)
+        playerView.set(url: url, options: opt)
         #elseif canImport(AppKit)
-        playerView.set(url: url)
+        playerView.set(url: url, options: opt)
         #endif
         
         if config.autoPlay {
