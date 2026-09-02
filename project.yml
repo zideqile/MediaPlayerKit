@@ -11,30 +11,16 @@ packages:
     url: https://github.com/kingslay/KSPlayer.git
     from: 2.3.4
 targets:
-  MediaPlayerKit:
-    type: framework
-    platform: iOS
-    deploymentTarget: "14.0"
-    sources: 
-      - path: Sources/MediaPlayerKit
-    dependencies:
-      - package: KSPlayer
-        product: KSPlayer
-    settings:
-      base:
-        PRODUCT_NAME: MediaPlayerKit
-        PRODUCT_BUNDLE_IDENTIFIER: com.yuanyuanhui.MediaPlayerKit
-        SWIFT_VERSION: "5.9"
-        ENABLE_BITCODE: NO
-
   MediaPlayerKitDemo:
     type: application
     platform: iOS
     deploymentTarget: "14.0"
     sources:
+      - path: Sources/MediaPlayerKit
       - path: Examples/MediaPlayerKitDemo
     dependencies:
-      - target: MediaPlayerKit
+      - package: KSPlayer
+        product: KSPlayer
     info:
       path: Examples/MediaPlayerKitDemo/Info.plist
       properties:
@@ -59,3 +45,4 @@ targets:
         CODE_SIGN_STYLE: Manual
         SWIFT_VERSION: "5.9"
         ENABLE_BITCODE: NO
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: YES
