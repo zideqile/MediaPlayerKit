@@ -19,6 +19,11 @@ import AppKit
         super.init(coder: coder)
         self.backgroundColor = .black
     }
+    
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        currentEngineRenderView?.frame = self.bounds
+    }
     #elseif canImport(AppKit)
     public override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -30,6 +35,11 @@ import AppKit
         super.init(coder: coder)
         self.wantsLayer = true
         self.layer?.backgroundColor = NSColor.black.cgColor
+    }
+    
+    public override func layout() {
+        super.layout()
+        currentEngineRenderView?.frame = self.bounds
     }
     #endif
     

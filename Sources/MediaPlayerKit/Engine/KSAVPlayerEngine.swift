@@ -2,43 +2,77 @@ import Foundation
 import AVFoundation
 #if canImport(UIKit)
 import UIKit
+
+public final class KSAVPlayerView: UIView {
+    public override class var layerClass: AnyClass {
+        return AVPlayerLayer.self
+    }
+    public var playerLayer: AVPlayerLayer {
+        return self.layer as! AVPlayerLayer
+    }
+}
 #elseif canImport(AppKit)
 import AppKit
+
+public final class KSAVPlayerView: NSView {
+    public var playerLayer: AVPlayerLayer? {
+        didSet {
+            oldValue?.removeFromSuperlayer()
+            if let l = playerLayer {
+                l.frame = self.bounds
+                l.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+                self.layer?.addSublayer(l)
+            }
+        }
+    }
+    public override func layout() {
+        super.layout()
+        playerLayer?.frame = self.bounds
+    }
+}
 #endif
 
-/// 原生 AVFoundation / AVPlayer 引擎实现
+/// 原生 AVFoundation / AVPlayer 工业级高性能引擎实现
 public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public weak var outputDelegate: PlayerEngineOutputDelegate?
     
     public var renderView: PlatformView {
-        return containerView
+        return playerView
     }
-    private let containerView = PlatformView()
-    private var playerLayer: AVPlayerLayer?
+    
+    #if canImport(UIKit)
+    private let playerView = KSAVPlayerView()
+    #elseif canImport(AppKit)
+    private let playerView = KSAVPlayerView()
+    #endif
     
     public private(set) var state: PlayerState = .idle {
         didSet {
             if oldValue != state {
-                outputDelegate?.engine(self, stateDidChange: state)
+                DispatchQueue.main.async {
+                    self.outputDelegate?.engine(self, stateDidChange: self.state)
+                }
             }
         }
     }
     
     public var currentPosition: TimeInterval {
         guard let player = player else { return 0 }
-        return CMTimeGetSeconds(player.currentTime())
+        let sec = CMTimeGetSeconds(player.currentTime())
+        return sec.isNaN || sec.isInfinite ? 0 : sec
     }
     
     public var duration: TimeInterval {
         guard let currentItem = player?.currentItem else { return 0 }
         let sec = CMTimeGetSeconds(currentItem.duration)
-        return sec.isNaN ? 0 : sec
+        return sec.isNaN || sec.isInfinite ? 0 : sec
     }
     
     public var bufferedDuration: TimeInterval {
         guard let currentItem = player?.currentItem,
               let timeRange = currentItem.loadedTimeRanges.first?.timeRangeValue else { return 0 }
-        return CMTimeGetSeconds(CMTimeAdd(timeRange.start, timeRange.duration))
+        let sec = CMTimeGetSeconds(CMTimeAdd(timeRange.start, timeRange.duration))
+        return sec.isNaN || sec.isInfinite ? 0 : sec
     }
     
     public var isPlaying: Bool {
@@ -52,6 +86,9 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
     private var timeObserverToken: Any?
+    private var itemStatusObserver: NSKeyValueObservation?
+    private var timeControlStatusObserver: NSKeyValueObservation?
+    private var loadedTimeRangesObserver: NSKeyValueObservation?
     private var config: PlayerConfig = PlayerConfig()
     private var isFirstFrameRendered = false
     private var currentURL: URL?
@@ -60,10 +97,11 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public override init() {
         super.init()
         #if canImport(UIKit)
-        containerView.backgroundColor = .black
+        playerView.backgroundColor = .black
+        playerView.playerLayer.videoGravity = .resizeAspect
         #elseif canImport(AppKit)
-        containerView.wantsLayer = true
-        containerView.layer?.backgroundColor = NSColor.black.cgColor
+        playerView.wantsLayer = true
+        playerView.layer?.backgroundColor = NSColor.black.cgColor
         #endif
     }
     
@@ -84,19 +122,15 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         self.player = player
         player.actionAtItemEnd = config.isLoop ? .none : .pause
         
+        #if canImport(UIKit)
+        playerView.playerLayer.player = player
+        #elseif canImport(AppKit)
         let layer = AVPlayerLayer(player: player)
         layer.videoGravity = .resizeAspect
-        layer.frame = containerView.bounds
-        layer.needsDisplayOnBoundsChange = true
-        
-        #if canImport(UIKit)
-        containerView.layer.addSublayer(layer)
-        #elseif canImport(AppKit)
-        containerView.layer?.addSublayer(layer)
+        playerView.playerLayer = layer
         #endif
-        self.playerLayer = layer
         
-        setupObservers(for: item)
+        setupKVO(for: item, player: player)
         setupTimeObserver()
     }
     
@@ -136,10 +170,13 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     public func reset() {
-        removeObservers()
+        removeKVO()
         player?.pause()
-        playerLayer?.removeFromSuperlayer()
-        playerLayer = nil
+        #if canImport(UIKit)
+        playerView.playerLayer.player = nil
+        #elseif canImport(AppKit)
+        playerView.playerLayer = nil
+        #endif
         playerItem = nil
         player = nil
         state = .idle
@@ -164,7 +201,40 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         return qosReport
     }
     
-    private func setupObservers(for item: AVPlayerItem) {
+    private func setupKVO(for item: AVPlayerItem, player: AVPlayer) {
+        itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                switch item.status {
+                case .readyToPlay:
+                    if self.state == .preparing {
+                        self.state = self.config.autoPlay ? .playing : .readyToPlay
+                    }
+                    if self.config.autoPlay {
+                        self.player?.play()
+                    }
+                    if !self.isFirstFrameRendered {
+                        self.isFirstFrameRendered = true
+                        self.outputDelegate?.engineDidRenderFirstFrame(self)
+                    }
+                case .failed:
+                    self.state = .error
+                    let err = item.error as NSError? ?? NSError(domain: "MediaPlayerKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "播放加载失败"])
+                    self.outputDelegate?.engine(self, didOccurError: err)
+                default:
+                    break
+                }
+            }
+        }
+        
+        loadedTimeRangesObserver = item.observe(\.loadedTimeRanges, options: [.new]) { [weak self] item, _ in
+            guard let self = self else { return }
+            let buf = self.bufferedDuration
+            DispatchQueue.main.async {
+                self.outputDelegate?.engine(self, bufferedDurationDidChange: buf)
+            }
+        }
+        
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(itemDidPlayToEnd),
@@ -173,7 +243,14 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         )
     }
     
-    private func removeObservers() {
+    private func removeKVO() {
+        itemStatusObserver?.invalidate()
+        itemStatusObserver = nil
+        timeControlStatusObserver?.invalidate()
+        timeControlStatusObserver = nil
+        loadedTimeRangesObserver?.invalidate()
+        loadedTimeRangesObserver = nil
+        
         if let token = timeObserverToken {
             player?.removeTimeObserver(token)
             timeObserverToken = nil
@@ -182,12 +259,14 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     private func setupTimeObserver() {
-        let interval = CMTime(seconds: 0.3, preferredTimescale: 600)
+        let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         timeObserverToken = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             let current = CMTimeGetSeconds(time)
             let total = self.duration
-            self.outputDelegate?.engine(self, currentTimeDidChange: current, duration: total)
+            if !current.isNaN && !current.isInfinite {
+                self.outputDelegate?.engine(self, currentTimeDidChange: current, duration: total)
+            }
             
             if !self.isFirstFrameRendered && current > 0 {
                 self.isFirstFrameRendered = true
@@ -200,13 +279,15 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     @objc private func itemDidPlayToEnd() {
-        if config.isLoop {
-            seek(to: 0) { [weak self] _ in
-                self?.play()
+        DispatchQueue.main.async {
+            if self.config.isLoop {
+                self.seek(to: 0) { [weak self] _ in
+                    self?.play()
+                }
+            } else {
+                self.state = .completed
+                self.outputDelegate?.engineDidPlayToEnd(self)
             }
-        } else {
-            state = .completed
-            outputDelegate?.engineDidPlayToEnd(self)
         }
     }
 }

@@ -52,9 +52,9 @@ import CoreGraphics
         self.playerView = MediaPlayerView()
         
         switch config.preferredEngine {
-        case .avPlayer:
+        case .avPlayer, .auto:
             self.engine = KSAVPlayerEngine()
-        case .auto, .mePlayer:
+        case .mePlayer:
             self.engine = KSMEPlayerEngine()
         }
         
@@ -66,6 +66,36 @@ import CoreGraphics
     private func setupEngine() {
         self.engine.outputDelegate = self
         self.playerView.attachRenderView(self.engine.renderView)
+    }
+    
+    /// 动态切换底层播放引擎
+    @objc public func switchEngine(to engineType: PlayerEngineType) {
+        let wasPlaying = self.isPlaying
+        let pos = self.currentPosition
+        let url = self.currentURL
+        
+        self.stop()
+        self.playerView.detachRenderView()
+        
+        self.config.preferredEngine = engineType
+        switch engineType {
+        case .avPlayer, .auto:
+            self.engine = KSAVPlayerEngine()
+        case .mePlayer:
+            self.engine = KSMEPlayerEngine()
+        }
+        
+        self.setupEngine()
+        
+        if let mediaURL = url {
+            self.setMediaSource(url: mediaURL)
+            if pos > 0 {
+                self.seek(to: pos)
+            }
+            if wasPlaying {
+                self.play()
+            }
+        }
     }
     
     // MARK: - 核心播放控制 API
