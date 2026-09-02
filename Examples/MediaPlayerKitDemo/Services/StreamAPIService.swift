@@ -1,6 +1,17 @@
 import Foundation
 import Combine
 
+extension String {
+    /// 对 Query 参数进行标准 URI Percent-Encoding
+    /// 确保 ! @ # $ & = + / 等特殊字符被正确转义，避免 # 被当做 URL Fragment 截断
+    public func urlQueryComponentEncoded() -> String {
+        let decoded = self.removingPercentEncoding ?? self
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-_.~")
+        return decoded.addingPercentEncoding(withAllowedCharacters: allowed) ?? decoded
+    }
+}
+
 public final class StreamAPIService: ObservableObject {
     public static let shared = StreamAPIService()
     
@@ -66,28 +77,37 @@ public final class StreamAPIService: ObservableObject {
         return str
     }
     
+    private func cleanRawDomain(_ domain: String) -> String {
+        var d = domain.trimmingCharacters(in: .whitespacesAndNewlines)
+        if d.hasPrefix("http://") { d = String(d.dropFirst(7)) }
+        if d.hasPrefix("https://") { d = String(d.dropFirst(8)) }
+        if d.hasSuffix("/") { d = String(d.dropLast(1)) }
+        return d
+    }
+    
     // MARK: - 1. 获取流列表
     public func fetchStreamList() {
         guard hasCompleteConfig else {
-            self.streamListError = "请先配置域名、节点域名和 Sign 参数"
+            self.streamListError = "请完整填写配置参数"
             return
         }
         
         let nodeBase = normalizeUrlPrefix(nodeDomain, defaultScheme: "http")
-        let encodedSign = sign.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? sign
+        let cAdmin = cleanRawDomain(apiDomain)
+        let cNode = cleanRawDomain(nodeDomain)
+        let encodedSign = sign.urlQueryComponentEncoded()
         
-        guard let url = URL(string: "\(nodeBase)/manager/streamclientipdata?sign=\(encodedSign)") else {
-            self.streamListError = "节点 URL 格式不正确"
-            return
-        }
+        // 候选请求地址列表（优先直连节点，若直连不通则尝试经由管理网关反向代理）
+        let candidateUrls: [String] = [
+            "\(nodeBase)/manager/streamclientipdata?sign=\(encodedSign)",
+            "https://\(cAdmin)/\(cNode)/manager/streamclientipdata?sign=\(encodedSign)",
+            "http://\(cNode)/manager/streamclientipdata?sign=\(encodedSign)"
+        ]
         
         self.isLoadingStreams = true
         self.streamListError = nil
         
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 8.0
-        
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        tryFetchCandidates(urls: candidateUrls, index: 0) { [weak self] data, error in
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.isLoadingStreams = false
@@ -103,8 +123,9 @@ public final class StreamAPIService: ObservableObject {
                 
                 do {
                     let resp = try JSONDecoder().decode(NodeStreamListResponse.self, from: data)
-                    self.streamList = resp.streams ?? []
-                    if self.streamList.isEmpty {
+                    let list = resp.streams ?? []
+                    self.streamList = list
+                    if list.isEmpty {
                         self.streamListError = "当前节点暂无活跃推流"
                     } else {
                         self.streamListError = nil
@@ -113,7 +134,30 @@ public final class StreamAPIService: ObservableObject {
                     self.streamListError = "解析流列表失败: \(error.localizedDescription)"
                 }
             }
-        }.resume()
+        }
+    }
+    
+    private func tryFetchCandidates(urls: [String], index: Int, completion: @escaping (Data?, Error?) -> Void) {
+        guard index < urls.count else {
+            completion(nil, NSError(domain: "StreamAPIService", code: -1, userInfo: [NSLocalizedDescriptionKey: "所有节点候选连接均失败"]))
+            return
+        }
+        guard let url = URL(string: urls[index]) else {
+            tryFetchCandidates(urls: urls, index: index + 1, completion: completion)
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 6.0
+        
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            if let httpResp = response as? HTTPURLResponse, (200...299).contains(httpResp.statusCode), let data = data, data.count > 0 {
+                completion(data, nil)
+            } else {
+                self?.tryFetchCandidates(urls: urls, index: index + 1, completion: completion)
+            }
+        }
+        task.resume()
     }
     
     // MARK: - 2. 获取播放地址列表
@@ -122,7 +166,8 @@ public final class StreamAPIService: ObservableObject {
         guard !trimmedId.isEmpty else { return }
         
         let apiBase = normalizeUrlPrefix(apiDomain, defaultScheme: "https")
-        guard let url = URL(string: "\(apiBase)/toolsapi/v1/player-sources/?streamId=\(trimmedId)") else {
+        let encodedStreamId = trimmedId.urlQueryComponentEncoded()
+        guard let url = URL(string: "\(apiBase)/toolsapi/v1/player-sources/?streamId=\(encodedStreamId)") else {
             self.sourcesError = "播放地址 API 格式不正确"
             return
         }

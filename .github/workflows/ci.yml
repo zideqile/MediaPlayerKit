@@ -68,6 +68,14 @@ jobs:
           echo "iOS App Bundle 路径: $APP_DIR"
           ls -la "$APP_DIR"
           
+          # 注入 App Transport Security 允许 HTTP 明文网络访问 (解决 ATS 阻拦 HTTP 节点请求问题)
+          echo "🌐 配置 App Transport Security (NSAllowsArbitraryLoads = true)..."
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$APP_DIR/Info.plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$APP_DIR/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$APP_DIR/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoadsInWebContent bool true" "$APP_DIR/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoadsInWebContent bool true" "$APP_DIR/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$APP_DIR/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$APP_DIR/Info.plist"
+          plutil -p "$APP_DIR/Info.plist" | grep -A 5 -i "NSAppTransportSecurity" || true
+
           # 2. 提取证书与描述文件执行正式代码签名
           if [ -n "$BUILD_CERTIFICATE_BASE64" ] && [ -n "$BUILD_PROVISION_PROFILE_BASE64" ]; then
             echo "🔐 开始配置钥匙串与正式证书签名..."
