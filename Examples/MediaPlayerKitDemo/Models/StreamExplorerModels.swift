@@ -4,6 +4,22 @@ import Foundation
 public struct NodeStreamListResponse: Codable {
     public let count: Int?
     public let streams: [NodeStreamInfo]?
+    
+    enum CodingKeys: String, CodingKey {
+        case count, streams
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let intVal = try? container.decodeIfPresent(Int.self, forKey: .count) {
+            self.count = intVal
+        } else if let strVal = try? container.decodeIfPresent(String.self, forKey: .count) {
+            self.count = Int(strVal)
+        } else {
+            self.count = nil
+        }
+        self.streams = try? container.decodeIfPresent([NodeStreamInfo].self, forKey: .streams)
+    }
 }
 
 public struct NodeStreamInfo: Codable, Identifiable {
@@ -20,6 +36,49 @@ public struct NodeStreamInfo: Codable, Identifiable {
     public let urlquery: String?
     public let metadata: String?
     public let clientipdata: ClientIPData?
+    
+    enum CodingKeys: String, CodingKey {
+        case streamid, liveid, time, vfps, afps, vbitrate, abitrate, width, height, urlquery, metadata, clientipdata
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.streamid = try container.decodeIfPresent(String.self, forKey: .streamid) ?? ""
+        
+        if let str = try? container.decodeIfPresent(String.self, forKey: .liveid) {
+            self.liveid = str
+        } else if let intVal = try? container.decodeIfPresent(Int.self, forKey: .liveid) {
+            self.liveid = String(intVal)
+        } else {
+            self.liveid = nil
+        }
+        
+        self.time = Self.decodeDouble(container: container, key: .time)
+        self.vfps = Self.decodeDouble(container: container, key: .vfps)
+        self.afps = Self.decodeDouble(container: container, key: .afps)
+        self.vbitrate = Self.decodeDouble(container: container, key: .vbitrate)
+        self.abitrate = Self.decodeDouble(container: container, key: .abitrate)
+        self.width = Self.decodeInt(container: container, key: .width)
+        self.height = Self.decodeInt(container: container, key: .height)
+        
+        self.urlquery = try? container.decodeIfPresent(String.self, forKey: .urlquery)
+        self.metadata = try? container.decodeIfPresent(String.self, forKey: .metadata)
+        self.clientipdata = try? container.decodeIfPresent(ClientIPData.self, forKey: .clientipdata)
+    }
+    
+    private static func decodeDouble(container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Double? {
+        if let val = try? container.decodeIfPresent(Double.self, forKey: key) { return val }
+        if let val = try? container.decodeIfPresent(Int.self, forKey: key) { return Double(val) }
+        if let str = try? container.decodeIfPresent(String.self, forKey: key) { return Double(str) }
+        return nil
+    }
+    
+    private static func decodeInt(container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Int? {
+        if let val = try? container.decodeIfPresent(Int.self, forKey: key) { return val }
+        if let val = try? container.decodeIfPresent(Double.self, forKey: key) { return Int(val) }
+        if let str = try? container.decodeIfPresent(String.self, forKey: key) { return Int(str) }
+        return nil
+    }
     
     public var resolutionText: String {
         guard let w = width, let h = height, w > 0, h > 0 else { return "" }
@@ -87,6 +146,56 @@ public struct PlayerSourceItem: Codable, Identifiable {
     public let videoCodec: Int?
     public let vendor: String?
     public let orderno: Int?
+    public let sar_num: Int?
+    public let sar_den: Int?
+    
+    enum CodingKeys: String, CodingKey {
+        case type, src, tag, videoCodec, vendor, orderno, sar_num, sar_den
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.type = try container.decodeIfPresent(String.self, forKey: .type) ?? ""
+        self.src = try container.decodeIfPresent(String.self, forKey: .src) ?? ""
+        self.tag = try container.decodeIfPresent(String.self, forKey: .tag)
+        self.vendor = try container.decodeIfPresent(String.self, forKey: .vendor)
+        
+        // 兼容 videoCodec 可以为 Int 或 String
+        if let intVal = try? container.decodeIfPresent(Int.self, forKey: .videoCodec) {
+            self.videoCodec = intVal
+        } else if let strVal = try? container.decodeIfPresent(String.self, forKey: .videoCodec) {
+            self.videoCodec = Int(strVal)
+        } else {
+            self.videoCodec = nil
+        }
+        
+        // 兼容 orderno 可以为 Int 或 String
+        if let intVal = try? container.decodeIfPresent(Int.self, forKey: .orderno) {
+            self.orderno = intVal
+        } else if let strVal = try? container.decodeIfPresent(String.self, forKey: .orderno) {
+            self.orderno = Int(strVal)
+        } else {
+            self.orderno = nil
+        }
+        
+        // 兼容 sar_num 可以为 Int 或 String
+        if let intVal = try? container.decodeIfPresent(Int.self, forKey: .sar_num) {
+            self.sar_num = intVal
+        } else if let strVal = try? container.decodeIfPresent(String.self, forKey: .sar_num) {
+            self.sar_num = Int(strVal)
+        } else {
+            self.sar_num = nil
+        }
+        
+        // 兼容 sar_den 可以为 Int 或 String
+        if let intVal = try? container.decodeIfPresent(Int.self, forKey: .sar_den) {
+            self.sar_den = intVal
+        } else if let strVal = try? container.decodeIfPresent(String.self, forKey: .sar_den) {
+            self.sar_den = Int(strVal)
+        } else {
+            self.sar_den = nil
+        }
+    }
     
     public var codecText: String {
         switch videoCodec {
