@@ -11,16 +11,38 @@ packages:
     url: https://github.com/kingslay/KSPlayer.git
     from: 2.3.4
 targets:
+  MediaPlayerKit:
+    type: framework
+    platform: iOS
+    deploymentTarget: "14.0"
+    sources: 
+      - path: Sources/MediaPlayerKit
+    dependencies:
+      - package: KSPlayer
+        product: KSPlayer
+    info:
+      properties:
+        CFBundleDisplayName: "MediaPlayerKit"
+        CFBundleIdentifier: "com.yuanyuanhui.MediaPlayerKit"
+        CFBundleName: "MediaPlayerKit"
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1"
+        CFBundlePackageType: "FMWK"
+    settings:
+      base:
+        PRODUCT_NAME: MediaPlayerKit
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuanyuanhui.MediaPlayerKit
+        SWIFT_VERSION: "5.9"
+        ENABLE_BITCODE: NO
+
   MediaPlayerKitDemo:
     type: application
     platform: iOS
     deploymentTarget: "14.0"
     sources:
-      - path: Sources/MediaPlayerKit
       - path: Examples/MediaPlayerKitDemo
     dependencies:
-      - package: KSPlayer
-        product: KSPlayer
+      - target: MediaPlayerKit
     info:
       path: Examples/MediaPlayerKitDemo/Info.plist
       properties:
@@ -29,8 +51,6 @@ targets:
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         LSRequiresIPhoneOS: true
-        UIDeviceFamily: [1, 2]
-        UIRequiredDeviceCapabilities: ["arm64"]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -45,4 +65,3 @@ targets:
         CODE_SIGN_STYLE: Manual
         SWIFT_VERSION: "5.9"
         ENABLE_BITCODE: NO
-        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: YES
