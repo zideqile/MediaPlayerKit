@@ -18,7 +18,6 @@ public struct UniversalPlayerView: View {
     @State private var isMuted = false
     @State private var showQoSOverlay = true
     @State private var qosReport: PlayerQoSReport?
-    @State private var selectedEngineIndex = 0
     @State private var errorMessage: String?
     
     public init() {}
@@ -182,8 +181,6 @@ public struct UniversalPlayerView: View {
                     HStack {
                         TextField("输入或粘贴视频链接 (http/https/m3u8/mp4)...", text: $customURLText)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
                             .font(.system(size: 13))
                         
                         if !customURLText.isEmpty {
