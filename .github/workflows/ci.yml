@@ -179,7 +179,7 @@ jobs:
                 print('已提取 Entitlements:', entitlements)
             "
             
-            SIGNING_IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep "iPhone Developer" | head -1 | awk -F '"' '{print $2}')
+            SIGNING_IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -E "iPhone Distribution|Apple Distribution|iPhone Developer|Apple Development" | head -1 | awk -F '"' '{print $2}')
             echo "Using Signing Identity: $SIGNING_IDENTITY"
             
             # 签名 App 内部的所有 Frameworks (如果有)
