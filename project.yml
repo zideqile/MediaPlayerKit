@@ -21,13 +21,7 @@ targets:
       - package: KSPlayer
         product: KSPlayer
     info:
-      properties:
-        CFBundleDisplayName: "MediaPlayerKit"
-        CFBundleIdentifier: "com.yuanyuanhui.MediaPlayerKit"
-        CFBundleName: "MediaPlayerKit"
-        CFBundleShortVersionString: "1.0.0"
-        CFBundleVersion: "1"
-        CFBundlePackageType: "FMWK"
+      path: Sources/MediaPlayerKit/Info.plist
     settings:
       base:
         PRODUCT_NAME: MediaPlayerKit
@@ -45,18 +39,6 @@ targets:
       - target: MediaPlayerKit
     info:
       path: Examples/MediaPlayerKitDemo/Info.plist
-      properties:
-        CFBundleDisplayName: "MediaPlayerKit"
-        CFBundleIdentifier: "com.yuanyuanhui.MediaPlayerKitDemo"
-        CFBundleShortVersionString: "1.0.0"
-        CFBundleVersion: "1"
-        LSRequiresIPhoneOS: true
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
-          - UIInterfaceOrientationLandscapeLeft
-          - UIInterfaceOrientationLandscapeRight
-        NSAppTransportSecurity:
-          NSAllowsArbitraryLoads: true
     settings:
       base:
         PRODUCT_NAME: MediaPlayerKitDemo
