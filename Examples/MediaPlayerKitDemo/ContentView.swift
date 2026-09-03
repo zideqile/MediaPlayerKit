@@ -8,7 +8,6 @@ public struct ContentView: View {
             NavigationView {
                 ShortVideoFeedView()
                     .navigationTitle("短视频流")
-                    .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
                 Label("短视频流", systemImage: "play.square.stack.fill")
@@ -17,7 +16,6 @@ public struct ContentView: View {
             NavigationView {
                 UniversalPlayerView()
                     .navigationTitle("全能播放器")
-                    .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
                 Label("播放器", systemImage: "play.tv.fill")
@@ -26,7 +24,6 @@ public struct ContentView: View {
             NavigationView {
                 QoSDashboardView()
                     .navigationTitle("QoS 大盘")
-                    .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
                 Label("QoS 大盘", systemImage: "chart.bar.xaxis")
@@ -35,7 +32,6 @@ public struct ContentView: View {
             NavigationView {
                 SettingsView()
                     .navigationTitle("节点配置")
-                    .navigationBarTitleDisplayMode(.inline)
             }
             .tabItem {
                 Label("配置", systemImage: "gearshape.fill")

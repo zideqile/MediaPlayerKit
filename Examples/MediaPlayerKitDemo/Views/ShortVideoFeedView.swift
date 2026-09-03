@@ -366,7 +366,7 @@ public struct ShortVideoFeedView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 12)
-                .background(Color(UIColor.systemBackground))
+                .background(Color.black.opacity(0.04))
             }
         }
         .edgesIgnoringSafeArea(.top)
