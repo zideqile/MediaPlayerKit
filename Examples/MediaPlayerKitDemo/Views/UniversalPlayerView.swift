@@ -7,8 +7,7 @@ import UIKit
 public struct UniversalPlayerView: View {
     @StateObject private var apiService = StreamAPIService.shared
     
-    @State private var selectedPreset: MediaPreset = MediaPreset.samples[0]
-    @State private var customURLText: String = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+    @State private var customURLText: String = ""
     @State private var player = MediaPlayerController()
     
     @State private var isPlaying = false
@@ -205,7 +204,7 @@ public struct UniversalPlayerView: View {
                                 Text("接口域名:")
                                     .font(.caption)
                                     .frame(width: 68, alignment: .leading)
-                                TextField("输入接口域名", text: $apiService.apiDomain)
+                                TextField("输入接口域名 (如 vadmin.weizan.cn)", text: $apiService.apiDomain)
                                     .textFieldStyle(RoundedBorderTextFieldStyle())
                                     .font(.caption)
                             }
@@ -214,7 +213,7 @@ public struct UniversalPlayerView: View {
                                 Text("节点域名:")
                                     .font(.caption)
                                     .frame(width: 68, alignment: .leading)
-                                TextField("输入节点域名 (含端口)", text: $apiService.nodeDomain)
+                                TextField("输入节点域名 (如 p1.vzan.com:8000)", text: $apiService.nodeDomain)
                                     .textFieldStyle(RoundedBorderTextFieldStyle())
                                     .font(.caption)
                             }
@@ -519,48 +518,6 @@ public struct UniversalPlayerView: View {
                 .cornerRadius(8)
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
-                
-                // MARK: - 7. 经典预设流集
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("📺 经典测试流集（点击即播）")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.primary)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 6)
-                    
-                    VStack(spacing: 6) {
-                        ForEach(MediaPreset.samples) { preset in
-                            Button(action: {
-                                loadPreset(preset)
-                            }) {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(preset.title)
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(.primary)
-                                            .multilineTextAlignment(.leading)
-                                        Text(preset.subtitle)
-                                            .font(.system(size: 9))
-                                            .foregroundColor(.secondary)
-                                    }
-                                    Spacer()
-                                    Text(preset.format)
-                                        .font(.system(size: 9, weight: .bold))
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 2)
-                                        .background(selectedPreset.id == preset.id ? Color.blue : Color.secondary.opacity(0.15))
-                                        .foregroundColor(selectedPreset.id == preset.id ? .white : .primary)
-                                        .cornerRadius(4)
-                                }
-                                .padding(8)
-                                .background(Color.secondary.opacity(0.06))
-                                .cornerRadius(6)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                    .padding(.horizontal, 10)
-                }
                 .padding(.bottom, 24)
             }
         }
@@ -569,7 +526,6 @@ public struct UniversalPlayerView: View {
             if apiService.hasCompleteConfig {
                 apiService.fetchStreamList()
             }
-            loadPreset(selectedPreset)
         }
         .onDisappear {
             player.stop()
@@ -620,16 +576,6 @@ public struct UniversalPlayerView: View {
         self.errorMessage = nil
         currentPlayingTitle = "自定义链接"
         player.setMediaSource(url: url)
-        player.play()
-        isPlaying = true
-    }
-    
-    private func loadPreset(_ preset: MediaPreset) {
-        selectedPreset = preset
-        customURLText = preset.url.absoluteString
-        self.errorMessage = nil
-        currentPlayingTitle = preset.title
-        player.setMediaSource(url: preset.url)
         player.play()
         isPlaying = true
     }

@@ -47,6 +47,9 @@ public final class StreamAPIService: ObservableObject {
     @Published public var isLoadingSources: Bool = false
     @Published public var sourcesError: String? = nil
     
+    // 播放源快速缓存 [StreamID: PlayerSourcesContainer]
+    @Published public var sourcesCache: [String: PlayerSourcesContainer] = [:]
+    
     public init() {
         self.apiDomain = UserDefaults.standard.string(forKey: kApiDomainKey) ?? ""
         self.nodeDomain = UserDefaults.standard.string(forKey: kNodeDomainKey) ?? ""
@@ -85,10 +88,11 @@ public final class StreamAPIService: ObservableObject {
         return d
     }
     
-    // MARK: - 1. 获取流列表
-    public func fetchStreamList() {
+    // MARK: - 1. 获取流列表 (过滤带 @ 字符的内部流)
+    public func fetchStreamList(completion: (([NodeStreamInfo]) -> Void)? = nil) {
         guard hasCompleteConfig else {
             self.streamListError = "请完整填写配置参数"
+            completion?([])
             return
         }
         
@@ -114,17 +118,19 @@ public final class StreamAPIService: ObservableObject {
                 
                 if let err = error {
                     self.streamListError = "获取流列表失败: \(err.localizedDescription)"
+                    completion?([])
                     return
                 }
                 guard let data = data else {
                     self.streamListError = "返回数据为空"
+                    completion?([])
                     return
                 }
                 
                 do {
                     let resp = try JSONDecoder().decode(NodeStreamListResponse.self, from: data)
                     let rawList = resp.streams ?? []
-                    // 过滤掉带 @ 字符的流 id
+                    // 严格过滤掉带 @ 字符的内部流 ID
                     let list = rawList.filter { !$0.streamid.contains("@") }
                     self.streamList = list
                     if list.isEmpty {
@@ -132,8 +138,10 @@ public final class StreamAPIService: ObservableObject {
                     } else {
                         self.streamListError = nil
                     }
+                    completion?(list)
                 } catch {
                     self.streamListError = "解析流列表失败: \(error.localizedDescription)"
+                    completion?([])
                 }
             }
         }
@@ -163,14 +171,27 @@ public final class StreamAPIService: ObservableObject {
     }
     
     // MARK: - 2. 获取播放地址列表
-    public func fetchPlayerSources(for streamId: String) {
+    public func fetchPlayerSources(for streamId: String, completion: ((PlayerSourcesContainer?) -> Void)? = nil) {
         let trimmedId = streamId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedId.isEmpty else { return }
+        guard !trimmedId.isEmpty else {
+            completion?(nil)
+            return
+        }
+        
+        // 优先检查内存缓存
+        if let cached = sourcesCache[trimmedId] {
+            self.selectedStreamId = trimmedId
+            self.playerSources = cached
+            self.sourcesError = nil
+            completion?(cached)
+            return
+        }
         
         let apiBase = normalizeUrlPrefix(apiDomain, defaultScheme: "https")
         let encodedStreamId = trimmedId.urlQueryComponentEncoded()
         guard let url = URL(string: "\(apiBase)/toolsapi/v1/player-sources/?streamId=\(encodedStreamId)") else {
             self.sourcesError = "播放地址 API 格式不正确"
+            completion?(nil)
             return
         }
         
@@ -189,21 +210,31 @@ public final class StreamAPIService: ObservableObject {
                 
                 if let err = error {
                     self.sourcesError = "获取播放地址失败: \(err.localizedDescription)"
+                    completion?(nil)
                     return
                 }
                 guard let data = data else {
                     self.sourcesError = "播放地址返回为空"
+                    completion?(nil)
                     return
                 }
                 
                 do {
                     let resp = try JSONDecoder().decode(PlayerSourcesResponse.self, from: data)
-                    self.playerSources = resp.playerSources
-                    if (self.playerSources?.allSources.isEmpty ?? true) {
+                    if let container = resp.playerSources {
+                        self.playerSources = container
+                        self.sourcesCache[trimmedId] = container
+                        if container.allSources.isEmpty {
+                            self.sourcesError = "未查询到可用播放地址"
+                        }
+                        completion?(container)
+                    } else {
                         self.sourcesError = "未查询到可用播放地址"
+                        completion?(nil)
                     }
                 } catch {
                     self.sourcesError = "解析播放地址失败: \(error.localizedDescription)"
+                    completion?(nil)
                 }
             }
         }.resume()
