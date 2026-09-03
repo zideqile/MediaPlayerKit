@@ -1,8 +1,5 @@
 import SwiftUI
 import MediaPlayerKit
-#if canImport(UIKit)
-import UIKit
-#endif
 
 /// 切换模式：切流（不同推流） vs 切内部地址（同推流的不同协议/编码源）
 public enum FeedSwitchMode: String, CaseIterable {
@@ -53,119 +50,118 @@ public struct ShortVideoFeedView: View {
     }
 
     public var body: some View {
-        GeometryReader { geometry in
-            VStack(spacing: 0) {
-                // MARK: - 1. 上半部分：独立视频播放区域 (仿抖音无遮挡沉浸画面)
-                ZStack {
-                    Color.black
-                    
-                    if let player = activePlayer {
-                        PlayerViewRepresentable(player: player)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipped()
-                            .onTapGesture {
-                                togglePlayPause()
-                            }
-                    } else {
-                        Color.black
-                    }
-                    
-                    // 加载状态
-                    if isLoading || playerState == .preparing || playerState == .buffering {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(1.5)
-                            .background(Circle().fill(Color.black.opacity(0.5)).frame(width: 60, height: 60))
-                    }
-                    
-                    // 暂停状态居中图标
-                    if !isPlaying && playerState != .idle && !isLoading {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 56))
-                            .foregroundColor(.white.opacity(0.85))
-                            .shadow(radius: 6)
-                            .onTapGesture {
-                                togglePlayPause()
-                            }
-                    }
-                    
-                    // 错误信息覆盖
-                    if let err = errorMessage {
-                        VStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.title)
-                                .foregroundColor(.red)
-                            Text(err)
-                                .font(.caption)
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
-                        .padding(16)
-                        .background(Color.black.opacity(0.8))
-                        .cornerRadius(10)
-                        .padding(.horizontal, 20)
-                    }
-                    
-                    // 空流列表引导
-                    if apiService.streamList.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                                .font(.system(size: 40))
-                                .foregroundColor(.orange)
-                            Text("当前节点暂无活跃在线流")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            Text("请前往「配置」页检查节点域名，或点击下方按钮刷新")
-                                .font(.caption2)
-                                .foregroundColor(.white.opacity(0.7))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 24)
-                            Button(action: {
-                                apiService.fetchStreamList { streams in
-                                    if !streams.isEmpty {
-                                        currentStreamIndex = 0
-                                        currentSourceIndex = 0
-                                        playCurrentStreamAndSource()
-                                    }
-                                }
-                            }) {
-                                HStack {
-                                    if apiService.isLoadingStreams {
-                                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    } else {
-                                        Image(systemName: "arrow.clockwise")
-                                    }
-                                    Text("立即拉取节点流")
-                                        .font(.system(size: 12, weight: .bold))
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(6)
-                            }
-                        }
-                        .padding()
-                    }
-                }
-                .frame(height: geometry.size.height * 0.56) // 占屏幕高度 56%，完全独立
-                .gesture(
-                    DragGesture(minimumDistance: 30)
-                        .onEnded { value in
-                            if value.translation.height < -40 {
-                                // 向上滑 -> 下一个
-                                switchNext()
-                            } else if value.translation.height > 40 {
-                                // 向下滑 -> 上一个
-                                switchPrevious()
-                            }
-                        }
-                )
+        VStack(spacing: 0) {
+            // MARK: - 1. 上半部分：独立视频播放区域 (支持上下滑动手势与点击播放/暂停)
+            ZStack {
+                Color.black
                 
-                // MARK: - 2. 下半部分：独立的视频信息与主控面板 (仿微信/抖音交互分区)
-                VStack(spacing: 10) {
-                    // (1) 模式选择器与节点指示
+                if let player = activePlayer {
+                    PlayerViewRepresentable(player: player)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .onTapGesture {
+                            togglePlayPause()
+                        }
+                } else {
+                    Color.black
+                }
+                
+                // 加载状态指示器
+                if isLoading || playerState == .preparing || playerState == .buffering {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.4)
+                        .background(Circle().fill(Color.black.opacity(0.5)).frame(width: 50, height: 50))
+                }
+                
+                // 暂停状态浮标
+                if !isPlaying && playerState != .idle && !isLoading {
+                    Image(systemName: "play.circle.fill")
+                        .font(.system(size: 52))
+                        .foregroundColor(.white.opacity(0.85))
+                        .shadow(radius: 6)
+                        .onTapGesture {
+                            togglePlayPause()
+                        }
+                }
+                
+                // 错误信息覆盖提示
+                if let err = errorMessage {
+                    VStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.title2)
+                            .foregroundColor(.red)
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .padding(12)
+                    .background(Color.black.opacity(0.8))
+                    .cornerRadius(8)
+                    .padding(.horizontal, 20)
+                }
+                
+                // 空流列表提示
+                if apiService.streamList.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                            .font(.system(size: 36))
+                            .foregroundColor(.orange)
+                        Text("当前节点暂无活跃在线流")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        Text("请在「配置」页检查节点域名，或点击下方刷新")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.7))
+                        Button(action: {
+                            apiService.fetchStreamList { streams in
+                                if !streams.isEmpty {
+                                    currentStreamIndex = 0
+                                    currentSourceIndex = 0
+                                    playCurrentStreamAndSource()
+                                }
+                            }
+                        }) {
+                            HStack(spacing: 4) {
+                                if apiService.isLoadingStreams {
+                                    ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                }
+                                Text("立即拉取节点流")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(6)
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .frame(height: 240) // 固定合理高度，保证下方控制区与底部导航栏完全不重叠
+            .gesture(
+                DragGesture(minimumDistance: 30)
+                    .onEnded { value in
+                        if value.translation.height < -40 {
+                            // 向上滑动 -> 下一个 (循环)
+                            switchNext()
+                        } else if value.translation.height > 40 {
+                            // 向下滑动 -> 上一个 (循环)
+                            switchPrevious()
+                        }
+                    }
+            )
+            
+            // MARK: - 2. 下半部分：视频信息与主控面板 (完全独立分区)
+            ScrollView {
+                VStack(spacing: 8) {
+                    // (1) 模式选择器与节点切换
                     HStack {
                         Picker("切换模式", selection: $switchMode) {
                             Text("切流 (\(currentStreamIndex + 1)/\(max(1, apiService.streamList.count)))").tag(FeedSwitchMode.stream)
@@ -175,7 +171,7 @@ public struct ShortVideoFeedView: View {
                         
                         Spacer()
                         
-                        // 节点快捷切换菜单
+                        // 节点快捷切换
                         if !apiService.nodeItems.isEmpty {
                             Menu {
                                 ForEach(apiService.nodeItems) { item in
@@ -202,12 +198,12 @@ public struct ShortVideoFeedView: View {
                                 }
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 4)
-                                .background(Color.secondary.opacity(0.15))
+                                .background(Color.secondary.opacity(0.12))
                                 .cornerRadius(6)
                             }
                         }
                     }
-                    .padding(.top, 8)
+                    .padding(.top, 4)
                     
                     // (2) 独立流信息卡片
                     if let stream = currentStream {
@@ -292,18 +288,16 @@ public struct ShortVideoFeedView: View {
                         .cornerRadius(8)
                     }
                     
-                    Spacer()
-                    
-                    // (4) 主控切换按钮条
-                    HStack(spacing: 28) {
+                    // (4) 主控切换按钮条 (支持循环切流/循环切内部播放地址)
+                    HStack(spacing: 24) {
                         Button(action: {
                             switchPrevious()
                         }) {
                             VStack(spacing: 3) {
                                 Image(systemName: "arrow.up.circle.fill")
-                                    .font(.system(size: 40))
-                                Text(switchMode == .stream ? "上一路流" : "上个地址")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.system(size: 38))
+                                Text(switchMode == .stream ? "上一路流(循环)" : "上个地址(循环)")
+                                    .font(.system(size: 10, weight: .bold))
                             }
                             .foregroundColor(canSwitchPrevious ? .blue : .gray.opacity(0.4))
                         }
@@ -314,7 +308,7 @@ public struct ShortVideoFeedView: View {
                             togglePlayPause()
                         }) {
                             Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 52))
+                                .font(.system(size: 48))
                                 .foregroundColor(.blue)
                         }
                         
@@ -323,9 +317,9 @@ public struct ShortVideoFeedView: View {
                         }) {
                             VStack(spacing: 3) {
                                 Image(systemName: "arrow.down.circle.fill")
-                                    .font(.system(size: 40))
-                                Text(switchMode == .stream ? "下一路流" : "下个地址")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(.system(size: 38))
+                                Text(switchMode == .stream ? "下一路流(循环)" : "下个地址(循环)")
+                                    .font(.system(size: 10, weight: .bold))
                             }
                             .foregroundColor(canSwitchNext ? .blue : .gray.opacity(0.4))
                         }
@@ -338,16 +332,17 @@ public struct ShortVideoFeedView: View {
                         }) {
                             VStack(spacing: 3) {
                                 Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 26))
-                                    .frame(height: 40)
-                                Text(isMuted ? "已静音" : "声音开")
+                                    .font(.system(size: 24))
+                                    .frame(height: 38)
+                                Text(isMuted ? "静音中" : "声音开")
                                     .font(.system(size: 10))
                             }
                             .foregroundColor(isMuted ? .red : .primary)
                         }
                     }
+                    .padding(.vertical, 4)
                     
-                    // (5) 底部 QoS 实时指标条
+                    // (5) QoS 实时指标条
                     if let qos = qosReport {
                         HStack(spacing: 10) {
                             Text("⚡️ 起播: \(String(format: "%.1f", qos.firstFrameDuration > 0 ? qos.firstFrameDuration : startLatencyMS)) ms")
@@ -364,12 +359,10 @@ public struct ShortVideoFeedView: View {
                         .cornerRadius(10)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 12)
-                .background(Color.black.opacity(0.04))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 16)
             }
         }
-        .edgesIgnoringSafeArea(.top)
         .onAppear {
             PlayerPoolManager.shared.warmUp()
             if apiService.hasCompleteConfig && apiService.streamList.isEmpty {
@@ -394,42 +387,48 @@ public struct ShortVideoFeedView: View {
     
     private var canSwitchPrevious: Bool {
         if switchMode == .stream {
-            return currentStreamIndex > 0
+            return !apiService.streamList.isEmpty
         } else {
-            return currentSourceIndex > 0
+            return !currentSources.isEmpty
         }
     }
     
     private var canSwitchNext: Bool {
         if switchMode == .stream {
-            return currentStreamIndex < apiService.streamList.count - 1
+            return !apiService.streamList.isEmpty
         } else {
-            return currentSourceIndex < currentSources.count - 1
+            return !currentSources.isEmpty
         }
     }
     
+    // MARK: - 循环切换上一个 (根据当前开关模式：循环切流 或 循环切内部地址)
     private func switchPrevious() {
         if switchMode == .stream {
-            guard currentStreamIndex > 0 else { return }
-            currentStreamIndex -= 1
+            guard !apiService.streamList.isEmpty else { return }
+            let count = apiService.streamList.count
+            currentStreamIndex = (currentStreamIndex - 1 + count) % count
             currentSourceIndex = 0
             playCurrentStreamAndSource()
         } else {
-            guard currentSourceIndex > 0 else { return }
-            currentSourceIndex -= 1
+            let sources = currentSources
+            guard !sources.isEmpty else { return }
+            currentSourceIndex = (currentSourceIndex - 1 + sources.count) % sources.count
             playCurrentSourceItem()
         }
     }
     
+    // MARK: - 循环切换下一个 (根据当前开关模式：循环切流 或 循环切内部地址)
     private func switchNext() {
         if switchMode == .stream {
-            guard currentStreamIndex < apiService.streamList.count - 1 else { return }
-            currentStreamIndex += 1
+            guard !apiService.streamList.isEmpty else { return }
+            let count = apiService.streamList.count
+            currentStreamIndex = (currentStreamIndex + 1) % count
             currentSourceIndex = 0
             playCurrentStreamAndSource()
         } else {
-            guard currentSourceIndex < currentSources.count - 1 else { return }
-            currentSourceIndex += 1
+            let sources = currentSources
+            guard !sources.isEmpty else { return }
+            currentSourceIndex = (currentSourceIndex + 1) % sources.count
             playCurrentSourceItem()
         }
     }
