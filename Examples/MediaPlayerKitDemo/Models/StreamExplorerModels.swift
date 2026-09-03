@@ -1,5 +1,25 @@
 import Foundation
 
+// MARK: - 节点域名配置项模型 (含域名与备注)
+public struct NodeConfigItem: Codable, Identifiable, Equatable, Hashable {
+    public var id: String
+    public var domain: String
+    public var remark: String
+    
+    public init(id: String = UUID().uuidString, domain: String, remark: String = "") {
+        self.id = id
+        self.domain = domain
+        self.remark = remark
+    }
+    
+    public var displayText: String {
+        if remark.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return domain
+        }
+        return "\(remark) (\(domain))"
+    }
+}
+
 // MARK: - 节点流列表响应
 public struct NodeStreamListResponse: Codable {
     public let count: Int?

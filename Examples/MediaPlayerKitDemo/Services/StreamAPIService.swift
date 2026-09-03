@@ -3,7 +3,6 @@ import Combine
 
 extension String {
     /// 对 Query 参数进行标准 URI Percent-Encoding
-    /// 确保 ! @ # $ & = + / 等特殊字符被正确转义，避免 # 被当做 URL Fragment 截断
     public func urlQueryComponentEncoded() -> String {
         let decoded = self.removingPercentEncoding ?? self
         var allowed = CharacterSet.alphanumerics
@@ -15,9 +14,10 @@ extension String {
 public final class StreamAPIService: ObservableObject {
     public static let shared = StreamAPIService()
     
-    private let kApiDomainKey = "StreamAPIService_ApiDomain_V2"
-    private let kNodeDomainKey = "StreamAPIService_NodeDomain_V2"
-    private let kSignKey = "StreamAPIService_Sign_V2"
+    private let kApiDomainKey = "StreamAPIService_ApiDomain_V3"
+    private let kSignKey = "StreamAPIService_Sign_V3"
+    private let kNodeItemsKey = "StreamAPIService_NodeItems_V3"
+    private let kActiveNodeDomainKey = "StreamAPIService_ActiveNodeDomain_V3"
     
     @Published public var apiDomain: String {
         didSet {
@@ -25,15 +25,25 @@ public final class StreamAPIService: ObservableObject {
             triggerAutoFetchIfComplete()
         }
     }
-    @Published public var nodeDomain: String {
-        didSet {
-            UserDefaults.standard.set(nodeDomain, forKey: kNodeDomainKey)
-            triggerAutoFetchIfComplete()
-        }
-    }
+    
     @Published public var sign: String {
         didSet {
             UserDefaults.standard.set(sign, forKey: kSignKey)
+            triggerAutoFetchIfComplete()
+        }
+    }
+    
+    @Published public var nodeItems: [NodeConfigItem] {
+        didSet {
+            if let data = try? JSONEncoder().encode(nodeItems) {
+                UserDefaults.standard.set(data, forKey: kNodeItemsKey)
+            }
+        }
+    }
+    
+    @Published public var activeNodeDomain: String {
+        didSet {
+            UserDefaults.standard.set(activeNodeDomain, forKey: kActiveNodeDomainKey)
             triggerAutoFetchIfComplete()
         }
     }
@@ -47,20 +57,75 @@ public final class StreamAPIService: ObservableObject {
     @Published public var isLoadingSources: Bool = false
     @Published public var sourcesError: String? = nil
     
-    // 播放源快速缓存 [StreamID: PlayerSourcesContainer]
+    // 播放源快速内存缓存 [StreamID: PlayerSourcesContainer]
     @Published public var sourcesCache: [String: PlayerSourcesContainer] = [:]
     
     public init() {
-        self.apiDomain = UserDefaults.standard.string(forKey: kApiDomainKey) ?? ""
-        self.nodeDomain = UserDefaults.standard.string(forKey: kNodeDomainKey) ?? ""
-        self.sign = UserDefaults.standard.string(forKey: kSignKey) ?? ""
+        self.apiDomain = UserDefaults.standard.string(forKey: kApiDomainKey) ?? "vadmin.weizan.cn"
+        self.sign = UserDefaults.standard.string(forKey: kSignKey) ?? "!@#$VZanLIVE"
+        
+        // 读取节点列表
+        if let data = UserDefaults.standard.data(forKey: kNodeItemsKey),
+           let items = try? JSONDecoder().decode([NodeConfigItem].self, from: data) {
+            self.nodeItems = items
+        } else {
+            self.nodeItems = []
+        }
+        
+        let savedActive = UserDefaults.standard.string(forKey: kActiveNodeDomainKey) ?? ""
+        if !savedActive.isEmpty {
+            self.activeNodeDomain = savedActive
+        } else if let first = self.nodeItems.first {
+            self.activeNodeDomain = first.domain
+        } else {
+            self.activeNodeDomain = ""
+        }
     }
     
     public var hasCompleteConfig: Bool {
         let a = apiDomain.trimmingCharacters(in: .whitespacesAndNewlines)
-        let n = nodeDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+        let n = activeNodeDomain.trimmingCharacters(in: .whitespacesAndNewlines)
         let s = sign.trimmingCharacters(in: .whitespacesAndNewlines)
         return !a.isEmpty && !n.isEmpty && !s.isEmpty
+    }
+    
+    public var activeNodeItem: NodeConfigItem? {
+        return nodeItems.first { $0.domain == activeNodeDomain }
+    }
+    
+    // MARK: - 节点管理方法
+    public func addNode(domain: String, remark: String) {
+        let cleanD = cleanRawDomain(domain)
+        guard !cleanD.isEmpty else { return }
+        
+        let newItem = NodeConfigItem(domain: cleanD, remark: remark.trimmingCharacters(in: .whitespacesAndNewlines))
+        // 避免重复添加完全相同域名的项
+        if let idx = nodeItems.firstIndex(where: { $0.domain == cleanD }) {
+            nodeItems[idx] = newItem
+        } else {
+            nodeItems.append(newItem)
+        }
+        
+        if activeNodeDomain.isEmpty {
+            activeNodeDomain = cleanD
+        }
+    }
+    
+    public func deleteNode(at offsets: IndexSet) {
+        nodeItems.remove(atOffsets: offsets)
+        if !nodeItems.contains(where: { $0.domain == activeNodeDomain }) {
+            activeNodeDomain = nodeItems.first?.domain ?? ""
+        }
+    }
+    
+    public func setActiveNode(domain: String) {
+        self.activeNodeDomain = domain
+        // 切换节点时清空旧节点的流缓存并重新拉流
+        self.streamList = []
+        self.selectedStreamId = nil
+        self.playerSources = nil
+        self.sourcesCache.removeAll()
+        fetchStreamList()
     }
     
     public func triggerAutoFetchIfComplete() {
@@ -80,7 +145,7 @@ public final class StreamAPIService: ObservableObject {
         return str
     }
     
-    private func cleanRawDomain(_ domain: String) -> String {
+    public func cleanRawDomain(_ domain: String) -> String {
         var d = domain.trimmingCharacters(in: .whitespacesAndNewlines)
         if d.hasPrefix("http://") { d = String(d.dropFirst(7)) }
         if d.hasPrefix("https://") { d = String(d.dropFirst(8)) }
@@ -88,20 +153,19 @@ public final class StreamAPIService: ObservableObject {
         return d
     }
     
-    // MARK: - 1. 获取流列表 (过滤带 @ 字符的内部流)
+    // MARK: - 1. 获取流列表 (基于当前选中的节点 activeNodeDomain)
     public func fetchStreamList(completion: (([NodeStreamInfo]) -> Void)? = nil) {
         guard hasCompleteConfig else {
-            self.streamListError = "请完整填写配置参数"
+            self.streamListError = "请在「配置」页填写接口域名、选择节点并配置 Sign"
             completion?([])
             return
         }
         
-        let nodeBase = normalizeUrlPrefix(nodeDomain, defaultScheme: "http")
+        let nodeBase = normalizeUrlPrefix(activeNodeDomain, defaultScheme: "http")
         let cAdmin = cleanRawDomain(apiDomain)
-        let cNode = cleanRawDomain(nodeDomain)
+        let cNode = cleanRawDomain(activeNodeDomain)
         let encodedSign = sign.urlQueryComponentEncoded()
         
-        // 候选请求地址列表（优先直连节点，若直连不通则尝试经由管理网关反向代理）
         let candidateUrls: [String] = [
             "\(nodeBase)/manager/streamclientipdata?sign=\(encodedSign)",
             "https://\(cAdmin)/\(cNode)/manager/streamclientipdata?sign=\(encodedSign)",
@@ -130,11 +194,11 @@ public final class StreamAPIService: ObservableObject {
                 do {
                     let resp = try JSONDecoder().decode(NodeStreamListResponse.self, from: data)
                     let rawList = resp.streams ?? []
-                    // 严格过滤掉带 @ 字符的内部流 ID
+                    // 严格过滤掉带 @ 字符的内部流
                     let list = rawList.filter { !$0.streamid.contains("@") }
                     self.streamList = list
                     if list.isEmpty {
-                        self.streamListError = "当前节点暂无可展示的推流 (已过滤内部流)"
+                        self.streamListError = "当前节点暂无活跃推流 (已过滤内部流)"
                     } else {
                         self.streamListError = nil
                     }
