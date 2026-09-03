@@ -5,7 +5,7 @@ import UIKit
 #endif
 
 public struct UniversalPlayerView: View {
-    @StateObject private var apiService = StreamAPIService.shared
+    @ObservedObject private var apiService = StreamAPIService.shared
     
     @State private var customURLText: String = ""
     @State private var player = MediaPlayerController()
@@ -21,7 +21,6 @@ public struct UniversalPlayerView: View {
     @State private var qosReport: PlayerQoSReport?
     @State private var errorMessage: String?
     
-    @State private var showConfigSection = true
     @State private var currentPlayingTitle: String = "待播放"
     
     public init() {}
@@ -29,7 +28,64 @@ public struct UniversalPlayerView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // MARK: - 1. 顶部视频渲染窗口
+                // MARK: - 1. 顶部节点状态指示条 (支持快捷切换节点)
+                HStack {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                    
+                    if apiService.nodeItems.isEmpty {
+                        Text("未添加节点，请前往「配置」页添加")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Menu {
+                            ForEach(apiService.nodeItems) { item in
+                                Button(action: {
+                                    apiService.setActiveNode(domain: item.domain)
+                                }) {
+                                    HStack {
+                                        Text(item.displayText)
+                                        if apiService.activeNodeDomain == item.domain {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("当前节点: \(apiService.activeNodeItem?.displayText ?? apiService.activeNodeDomain)")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.secondary.opacity(0.12))
+                            .cornerRadius(12)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    if apiService.hasCompleteConfig {
+                        Button(action: {
+                            apiService.fetchStreamList()
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.secondary.opacity(0.05))
+                
+                // MARK: - 2. 视频渲染窗口
                 ZStack(alignment: .topTrailing) {
                     PlayerViewRepresentable(player: player)
                         .frame(height: 220)
@@ -85,7 +141,7 @@ public struct UniversalPlayerView: View {
                     }
                 }
                 
-                // MARK: - 2. 进度条与播放控制栏
+                // MARK: - 3. 进度条与播放控制栏
                 VStack(spacing: 6) {
                     // 时间进度条
                     VStack(spacing: 2) {
@@ -181,90 +237,16 @@ public struct UniversalPlayerView: View {
                 .padding(.vertical, 6)
                 .background(Color.secondary.opacity(0.08))
                 
-                // MARK: - 3. 域名、节点域名与 Sign 配置区
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "slider.horizontal.3")
-                            .foregroundColor(.blue)
-                        Text("流调度与节点配置")
-                            .font(.system(size: 13, weight: .bold))
-                        Spacer()
-                        Button(action: {
-                            withAnimation { showConfigSection.toggle() }
-                        }) {
-                            Text(showConfigSection ? "收起" : "展开配置")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                        }
-                    }
-                    
-                    if showConfigSection {
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("接口域名:")
-                                    .font(.caption)
-                                    .frame(width: 68, alignment: .leading)
-                                TextField("输入接口域名 (如 vadmin.weizan.cn)", text: $apiService.apiDomain)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .font(.caption)
-                            }
-                            
-                            HStack {
-                                Text("节点域名:")
-                                    .font(.caption)
-                                    .frame(width: 68, alignment: .leading)
-                                TextField("输入节点域名 (如 p1.vzan.com:8000)", text: $apiService.nodeDomain)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .font(.caption)
-                            }
-                            
-                            HStack {
-                                Text("Sign 参数:")
-                                    .font(.caption)
-                                    .frame(width: 68, alignment: .leading)
-                                TextField("输入 Sign 参数", text: $apiService.sign)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .font(.caption)
-                            }
-                            
-                            Button(action: {
-                                apiService.fetchStreamList()
-                            }) {
-                                HStack {
-                                    if apiService.isLoadingStreams {
-                                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    } else {
-                                        Image(systemName: "arrow.clockwise")
-                                    }
-                                    Text("获取流列表")
-                                        .font(.system(size: 12, weight: .bold))
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(apiService.hasCompleteConfig ? Color.blue : Color.gray)
-                                .foregroundColor(.white)
-                                .cornerRadius(6)
-                            }
-                            .disabled(!apiService.hasCompleteConfig)
-                        }
-                    }
-                }
-                .padding(10)
-                .background(Color.secondary.opacity(0.05))
-                .cornerRadius(8)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                
-                // MARK: - 4. 节点流列表区
+                // MARK: - 4. 节点在线流列表区
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                             .foregroundColor(.green)
-                        Text("节点流列表")
+                        Text("节点实时在线流")
                             .font(.system(size: 13, weight: .bold))
                         
                         if !apiService.streamList.isEmpty {
-                            Text("\(apiService.streamList.count) 条")
+                            Text("\(apiService.streamList.count) 条活跃")
                                 .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -306,7 +288,7 @@ public struct UniversalPlayerView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                     } else if apiService.streamList.isEmpty {
-                        Text("暂无流数据，请填写上方配置后获取")
+                        Text("当前节点暂无流数据，请在「配置」页检查节点域名")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 10)
