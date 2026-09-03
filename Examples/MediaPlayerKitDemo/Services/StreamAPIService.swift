@@ -65,17 +65,19 @@ public final class StreamAPIService: ObservableObject {
         self.sign = UserDefaults.standard.string(forKey: kSignKey) ?? "!@#$VZanLIVE"
         
         // 读取节点列表
+        let loadedItems: [NodeConfigItem]
         if let data = UserDefaults.standard.data(forKey: kNodeItemsKey),
            let items = try? JSONDecoder().decode([NodeConfigItem].self, from: data) {
-            self.nodeItems = items
+            loadedItems = items
         } else {
-            self.nodeItems = []
+            loadedItems = []
         }
+        self.nodeItems = loadedItems
         
         let savedActive = UserDefaults.standard.string(forKey: kActiveNodeDomainKey) ?? ""
         if !savedActive.isEmpty {
             self.activeNodeDomain = savedActive
-        } else if let first = self.nodeItems.first {
+        } else if let first = loadedItems.first {
             self.activeNodeDomain = first.domain
         } else {
             self.activeNodeDomain = ""
