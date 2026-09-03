@@ -51,7 +51,7 @@ public struct ShortVideoFeedView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // MARK: - 1. 上半部分：独立视频播放区域 (支持上下滑动手势与点击播放/暂停)
+            // MARK: - 1. 上半部分：自适应视频播放器 (占满剩余空间，上下滑动手势切流)
             ZStack {
                 Color.black
                 
@@ -77,7 +77,7 @@ public struct ShortVideoFeedView: View {
                 // 暂停状态浮标
                 if !isPlaying && playerState != .idle && !isLoading {
                     Image(systemName: "play.circle.fill")
-                        .font(.system(size: 52))
+                        .font(.system(size: 48))
                         .foregroundColor(.white.opacity(0.85))
                         .shadow(radius: 6)
                         .onTapGesture {
@@ -87,33 +87,32 @@ public struct ShortVideoFeedView: View {
                 
                 // 错误信息覆盖提示
                 if let err = errorMessage {
-                    VStack(spacing: 6) {
+                    VStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.title2)
+                            .font(.body)
                             .foregroundColor(.red)
                         Text(err)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(.white)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal)
+                            .lineLimit(2)
                     }
-                    .padding(12)
+                    .padding(8)
                     .background(Color.black.opacity(0.8))
-                    .cornerRadius(8)
+                    .cornerRadius(6)
                     .padding(.horizontal, 20)
                 }
                 
                 // 空流列表提示
                 if apiService.streamList.isEmpty {
-                    VStack(spacing: 10) {
+                    VStack(spacing: 8) {
                         Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                            .font(.system(size: 36))
+                            .font(.system(size: 32))
                             .foregroundColor(.orange)
                         Text("当前节点暂无活跃在线流")
-                            .font(.subheadline)
-                            .fontWeight(.bold)
+                            .font(.system(size: 13, weight: .bold))
                             .foregroundColor(.white)
-                        Text("请在「配置」页检查节点域名，或点击下方刷新")
+                        Text("请在「节点配置」检查域名或点击刷新")
                             .font(.caption2)
                             .foregroundColor(.white.opacity(0.7))
                         Button(action: {
@@ -131,11 +130,11 @@ public struct ShortVideoFeedView: View {
                                 } else {
                                     Image(systemName: "arrow.clockwise")
                                 }
-                                Text("立即拉取节点流")
+                                Text("拉取节点流")
                                     .font(.system(size: 11, weight: .bold))
                             }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
                             .background(Color.blue)
                             .foregroundColor(.white)
                             .cornerRadius(6)
@@ -144,7 +143,7 @@ public struct ShortVideoFeedView: View {
                     .padding()
                 }
             }
-            .frame(height: 240) // 固定合理高度，保证下方控制区与底部导航栏完全不重叠
+            .frame(maxWidth: .infinity, maxHeight: .infinity) // 自适应填满上半部分
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
@@ -158,210 +157,188 @@ public struct ShortVideoFeedView: View {
                     }
             )
             
-            // MARK: - 2. 下半部分：视频信息与主控面板 (完全独立分区)
-            ScrollView {
-                VStack(spacing: 8) {
-                    // (1) 模式选择器与节点切换
-                    HStack {
-                        Picker("切换模式", selection: $switchMode) {
-                            Text("切流 (\(currentStreamIndex + 1)/\(max(1, apiService.streamList.count)))").tag(FeedSwitchMode.stream)
-                            Text("切内部地址 (\(currentSources.count > 0 ? "\(currentSourceIndex + 1)/\(currentSources.count)" : "0"))").tag(FeedSwitchMode.source)
-                        }
-                        .pickerStyle(SegmentedPickerStyle())
-                        
-                        Spacer()
-                        
-                        // 节点快捷切换
-                        if !apiService.nodeItems.isEmpty {
-                            Menu {
-                                ForEach(apiService.nodeItems) { item in
-                                    Button(action: {
-                                        apiService.setActiveNode(domain: item.domain)
-                                        currentStreamIndex = 0
-                                        currentSourceIndex = 0
-                                    }) {
-                                        HStack {
-                                            Text(item.displayText)
-                                            if apiService.activeNodeDomain == item.domain {
-                                                Image(systemName: "checkmark")
-                                            }
+            // MARK: - 2. 下半部分：紧凑型控制与信息面板 (无需滚动，全可见，直观高效)
+            VStack(spacing: 8) {
+                // (1) 模式选择器与节点快捷切换
+                HStack(spacing: 8) {
+                    Picker("切换模式", selection: $switchMode) {
+                        Text("切流 (\(currentStreamIndex + 1)/\(max(1, apiService.streamList.count)))").tag(FeedSwitchMode.stream)
+                        Text("切内部地址 (\(currentSources.count > 0 ? "\(currentSourceIndex + 1)/\(currentSources.count)" : "0"))").tag(FeedSwitchMode.source)
+                    }
+                    .pickerStyle(SegmentedPickerStyle())
+                    
+                    if !apiService.nodeItems.isEmpty {
+                        Menu {
+                            ForEach(apiService.nodeItems) { item in
+                                Button(action: {
+                                    apiService.setActiveNode(domain: item.domain)
+                                    currentStreamIndex = 0
+                                    currentSourceIndex = 0
+                                }) {
+                                    HStack {
+                                        Text(item.displayText)
+                                        if apiService.activeNodeDomain == item.domain {
+                                            Image(systemName: "checkmark")
                                         }
                                     }
                                 }
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "antenna.radiowaves.left.and.right")
-                                        .font(.system(size: 9))
-                                    Text(apiService.activeNodeItem?.remark.isEmpty == false ? apiService.activeNodeItem!.remark : apiService.activeNodeDomain)
-                                        .font(.system(size: 10, weight: .bold))
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 4)
-                                .background(Color.secondary.opacity(0.12))
-                                .cornerRadius(6)
                             }
-                        }
-                    }
-                    .padding(.top, 4)
-                    
-                    // (2) 独立流信息卡片
-                    if let stream = currentStream {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text("📡 流 ID:")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.blue)
-                                Text(stream.streamid)
-                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.primary)
+                        } label: {
+                            HStack(spacing: 2) {
+                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                    .font(.system(size: 8))
+                                Text(apiService.activeNodeItem?.remark.isEmpty == false ? apiService.activeNodeItem!.remark : apiService.activeNodeDomain)
+                                    .font(.system(size: 9, weight: .bold))
                                     .lineLimit(1)
-                                Spacer()
-                                if !stream.resolutionText.isEmpty {
-                                    Text(stream.resolutionText)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 2)
-                                        .background(Color.blue.opacity(0.12))
-                                        .foregroundColor(.blue)
-                                        .cornerRadius(4)
-                                }
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 7))
                             }
-                            
-                            HStack(spacing: 8) {
-                                if !stream.fpsText.isEmpty {
-                                    Text(stream.fpsText)
-                                        .foregroundColor(.secondary)
-                                }
-                                if !stream.bitrateText.isEmpty {
-                                    Text(stream.bitrateText)
-                                        .foregroundColor(.green)
-                                }
-                                if !stream.locationText.isEmpty {
-                                    Text(stream.locationText)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            .font(.system(size: 10))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .background(Color.secondary.opacity(0.12))
+                            .cornerRadius(5)
                         }
-                        .padding(8)
-                        .background(Color.secondary.opacity(0.06))
-                        .cornerRadius(8)
                     }
-                    
-                    // (3) 独立播放源卡片
-                    if let source = currentSource {
-                        HStack(spacing: 8) {
+                }
+                
+                // (2) 融合式流信息与播放源卡片 (紧凑高密度展示)
+                VStack(alignment: .leading, spacing: 3) {
+                    // 第 1 行：流 ID + 播放源协议/编码/厂商标签
+                    HStack(spacing: 6) {
+                        Text("📡 \(currentStream?.streamid ?? "未选择流")")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        Spacer()
+                        
+                        if let source = currentSource {
                             Text(source.type.uppercased())
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
                                 .background(source.type.lowercased() == "flv" ? Color.orange : Color.blue)
                                 .foregroundColor(.white)
-                                .cornerRadius(4)
+                                .cornerRadius(3)
                             
                             if !source.codecText.isEmpty {
                                 Text(source.codecText)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 2)
-                                    .background(Color.secondary.opacity(0.12))
-                                    .foregroundColor(.primary)
-                                    .cornerRadius(4)
+                                    .font(.system(size: 8.5, weight: .medium))
+                                    .padding(.horizontal, 3)
+                                    .padding(.vertical, 1)
+                                    .background(Color.secondary.opacity(0.15))
+                                    .cornerRadius(3)
                             }
                             
                             if let v = source.vendor, !v.isEmpty {
                                 Text(v.uppercased())
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 8.5))
                                     .foregroundColor(.secondary)
                             }
-                            
-                            Spacer()
-                            
-                            Text("地址 \(currentSourceIndex + 1)/\(currentSources.count)")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.orange)
-                        }
-                        .padding(8)
-                        .background(Color.secondary.opacity(0.06))
-                        .cornerRadius(8)
-                    }
-                    
-                    // (4) 主控切换按钮条 (支持循环切流/循环切内部播放地址)
-                    HStack(spacing: 24) {
-                        Button(action: {
-                            switchPrevious()
-                        }) {
-                            VStack(spacing: 3) {
-                                Image(systemName: "arrow.up.circle.fill")
-                                    .font(.system(size: 38))
-                                Text(switchMode == .stream ? "上一路流(循环)" : "上个地址(循环)")
-                                    .font(.system(size: 10, weight: .bold))
-                            }
-                            .foregroundColor(canSwitchPrevious ? .blue : .gray.opacity(0.4))
-                        }
-                        .disabled(!canSwitchPrevious)
-                        
-                        // 播放/暂停
-                        Button(action: {
-                            togglePlayPause()
-                        }) {
-                            Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 48))
-                                .foregroundColor(.blue)
-                        }
-                        
-                        Button(action: {
-                            switchNext()
-                        }) {
-                            VStack(spacing: 3) {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .font(.system(size: 38))
-                                Text(switchMode == .stream ? "下一路流(循环)" : "下个地址(循环)")
-                                    .font(.system(size: 10, weight: .bold))
-                            }
-                            .foregroundColor(canSwitchNext ? .blue : .gray.opacity(0.4))
-                        }
-                        .disabled(!canSwitchNext)
-                        
-                        // 静音切换
-                        Button(action: {
-                            isMuted.toggle()
-                            activePlayer?.setMute(isMuted)
-                        }) {
-                            VStack(spacing: 3) {
-                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                    .font(.system(size: 24))
-                                    .frame(height: 38)
-                                Text(isMuted ? "静音中" : "声音开")
-                                    .font(.system(size: 10))
-                            }
-                            .foregroundColor(isMuted ? .red : .primary)
                         }
                     }
-                    .padding(.vertical, 4)
                     
-                    // (5) QoS 实时指标条
-                    if let qos = qosReport {
-                        HStack(spacing: 10) {
-                            Text("⚡️ 起播: \(String(format: "%.1f", qos.firstFrameDuration > 0 ? qos.firstFrameDuration : startLatencyMS)) ms")
-                                .foregroundColor(.green)
-                            Text("内核: \(qos.engineName)")
-                                .foregroundColor(.primary)
-                            Text("硬解: \(qos.isHardwareAccelerated ? "开" : "关")")
-                                .foregroundColor(.secondary)
+                    // 第 2 行：分辨率、帧率、码率、IP 归属地
+                    if let stream = currentStream {
+                        HStack(spacing: 6) {
+                            if !stream.resolutionText.isEmpty {
+                                Text(stream.resolutionText)
+                                    .foregroundColor(.blue)
+                            }
+                            if !stream.fpsText.isEmpty {
+                                Text(stream.fpsText)
+                            }
+                            if !stream.bitrateText.isEmpty {
+                                Text(stream.bitrateText)
+                                    .foregroundColor(.green)
+                            }
+                            if !stream.locationText.isEmpty {
+                                Text(stream.locationText)
+                                    .lineLimit(1)
+                            }
                         }
-                        .font(.system(size: 9.5, design: .monospaced))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color.secondary.opacity(0.08))
-                        .cornerRadius(10)
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 16)
+                .padding(6)
+                .background(Color.secondary.opacity(0.06))
+                .cornerRadius(6)
+                
+                // (3) 主控切换按钮条 (大尺寸按键，直接操作无阻碍)
+                HStack(spacing: 20) {
+                    Button(action: {
+                        switchPrevious()
+                    }) {
+                        VStack(spacing: 2) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 34))
+                            Text(switchMode == .stream ? "上一路流" : "上个地址")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .foregroundColor(canSwitchPrevious ? .blue : .gray.opacity(0.4))
+                    }
+                    .disabled(!canSwitchPrevious)
+                    
+                    // 播放/暂停
+                    Button(action: {
+                        togglePlayPause()
+                    }) {
+                        Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.blue)
+                    }
+                    
+                    Button(action: {
+                        switchNext()
+                    }) {
+                        VStack(spacing: 2) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 34))
+                            Text(switchMode == .stream ? "下一路流" : "下个地址")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .foregroundColor(canSwitchNext ? .blue : .gray.opacity(0.4))
+                    }
+                    .disabled(!canSwitchNext)
+                    
+                    // 静音切换
+                    Button(action: {
+                        isMuted.toggle()
+                        activePlayer?.setMute(isMuted)
+                    }) {
+                        VStack(spacing: 2) {
+                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: 22))
+                                .frame(height: 34)
+                            Text(isMuted ? "静音" : "声音")
+                                .font(.system(size: 9))
+                        }
+                        .foregroundColor(isMuted ? .red : .primary)
+                    }
+                }
+                
+                // (4) 底部 QoS 实时指标极简胶囊
+                if let qos = qosReport {
+                    HStack(spacing: 8) {
+                        Text("⚡️ 起播: \(String(format: "%.1f", qos.firstFrameDuration > 0 ? qos.firstFrameDuration : startLatencyMS)) ms")
+                            .foregroundColor(.green)
+                        Text("内核: \(qos.engineName)")
+                            .foregroundColor(.primary)
+                        Text("硬解: \(qos.isHardwareAccelerated ? "开启" : "关闭")")
+                            .foregroundColor(.secondary)
+                    }
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.08))
+                    .cornerRadius(8)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 8)
+            .background(Color.secondary.opacity(0.03))
         }
         .onAppear {
             PlayerPoolManager.shared.warmUp()
@@ -401,7 +378,7 @@ public struct ShortVideoFeedView: View {
         }
     }
     
-    // MARK: - 循环切换上一个 (根据当前开关模式：循环切流 或 循环切内部地址)
+    // MARK: - 循环切换上一个
     private func switchPrevious() {
         if switchMode == .stream {
             guard !apiService.streamList.isEmpty else { return }
@@ -417,7 +394,7 @@ public struct ShortVideoFeedView: View {
         }
     }
     
-    // MARK: - 循环切换下一个 (根据当前开关模式：循环切流 或 循环切内部地址)
+    // MARK: - 循环切换下一个
     private func switchNext() {
         if switchMode == .stream {
             guard !apiService.streamList.isEmpty else { return }
