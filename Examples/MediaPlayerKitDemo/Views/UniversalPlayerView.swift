@@ -8,20 +8,24 @@ public struct UniversalPlayerView: View {
     @ObservedObject private var apiService = StreamAPIService.shared
     
     @State private var customURLText: String = ""
-    @State private var player = MediaPlayerController()
+    
+    // MARK: - VZPlayer (IH5Player) 核心实例与渲染视图
+    private let playerView = MediaPlayerView()
+    @State private var vzPlayer: IH5Player?
+    @State private var coordinator: VZH5PlayerCoordinator?
     
     @State private var isPlaying = false
+    @State private var isBuffering = false
     @State private var currentPosition: TimeInterval = 0
     @State private var duration: TimeInterval = 0
-    @State private var bufferedDuration: TimeInterval = 0
-    @State private var playerState: PlayerState = .idle
+    @State private var bufferedText: String = "0"
     @State private var playbackRate: Float = 1.0
     @State private var isMuted = false
-    @State private var showQoSOverlay = true
-    @State private var qosReport: PlayerQoSReport?
+    @State private var showH5Monitor = true
     @State private var errorMessage: String?
-    
     @State private var currentPlayingTitle: String = "待播放"
+    @State private var currentSourceJSON: String = "{}"
+    @State private var recentH5Events: [String] = []
     
     public init() {}
 
@@ -85,14 +89,14 @@ public struct UniversalPlayerView: View {
                 .padding(.vertical, 6)
                 .background(Color.secondary.opacity(0.05))
                 
-                // MARK: - 2. 视频渲染窗口
+                // MARK: - 2. 视频渲染窗口 (VZPlayerView)
                 ZStack(alignment: .topTrailing) {
-                    PlayerViewRepresentable(player: player)
+                    VZPlayerViewRepresentable(playerView: playerView)
                         .frame(height: 220)
                         .background(Color.black)
                     
                     // 状态加载指示器
-                    if playerState == .preparing || playerState == .buffering {
+                    if isBuffering {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                             .scaleEffect(1.4)
@@ -115,11 +119,11 @@ public struct UniversalPlayerView: View {
                         .background(Color.black.opacity(0.85))
                     }
                     
-                    // 实时 QoS 性能悬浮窗
-                    if showQoSOverlay, let qos = qosReport {
+                    // 实时 H5 API 监控指示悬浮窗
+                    if showH5Monitor {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
-                                Text("⚡️ QoS 监控")
+                                Text("⚡️ IH5Player API 监控")
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundColor(.yellow)
                                 Spacer()
@@ -128,9 +132,14 @@ public struct UniversalPlayerView: View {
                                     .foregroundColor(.green)
                                     .lineLimit(1)
                             }
-                            Text("内核: \(qos.engineName) | 硬解: \(qos.isHardwareAccelerated ? "开" : "关")")
-                            Text("分辨率: \(qos.videoWidth)x\(qos.videoHeight) | 状态: \(playerState.description)")
-                            Text("首帧耗时: \(String(format: "%.1f", qos.firstFrameDuration)) ms")
+                            Text("进度: \(vzPlayer?.get_currentTime() ?? "{}") | 时长: \(vzPlayer?.get_duration() ?? "{}")")
+                            Text("音量: \(vzPlayer?.get_volume() ?? "{}") | 静音: \(vzPlayer?.get_muted() ?? "{}")")
+                            Text("倍速: \(vzPlayer?.get_speed() ?? "{}") | 缓冲: \(vzPlayer?.get_buffered() ?? "{}")")
+                            if !recentH5Events.isEmpty {
+                                Text("事件: \(recentH5Events.suffix(3).joined(separator: " ➔ "))")
+                                    .foregroundColor(.cyan)
+                                    .lineLimit(1)
+                            }
                         }
                         .font(.system(size: 8.5, design: .monospaced))
                         .foregroundColor(.white)
@@ -141,13 +150,13 @@ public struct UniversalPlayerView: View {
                     }
                 }
                 
-                // MARK: - 3. 进度条与播放控制栏
+                // MARK: - 3. 进度条与播放控制栏 (通过 IH5Player API 控制)
                 VStack(spacing: 6) {
                     // 时间进度条
                     VStack(spacing: 2) {
                         Slider(value: $currentPosition, in: 0...max(1, duration)) { editing in
                             if !editing {
-                                player.seek(to: currentPosition)
+                                _ = vzPlayer?.set_currentTime("{\"currentTime\": \(Int(currentPosition))}")
                             }
                         }
                         .accentColor(.blue)
@@ -155,8 +164,8 @@ public struct UniversalPlayerView: View {
                         HStack {
                             Text(timeString(currentPosition))
                             Spacer()
-                            Text("状态: \(playerState.description)")
-                                .foregroundColor(playerState == .playing ? .green : .secondary)
+                            Text(isPlaying ? "🟢 播放中" : "⚪️ 已暂停")
+                                .foregroundColor(isPlaying ? .green : .secondary)
                             Spacer()
                             Text(timeString(duration))
                         }
@@ -165,10 +174,11 @@ public struct UniversalPlayerView: View {
                     }
                     .padding(.horizontal, 12)
                     
-                    // 控制按钮条
-                    HStack(spacing: 20) {
+                    // 控制按钮条 (对标 IH5Player play/pause/set_speed/set_muted/SendEvent)
+                    HStack(spacing: 16) {
                         Button(action: {
-                            player.seek(to: max(0, currentPosition - 10))
+                            let newPos = max(0, currentPosition - 10)
+                            _ = vzPlayer?.set_currentTime("{\"currentTime\": \(Int(newPos))}")
                         }) {
                             Image(systemName: "gobackward.10")
                                 .font(.body)
@@ -177,11 +187,9 @@ public struct UniversalPlayerView: View {
                         
                         Button(action: {
                             if isPlaying {
-                                player.pause()
-                                isPlaying = false
+                                vzPlayer?.pause()
                             } else {
-                                player.play()
-                                isPlaying = true
+                                vzPlayer?.play()
                             }
                         }) {
                             Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -190,21 +198,37 @@ public struct UniversalPlayerView: View {
                         }
                         
                         Button(action: {
-                            player.seek(to: min(duration, currentPosition + 10))
+                            let newPos = min(duration, currentPosition + 10)
+                            _ = vzPlayer?.set_currentTime("{\"currentTime\": \(Int(newPos))}")
                         }) {
                             Image(systemName: "goforward.10")
                                 .font(.body)
                                 .foregroundColor(.primary)
                         }
                         
+                        // 主动切下一个源 (SendEvent NEXT_SOURCE)
+                        Button(action: {
+                            vzPlayer?.sendEvent("NEXT_SOURCE", paramsJson: "{}")
+                            refreshH5State()
+                        }) {
+                            VStack(spacing: 1) {
+                                Image(systemName: "arrow.triangle.swap")
+                                    .font(.system(size: 14))
+                                Text("下个源")
+                                    .font(.system(size: 8))
+                            }
+                            .foregroundColor(.purple)
+                        }
+                        
                         Divider().frame(height: 18)
                         
-                        // 倍速切换菜单
+                        // 倍速切换菜单 (set_speed)
                         Menu {
                             ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
                                 Button("\(String(format: "%.2fx", rate))") {
                                     playbackRate = Float(rate)
-                                    player.setPlaybackRate(Float(rate))
+                                    _ = vzPlayer?.set_speed("{\"speed\": \(rate)}")
+                                    refreshH5State()
                                 }
                             }
                         } label: {
@@ -216,21 +240,22 @@ public struct UniversalPlayerView: View {
                                 .cornerRadius(4)
                         }
                         
-                        // 静音切换
+                        // 静音切换 (set_muted)
                         Button(action: {
                             isMuted.toggle()
-                            player.setMute(isMuted)
+                            _ = vzPlayer?.set_muted("{\"muted\": \(isMuted)}")
+                            refreshH5State()
                         }) {
                             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                 .foregroundColor(isMuted ? .red : .primary)
                         }
                         
-                        // QoS 悬浮窗开关
+                        // H5 监控悬浮窗开关
                         Button(action: {
-                            showQoSOverlay.toggle()
+                            showH5Monitor.toggle()
                         }) {
-                            Image(systemName: showQoSOverlay ? "gauge.with.needle.fill" : "gauge.with.needle")
-                                .foregroundColor(showQoSOverlay ? .yellow : .secondary)
+                            Image(systemName: showH5Monitor ? "gauge.with.needle.fill" : "gauge.with.needle")
+                                .foregroundColor(showH5Monitor ? .yellow : .secondary)
                         }
                     }
                 }
@@ -242,29 +267,19 @@ public struct UniversalPlayerView: View {
                     HStack {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                             .foregroundColor(.green)
-                        Text("节点实时在线流")
-                            .font(.system(size: 13, weight: .bold))
+                        Text("节点实时在线流 (点击直接注入 VZPlayerSource)")
+                            .font(.system(size: 12, weight: .bold))
                         
                         if !apiService.streamList.isEmpty {
-                            Text("\(apiService.streamList.count) 条活跃")
+                            Text("\(apiService.streamList.count) 条")
                                 .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
                                 .background(Color.green.opacity(0.2))
                                 .foregroundColor(.green)
-                                .cornerRadius(8)
+                                .cornerRadius(6)
                         }
                         Spacer()
-                        
-                        if apiService.hasCompleteConfig {
-                            Button(action: {
-                                apiService.fetchStreamList()
-                            }) {
-                                Image(systemName: "arrow.triangle.2.circlepath")
-                                    .font(.caption)
-                                    .foregroundColor(.blue)
-                            }
-                        }
                     }
                     .padding(.horizontal, 10)
                     .padding(.top, 6)
@@ -277,326 +292,226 @@ public struct UniversalPlayerView: View {
                             Spacer()
                         }
                         .padding(.vertical, 12)
-                    } else if let err = apiService.streamListError {
-                        HStack {
-                            Image(systemName: "info.circle")
-                                .foregroundColor(.orange)
-                            Text(err)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
                     } else if apiService.streamList.isEmpty {
-                        Text("当前节点暂无流数据，请在「配置」页检查节点域名")
-                            .font(.caption)
+                        Text("当前节点暂无活跃流，可在下方手动输入播放地址")
+                            .font(.caption2)
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 10)
                     } else {
-                        // 流列表横向展示
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(apiService.streamList) { stream in
                                     Button(action: {
-                                        apiService.fetchPlayerSources(for: stream.streamid)
+                                        playNodeStream(stream)
                                     }) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack {
-                                                Text(stream.streamid)
-                                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                                    .foregroundColor(.primary)
-                                                    .lineLimit(1)
-                                                Spacer()
-                                                if apiService.selectedStreamId == stream.streamid {
-                                                    Image(systemName: "checkmark.circle.fill")
-                                                        .foregroundColor(.blue)
-                                                        .font(.caption2)
-                                                }
-                                            }
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(stream.streamid)
+                                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                                .foregroundColor(.primary)
+                                                .lineLimit(1)
                                             
-                                            HStack(spacing: 6) {
+                                            HStack(spacing: 4) {
                                                 if !stream.resolutionText.isEmpty {
                                                     Text(stream.resolutionText)
+                                                        .font(.system(size: 8.5))
+                                                        .foregroundColor(.blue)
                                                 }
                                                 if !stream.fpsText.isEmpty {
                                                     Text(stream.fpsText)
-                                                }
-                                            }
-                                            .font(.system(size: 9))
-                                            .foregroundColor(.secondary)
-                                            
-                                            HStack(spacing: 6) {
-                                                if !stream.bitrateText.isEmpty {
-                                                    Text(stream.bitrateText)
-                                                        .foregroundColor(.blue)
-                                                }
-                                                if !stream.locationText.isEmpty {
-                                                    Text(stream.locationText)
+                                                        .font(.system(size: 8.5))
                                                         .foregroundColor(.secondary)
-                                                        .lineLimit(1)
                                                 }
                                             }
-                                            .font(.system(size: 9))
                                         }
-                                        .padding(8)
-                                        .frame(width: 210)
-                                        .background(apiService.selectedStreamId == stream.streamid ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.06))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 6)
-                                                .stroke(apiService.selectedStreamId == stream.streamid ? Color.blue : Color.clear, lineWidth: 1.5)
-                                        )
+                                        .padding(6)
+                                        .background(Color.secondary.opacity(0.08))
                                         .cornerRadius(6)
                                     }
-                                    .buttonStyle(PlainButtonStyle())
                                 }
                             }
                             .padding(.horizontal, 10)
                         }
                     }
                 }
+                .padding(.vertical, 4)
                 
-                // MARK: - 5. 选定流的播放地址源列表（选择即播）
-                if let streamId = apiService.selectedStreamId {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "play.rectangle.on.rectangle.fill")
-                                .foregroundColor(.orange)
-                            Text("播放地址列表 (流: \(streamId))")
-                                .font(.system(size: 13, weight: .bold))
-                            Spacer()
-                            if apiService.isLoadingSources {
-                                ProgressView().scaleEffect(0.8)
-                            }
-                        }
+                // MARK: - 5. 手动输入与自定义源测试
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("自定义播放源测试 (支持 HLS / FLV / MP4)")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.secondary)
                         .padding(.horizontal, 10)
-                        .padding(.top, 6)
-                        
-                        if let err = apiService.sourcesError {
-                            Text(err)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                                .padding(.horizontal, 10)
-                        } else if let container = apiService.playerSources {
-                            let allSources = container.allSources
-                            if allSources.isEmpty {
-                                Text("未查询到可用播放地址")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 10)
-                            } else {
-                                VStack(spacing: 6) {
-                                    ForEach(allSources) { source in
-                                        Button(action: {
-                                            playSource(source, streamId: streamId)
-                                        }) {
-                                            HStack(alignment: .center, spacing: 8) {
-                                                // 协议 Badge
-                                                Text(source.type.uppercased())
-                                                    .font(.system(size: 10, weight: .bold))
-                                                    .padding(.horizontal, 5)
-                                                    .padding(.vertical, 3)
-                                                    .background(source.type.lowercased() == "flv" ? Color.orange : Color.blue)
-                                                    .foregroundColor(.white)
-                                                    .cornerRadius(4)
-                                                
-                                                // 编码 Badge
-                                                if !source.codecText.isEmpty {
-                                                    Text(source.codecText)
-                                                        .font(.system(size: 9, weight: .medium))
-                                                        .padding(.horizontal, 4)
-                                                        .padding(.vertical, 2)
-                                                        .background(Color.secondary.opacity(0.15))
-                                                        .foregroundColor(.primary)
-                                                        .cornerRadius(3)
-                                                }
-                                                
-                                                if let v = source.vendor, !v.isEmpty {
-                                                    Text(v.uppercased())
-                                                        .font(.system(size: 9))
-                                                        .foregroundColor(.secondary)
-                                                }
-                                                
-                                                Spacer()
-                                                
-                                                // 播放按钮
-                                                HStack(spacing: 3) {
-                                                    Image(systemName: "play.fill")
-                                                        .font(.system(size: 9))
-                                                    Text("播放")
-                                                        .font(.system(size: 11, weight: .bold))
-                                                }
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color.green)
-                                                .foregroundColor(.white)
-                                                .cornerRadius(4)
-                                            }
-                                            .padding(8)
-                                            .background(Color.secondary.opacity(0.06))
-                                            .cornerRadius(6)
-                                        }
-                                        .buttonStyle(PlainButtonStyle())
-                                    }
-                                }
-                                .padding(.horizontal, 10)
-                            }
-                        }
-                    }
-                    .padding(.top, 4)
-                }
-                
-                // MARK: - 6. 手动自定义链接输入区域
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("🔗 手动指定视频链接")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.primary)
                     
                     HStack {
-                        TextField("输入或粘贴视频链接 (flv/rtmp/m3u8/mp4)...", text: $customURLText)
+                        TextField("输入播放 URL (如 https://...m3u8)", text: $customURLText)
                             .textFieldStyle(RoundedBorderTextFieldStyle())
                             .font(.system(size: 12))
                         
-                        if !customURLText.isEmpty {
-                            Button(action: { customURLText = "" }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        
-                        #if canImport(UIKit)
                         Button(action: {
-                            if let clip = UIPasteboard.general.string, !clip.isEmpty {
-                                customURLText = clip.trimmingCharacters(in: .whitespacesAndNewlines)
-                            }
+                            playCustomURL(customURLText)
                         }) {
-                            Text("粘贴")
-                                .font(.system(size: 11, weight: .medium))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(Color.secondary.opacity(0.15))
-                                .cornerRadius(5)
+                            Text("播放")
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.blue)
+                                .foregroundColor(.white)
+                                .cornerRadius(6)
                         }
-                        #endif
                     }
-                    
-                    Button(action: {
-                        playCustomURL()
-                    }) {
-                        HStack {
-                            Image(systemName: "play.fill")
-                            Text("立即播放自定义链接")
-                                .fontWeight(.bold)
-                        }
-                        .font(.system(size: 12))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(6)
-                    }
+                    .padding(.horizontal, 10)
                 }
-                .padding(10)
-                .background(Color.secondary.opacity(0.05))
-                .cornerRadius(8)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.vertical, 6)
             }
         }
         .onAppear {
-            setupPlayer()
-            if apiService.hasCompleteConfig {
-                apiService.fetchStreamList()
-            }
+            setupVZPlayer()
         }
         .onDisappear {
-            player.stop()
+            vzPlayer?.destroy()
         }
     }
     
-    private func setupPlayer() {
-        let coordinator = PlayerCoordinator(
-            onStateChange: { state in
-                self.playerState = state
-                self.isPlaying = (state == .playing)
-                if state == .playing {
-                    self.errorMessage = nil
+    // MARK: - 初始化 VZPlayer 与 H5 事件监听
+    
+    private func setupVZPlayer() {
+        guard vzPlayer == nil else { return }
+        
+        // 1. 初始化全局配置 (对标 export.Init)
+        let initConfig = VZInitConfig()
+        initConfig.userId = 10001
+        initConfig.topicId = "topic_demo"
+        initConfig.deviceInfo = "iOS MediaPlayerKit Demo"
+        export.Init(initConfig, nil)
+        
+        // 2. 创建 IH5Player 门面对象 (对标 export.CreateVZPlayer)
+        let player = export.CreateVZPlayer(playerView)
+        
+        // 3. 绑定 H5 事件监听器 (对标 IH5Player.H5EventListener)
+        let coord = VZH5PlayerCoordinator(
+            onEvent: { eventName in
+                recentH5Events.append(eventName)
+                if eventName == "play" || eventName == "playing" {
+                    isPlaying = true
+                    errorMessage = nil
+                } else if eventName == "pause" {
+                    isPlaying = false
+                } else if eventName == "waiting" {
+                    isBuffering = true
+                } else if eventName == "canplaythrough" {
+                    isBuffering = false
+                } else if eventName == "ended" {
+                    isPlaying = false
                 }
+                refreshH5State()
             },
-            onTimeUpdate: { cur, dur in
-                self.currentPosition = cur
-                self.duration = dur
-                self.qosReport = self.player.currentQoSReport()
+            onError: { code, errMsg in
+                errorMessage = "播放错误 [\(code)]: \(errMsg)"
+                isPlaying = false
+                isBuffering = false
             },
-            onError: { err in
-                self.errorMessage = "播放出错: \(err.localizedDescription)"
-                self.isPlaying = false
+            onTimeUpdate: { curTime in
+                currentPosition = TimeInterval(curTime)
             }
         )
-        player.delegate = coordinator
+        player.setOnH5EventListener(coord)
+        
+        self.vzPlayer = player
+        self.coordinator = coord
     }
     
-    private func playSource(_ source: PlayerSourceItem, streamId: String) {
-        customURLText = source.src
-        currentPlayingTitle = "[\(source.type.uppercased())] \(streamId)"
-        guard let url = URL(string: source.src) else {
-            self.errorMessage = "无效的播放地址 URL"
-            return
+    private func refreshH5State() {
+        guard let player = vzPlayer else { return }
+        currentSourceJSON = player.get_currentsource()
+        bufferedText = player.get_buffered()
+    }
+    
+    // MARK: - 业务播放拉起 (注入 VZPlayerSource 多源)
+    
+    private func playNodeStream(_ stream: NodeStreamInfo) {
+        currentPlayingTitle = stream.streamid
+        errorMessage = nil
+        
+        apiService.fetchPlayerSources(for: stream.streamid) { container in
+            guard let container = container, !container.allSources.isEmpty else {
+                errorMessage = "未解析出该流的播放源"
+                return
+            }
+            
+            // 构造多播放源数组 (支持 HLS/FLV 多协议容错)
+            let vzSources = container.allSources.enumerated().map { (index, item) -> VZPlayerSource in
+                let source = VZPlayerSource(
+                    url: item.src,
+                    type: item.type.lowercased(),
+                    tag: item.tag ?? "source_\(index)",
+                    videoCodec: item.codec.contains("265") ? 2 : 1,
+                    orderno: index + 1,
+                    isLive: true,
+                    ext: item.type.lowercased()
+                )
+                source.sourceIndex = index
+                return source
+            }
+            
+            // 调用 IH5Player API
+            vzPlayer?.setSources(vzSources)
+            vzPlayer?.play()
+            refreshH5State()
         }
-        self.errorMessage = nil
-        player.setMediaSource(url: url)
-        player.play()
-        isPlaying = true
     }
     
-    private func playCustomURL() {
-        let trimmed = customURLText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), url.scheme != nil else {
-            self.errorMessage = "无效的 URL 地址，请检查格式"
-            return
-        }
-        self.errorMessage = nil
-        currentPlayingTitle = "自定义链接"
-        player.setMediaSource(url: url)
-        player.play()
-        isPlaying = true
+    private func playCustomURL(_ urlStr: String) {
+        guard !urlStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        currentPlayingTitle = "自定义源"
+        errorMessage = nil
+        
+        let type = urlStr.lowercased().contains(".flv") ? VZPlayerSource.TYPE_FLV : VZPlayerSource.TYPE_HLS
+        let source = VZPlayerSource(url: urlStr, type: type, isLive: true)
+        
+        vzPlayer?.setSources([source])
+        vzPlayer?.play()
+        refreshH5State()
     }
     
-    private func timeString(_ seconds: TimeInterval) -> String {
-        guard !seconds.isNaN && !seconds.isInfinite else { return "00:00" }
-        let min = Int(seconds) / 60
-        let sec = Int(seconds) % 60
-        return String(format: "%02d:%02d", min, sec)
+    private func timeString(_ time: TimeInterval) -> String {
+        let totalSeconds = Int(time)
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
-// 代理中继器
-final class PlayerCoordinator: NSObject, MediaPlayerDelegate {
-    var onStateChange: ((PlayerState) -> Void)?
-    var onTimeUpdate: ((TimeInterval, TimeInterval) -> Void)?
-    var onError: ((NSError) -> Void)?
-
-    init(
-        onStateChange: @escaping (PlayerState) -> Void,
-        onTimeUpdate: @escaping (TimeInterval, TimeInterval) -> Void,
-        onError: @escaping (NSError) -> Void
-    ) {
-        self.onStateChange = onStateChange
-        self.onTimeUpdate = onTimeUpdate
-        self.onError = onError
-    }
-
-    func player(_ player: MediaPlayerController, stateDidChange state: PlayerState) {
-        DispatchQueue.main.async { self.onStateChange?(state) }
-    }
-
-    func player(_ player: MediaPlayerController, currentTime: TimeInterval, totalDuration: TimeInterval) {
-        DispatchQueue.main.async { self.onTimeUpdate?(currentTime, totalDuration) }
-    }
-
-    func playerDidRenderFirstFrame(_ player: MediaPlayerController) {}
+// MARK: - H5 监听器代理协调器 (实现 VZH5EventListener)
+final class VZH5PlayerCoordinator: NSObject, VZH5EventListener {
+    private let onEventHandler: (String) -> Void
+    private let onErrorHandler: (Int, String) -> Void
+    private let onTimeUpdateHandler: (Int64) -> Void
     
-    func player(_ player: MediaPlayerController, didOccurError error: NSError) {
-        DispatchQueue.main.async { self.onError?(error) }
+    init(
+        onEvent: @escaping (String) -> Void,
+        onError: @escaping (Int, String) -> Void,
+        onTimeUpdate: @escaping (Int64) -> Void
+    ) {
+        self.onEventHandler = onEvent
+        self.onErrorHandler = onError
+        self.onTimeUpdateHandler = onTimeUpdate
+    }
+    
+    func onEvent(_ eventName: String) {
+        DispatchQueue.main.async {
+            self.onEventHandler(eventName)
+        }
+    }
+    
+    func onError(_ code: Int, errMsg: String) {
+        DispatchQueue.main.async {
+            self.onErrorHandler(code, errMsg)
+        }
+    }
+    
+    func onTimeUpdate(_ currentTime: Int64) {
+        DispatchQueue.main.async {
+            self.onTimeUpdateHandler(currentTime)
+        }
     }
 }
