@@ -14,14 +14,17 @@ public struct ShortVideoFeedView: View {
     @State private var currentStreamIndex: Int = 0
     @State private var currentSourceIndex: Int = 0
     
-    @State private var activePlayer: MediaPlayerController?
-    @State private var playerState: PlayerState = .idle
+    // MARK: - VZPlayer (IH5Player) 核心实例与渲染视图
+    private let playerView = MediaPlayerView()
+    @State private var vzPlayer: IH5Player?
+    @State private var coordinator: VZH5PlayerCoordinator?
+    
     @State private var isPlaying: Bool = false
+    @State private var isBuffering: Bool = false
     @State private var isMuted: Bool = false
-    @State private var startLatencyMS: Double = 0
-    @State private var qosReport: PlayerQoSReport?
     @State private var errorMessage: String?
     @State private var isLoading: Bool = false
+    @State private var lastH5Event: String = ""
     
     public init() {}
     
@@ -51,23 +54,19 @@ public struct ShortVideoFeedView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // MARK: - 1. 上半部分：自适应视频播放器 (占满剩余空间，上下滑动手势切流)
+            // MARK: - 1. 上半部分：自适应视频播放器 (VZPlayerView, 上下滑动手势切流)
             ZStack {
                 Color.black
                 
-                if let player = activePlayer {
-                    PlayerViewRepresentable(player: player)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-                        .onTapGesture {
-                            togglePlayPause()
-                        }
-                } else {
-                    Color.black
-                }
+                VZPlayerViewRepresentable(playerView: playerView)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .onTapGesture {
+                        togglePlayPause()
+                    }
                 
                 // 加载状态指示器
-                if isLoading || playerState == .preparing || playerState == .buffering {
+                if isLoading || isBuffering {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         .scaleEffect(1.4)
@@ -75,7 +74,7 @@ public struct ShortVideoFeedView: View {
                 }
                 
                 // 暂停状态浮标
-                if !isPlaying && playerState != .idle && !isLoading {
+                if !isPlaying && !isLoading {
                     Image(systemName: "play.circle.fill")
                         .font(.system(size: 48))
                         .foregroundColor(.white.opacity(0.85))
@@ -143,7 +142,7 @@ public struct ShortVideoFeedView: View {
                     .padding()
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity) // 自适应填满上半部分
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
@@ -157,7 +156,7 @@ public struct ShortVideoFeedView: View {
                     }
             )
             
-            // MARK: - 2. 下半部分：紧凑型控制与信息面板 (无需滚动，全可见，直观高效)
+            // MARK: - 2. 下半部分：紧凑型控制与信息面板 (IH5Player API 控制)
             VStack(spacing: 8) {
                 // (1) 模式选择器与节点快捷切换
                 HStack(spacing: 8) {
@@ -201,9 +200,8 @@ public struct ShortVideoFeedView: View {
                     }
                 }
                 
-                // (2) 融合式流信息与播放源卡片 (紧凑高密度展示)
+                // (2) 融合式流信息与播放源卡片
                 VStack(alignment: .leading, spacing: 3) {
-                    // 第 1 行：流 ID + 播放源协议/编码/厂商标签
                     HStack(spacing: 6) {
                         Text("📡 \(currentStream?.streamid ?? "未选择流")")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -229,16 +227,9 @@ public struct ShortVideoFeedView: View {
                                     .background(Color.secondary.opacity(0.15))
                                     .cornerRadius(3)
                             }
-                            
-                            if let v = source.vendor, !v.isEmpty {
-                                Text(v.uppercased())
-                                    .font(.system(size: 8.5))
-                                    .foregroundColor(.secondary)
-                            }
                         }
                     }
                     
-                    // 第 2 行：分辨率、帧率、码率、IP 归属地
                     if let stream = currentStream {
                         HStack(spacing: 6) {
                             if !stream.resolutionText.isEmpty {
@@ -265,7 +256,7 @@ public struct ShortVideoFeedView: View {
                 .background(Color.secondary.opacity(0.06))
                 .cornerRadius(6)
                 
-                // (3) 主控切换按钮条 (大尺寸按键，直接操作无阻碍)
+                // (3) 主控切换按钮条
                 HStack(spacing: 20) {
                     Button(action: {
                         switchPrevious()
@@ -302,10 +293,10 @@ public struct ShortVideoFeedView: View {
                     }
                     .disabled(!canSwitchNext)
                     
-                    // 静音切换
+                    // 静音切换 (IH5Player set_muted)
                     Button(action: {
                         isMuted.toggle()
-                        activePlayer?.setMute(isMuted)
+                        _ = vzPlayer?.set_muted("{\"muted\": \(isMuted)}")
                     }) {
                         VStack(spacing: 2) {
                             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -318,22 +309,20 @@ public struct ShortVideoFeedView: View {
                     }
                 }
                 
-                // (4) 底部 QoS 实时指标极简胶囊
-                if let qos = qosReport {
-                    HStack(spacing: 8) {
-                        Text("⚡️ 起播: \(String(format: "%.1f", qos.firstFrameDuration > 0 ? qos.firstFrameDuration : startLatencyMS)) ms")
-                            .foregroundColor(.green)
-                        Text("内核: \(qos.engineName)")
-                            .foregroundColor(.primary)
-                        Text("硬解: \(qos.isHardwareAccelerated ? "开启" : "关闭")")
-                            .foregroundColor(.secondary)
-                    }
-                    .font(.system(size: 8.5, design: .monospaced))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.secondary.opacity(0.08))
-                    .cornerRadius(8)
+                // (4) 底部 H5 协议状态指示胶囊
+                HStack(spacing: 8) {
+                    Text("⚡️ 协议: IH5Player")
+                        .foregroundColor(.green)
+                    Text("事件: \(lastH5Event.isEmpty ? "ready" : lastH5Event)")
+                        .foregroundColor(.primary)
+                    Text("静音: \(isMuted ? "是" : "否")")
+                        .foregroundColor(.secondary)
                 }
+                .font(.system(size: 8.5, design: .monospaced))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.secondary.opacity(0.08))
+                .cornerRadius(8)
             }
             .padding(.horizontal, 12)
             .padding(.top, 6)
@@ -341,7 +330,7 @@ public struct ShortVideoFeedView: View {
             .background(Color.secondary.opacity(0.03))
         }
         .onAppear {
-            PlayerPoolManager.shared.warmUp()
+            setupVZPlayer()
             if apiService.hasCompleteConfig && apiService.streamList.isEmpty {
                 apiService.fetchStreamList { streams in
                     if !streams.isEmpty {
@@ -355,11 +344,42 @@ public struct ShortVideoFeedView: View {
             }
         }
         .onDisappear {
-            if let player = activePlayer {
-                PlayerPoolManager.shared.recyclePlayer(player)
-                activePlayer = nil
-            }
+            vzPlayer?.destroy()
         }
+    }
+    
+    // MARK: - 初始化 VZPlayer
+    
+    private func setupVZPlayer() {
+        guard vzPlayer == nil else { return }
+        
+        let player = export.CreateVZPlayer(playerView)
+        let coord = VZH5PlayerCoordinator(
+            onEvent: { eventName in
+                lastH5Event = eventName
+                if eventName == "play" || eventName == "playing" {
+                    isPlaying = true
+                    errorMessage = nil
+                    isBuffering = false
+                } else if eventName == "pause" {
+                    isPlaying = false
+                } else if eventName == "waiting" {
+                    isBuffering = true
+                } else if eventName == "canplaythrough" {
+                    isBuffering = false
+                }
+            },
+            onError: { code, errMsg in
+                errorMessage = "播放错误 [\(code)]: \(errMsg)"
+                isPlaying = false
+                isBuffering = false
+            },
+            onTimeUpdate: { _ in }
+        )
+        player.setOnH5EventListener(coord)
+        
+        self.vzPlayer = player
+        self.coordinator = coord
     }
     
     private var canSwitchPrevious: Bool {
@@ -414,7 +434,6 @@ public struct ShortVideoFeedView: View {
         guard let stream = currentStream else { return }
         self.errorMessage = nil
         
-        // 检查该流的播放源是否已缓存
         if let container = apiService.sourcesCache[stream.streamid], !container.allSources.isEmpty {
             self.currentSourceIndex = min(self.currentSourceIndex, container.allSources.count - 1)
             playCurrentSourceItem()
@@ -433,55 +452,29 @@ public struct ShortVideoFeedView: View {
     }
     
     private func playCurrentSourceItem() {
-        guard let source = currentSource else {
+        guard let sourceItem = currentSource else {
             self.errorMessage = "当前未选择有效播放地址"
             return
         }
-        guard let url = URL(string: source.src) else {
-            self.errorMessage = "无效的播放 URL"
-            return
-        }
         
-        let startTime = CFAbsoluteTimeGetCurrent()
-        self.errorMessage = nil
-        
-        // 1. 回收旧播放器
-        if let oldPlayer = activePlayer {
-            PlayerPoolManager.shared.recyclePlayer(oldPlayer)
-        }
-        
-        // 2. 从实例池获取预热播放器
-        let newPlayer = PlayerPoolManager.shared.dequeuePlayer()
-        newPlayer.setMute(isMuted)
-        
-        let coordinator = FeedPlayerCoordinator(
-            onStateChange: { state in
-                self.playerState = state
-                self.isPlaying = (state == .playing)
-                if state == .playing {
-                    self.errorMessage = nil
-                }
-            },
-            onQoSUpdate: {
-                self.qosReport = newPlayer.currentQoSReport()
-            },
-            onError: { err in
-                self.errorMessage = "播放出错: \(err.localizedDescription)"
-                self.isPlaying = false
-            }
+        let vzSource = VZPlayerSource(
+            url: sourceItem.src,
+            type: sourceItem.type.lowercased(),
+            tag: sourceItem.tag ?? "source_\(currentSourceIndex)",
+            videoCodec: sourceItem.codec.contains("265") ? 2 : 1,
+            orderno: currentSourceIndex + 1,
+            isLive: true,
+            ext: sourceItem.type.lowercased()
         )
-        newPlayer.delegate = coordinator
         
-        self.activePlayer = newPlayer
-        newPlayer.setMediaSource(url: url)
-        newPlayer.play()
+        self.errorMessage = nil
+        vzPlayer?.setSources([vzSource])
+        vzPlayer?.play()
         self.isPlaying = true
-        
-        self.startLatencyMS = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
     }
     
     private func togglePlayPause() {
-        guard let player = activePlayer else { return }
+        guard let player = vzPlayer else { return }
         if isPlaying {
             player.pause()
             isPlaying = false
@@ -489,41 +482,5 @@ public struct ShortVideoFeedView: View {
             player.play()
             isPlaying = true
         }
-    }
-}
-
-// 代理中继器
-final class FeedPlayerCoordinator: NSObject, MediaPlayerDelegate {
-    var onStateChange: ((PlayerState) -> Void)?
-    var onQoSUpdate: (() -> Void)?
-    var onError: ((NSError) -> Void)?
-
-    init(
-        onStateChange: @escaping (PlayerState) -> Void,
-        onQoSUpdate: @escaping () -> Void,
-        onError: @escaping (NSError) -> Void
-    ) {
-        self.onStateChange = onStateChange
-        self.onQoSUpdate = onQoSUpdate
-        self.onError = onError
-    }
-
-    func player(_ player: MediaPlayerController, stateDidChange state: PlayerState) {
-        DispatchQueue.main.async {
-            self.onStateChange?(state)
-            self.onQoSUpdate?()
-        }
-    }
-
-    func player(_ player: MediaPlayerController, currentTime: TimeInterval, totalDuration: TimeInterval) {
-        DispatchQueue.main.async { self.onQoSUpdate?() }
-    }
-
-    func playerDidRenderFirstFrame(_ player: MediaPlayerController) {
-        DispatchQueue.main.async { self.onQoSUpdate?() }
-    }
-    
-    func player(_ player: MediaPlayerController, didOccurError error: NSError) {
-        DispatchQueue.main.async { self.onError?(error) }
     }
 }
