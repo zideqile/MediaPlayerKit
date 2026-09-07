@@ -461,7 +461,7 @@ public struct ShortVideoFeedView: View {
             url: sourceItem.src,
             type: sourceItem.type.lowercased(),
             tag: sourceItem.tag ?? "source_\(currentSourceIndex)",
-            videoCodec: sourceItem.codec.contains("265") ? 2 : 1,
+            videoCodec: sourceItem.videoCodec ?? (sourceItem.codecText.contains("265") ? 4 : 2),
             orderno: currentSourceIndex + 1,
             isLive: true,
             ext: sourceItem.type.lowercased()
