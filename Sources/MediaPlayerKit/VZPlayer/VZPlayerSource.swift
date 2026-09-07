@@ -74,7 +74,11 @@ import Foundation
     }
     
     public func toJSONString() -> String {
-        guard let data = try? JSONEncoder().encode(self),
+        let encoder = JSONEncoder()
+        if #available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *) {
+            encoder.outputFormatting = [.withoutEscapingSlashes]
+        }
+        guard let data = try? encoder.encode(self),
               let str = String(data: data, encoding: .utf8) else {
             return "{}"
         }
