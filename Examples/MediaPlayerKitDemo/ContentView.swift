@@ -2,7 +2,8 @@ import SwiftUI
 
 public enum AppTab: String, CaseIterable {
     case feed = "短视频流"
-    case player = "播放器demo"
+    case player = "原生播放器"
+    case hybrid = "H5混合"
     case qos = "QoS 大盘"
     case settings = "节点配置"
     
@@ -14,6 +15,7 @@ public enum AppTab: String, CaseIterable {
         switch self {
         case .feed: return "play.square.stack.fill"
         case .player: return "play.tv.fill"
+        case .hybrid: return "globe.americas.fill"
         case .qos: return "chart.bar.xaxis"
         case .settings: return "gearshape.fill"
         }
@@ -37,7 +39,7 @@ public struct ContentView: View {
                 Spacer()
                 
                 // 快捷节点指示状态
-                if !apiService.nodeItems.isEmpty && (selectedTab == .feed || selectedTab == .player) {
+                if !apiService.nodeItems.isEmpty && (selectedTab == .feed || selectedTab == .player || selectedTab == .hybrid) {
                     HStack(spacing: 3) {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                             .font(.system(size: 9))
@@ -65,6 +67,8 @@ public struct ContentView: View {
                     ShortVideoFeedView()
                 case .player:
                     UniversalPlayerView()
+                case .hybrid:
+                    WebViewHybridPlayerView()
                 case .qos:
                     QoSDashboardView()
                 case .settings:
