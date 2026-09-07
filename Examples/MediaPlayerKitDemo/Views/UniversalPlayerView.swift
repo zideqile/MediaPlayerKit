@@ -137,7 +137,7 @@ public struct UniversalPlayerView: View {
                             Text("倍速: \(vzPlayer?.get_speed() ?? "{}") | 缓冲: \(vzPlayer?.get_buffered() ?? "{}")")
                             if !recentH5Events.isEmpty {
                                 Text("事件: \(recentH5Events.suffix(3).joined(separator: " ➔ "))")
-                                    .foregroundColor(.cyan)
+                                    .foregroundColor(Color(red: 0.0, green: 0.8, blue: 0.9))
                                     .lineLimit(1)
                             }
                         }
@@ -444,7 +444,7 @@ public struct UniversalPlayerView: View {
                     url: item.src,
                     type: item.type.lowercased(),
                     tag: item.tag ?? "source_\(index)",
-                    videoCodec: item.codec.contains("265") ? 2 : 1,
+                    videoCodec: item.videoCodec ?? (item.codecText.contains("265") ? 4 : 2),
                     orderno: index + 1,
                     isLive: true,
                     ext: item.type.lowercased()
