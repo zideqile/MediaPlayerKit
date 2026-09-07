@@ -496,7 +496,7 @@ public struct WebViewHybridPlayerView: View {
         guard vzPlayer == nil else { return }
 
         // 1. 创建 IH5Player 实例
-        let player = export.CreateVZPlayer(playerView: playerView)
+        let player = export.CreateVZPlayer(playerView)
         self.vzPlayer = player
 
         // 2. 初始化 WKWebView 与 JSBridge 注入
