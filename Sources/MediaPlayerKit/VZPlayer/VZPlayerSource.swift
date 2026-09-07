@@ -18,6 +18,19 @@ import Foundation
     @objc public var isLive: Bool = false
     @objc public var ext: String = ""
     
+    enum CodingKeys: String, CodingKey {
+        case sourceIndex = "index"
+        case url = "src"
+        case type
+        case tag
+        case videoCodec
+        case sarNum = "sar_num"
+        case sarDen = "sar_den"
+        case orderno
+        case isLive
+        case ext
+    }
+    
     @objc public override init() {
         super.init()
     }
@@ -45,7 +58,6 @@ import Foundation
         super.init()
     }
     
-    /// 将对象转换为符合 vzplayer 协议规范的 JSON 字典 / 字符串
     public func toDictionary() -> [String: Any] {
         return [
             "index": sourceIndex,
@@ -62,7 +74,7 @@ import Foundation
     }
     
     public func toJSONString() -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: toDictionary(), options: []),
+        guard let data = try? JSONEncoder().encode(self),
               let str = String(data: data, encoding: .utf8) else {
             return "{}"
         }

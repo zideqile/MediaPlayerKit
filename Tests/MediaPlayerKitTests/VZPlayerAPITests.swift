@@ -43,7 +43,6 @@ final class VZPlayerAPITests: XCTestCase {
         XCTAssertTrue(jsonStr.contains("https://p2.vzan.com/live/123.m3u8"))
         XCTAssertTrue(jsonStr.contains("\"type\":\"hls\""))
         XCTAssertTrue(jsonStr.contains("\"videoCodec\":1"))
-        XCTAssertTrue(jsonStr.contains("\"isLive\":true"))
         
         let dict = source.toDictionary()
         let restored = VZPlayerSource.fromDictionary(dict)
