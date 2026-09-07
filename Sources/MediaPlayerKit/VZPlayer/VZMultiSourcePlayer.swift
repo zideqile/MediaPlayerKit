@@ -113,7 +113,6 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
     
     public func setLoop(_ loop: Bool) {
         savedLoop = loop
-        // 可设置底层的循环控制
     }
     
     public func isLoop() -> Bool {
@@ -168,7 +167,7 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         // 2. 创建新控制器并配置
         let config = PlayerConfig()
         config.preferredEngine = engineType
-        config.enableHardwareDecoding = (engineType == .avPlayer)
+        config.enableHardwareDecode = (engineType == .avPlayer)
         
         let ctrl = MediaPlayerController(config: config)
         ctrl.delegate = self

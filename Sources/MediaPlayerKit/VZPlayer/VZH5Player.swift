@@ -229,10 +229,12 @@ import CoreGraphics
     public func multiSourcePlayer(_ player: VZMultiSourcePlayer, stateDidChange state: PlayerState) {
         DispatchQueue.main.async {
             switch state {
-            case .idle:
+            case .idle, .stopped:
                 break
             case .preparing:
                 self.eventListener?.onEvent("play")
+            case .readyToPlay:
+                self.eventListener?.onEvent("canplaythrough")
             case .playing:
                 self.isPlayingState = true
                 self.eventListener?.onEvent("canplaythrough")
@@ -242,6 +244,9 @@ import CoreGraphics
                 self.eventListener?.onEvent("pause")
             case .buffering:
                 self.eventListener?.onEvent("waiting")
+            case .completed:
+                self.isPlayingState = false
+                self.eventListener?.onEvent("ended")
             case .error:
                 self.isPlayingState = false
             }
