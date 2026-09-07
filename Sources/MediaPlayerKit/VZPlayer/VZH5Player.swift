@@ -15,7 +15,7 @@ import CoreGraphics
     }
     
     @objc public func setOnH5EventListener(_ listener: VZH5EventListener?) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.eventListener = listener
         }
     }
@@ -23,14 +23,14 @@ import CoreGraphics
     // MARK: - 基础播放控制
     
     @objc public func play() {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.multiPlayer.play()
             self.startTimeUpdateTimer()
         }
     }
     
     @objc public func pause() {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.multiPlayer.pause()
             self.stopTimeUpdateTimer()
             self.eventListener?.onEvent("pause")
@@ -38,14 +38,14 @@ import CoreGraphics
     }
     
     @objc public func resume() {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.multiPlayer.resume()
             self.startTimeUpdateTimer()
         }
     }
     
     @objc public func destroy() {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.stopTimeUpdateTimer()
             self.multiPlayer.destroy()
             self.eventListener = nil
@@ -53,19 +53,19 @@ import CoreGraphics
     }
     
     @objc public func setSources(_ sources: [VZPlayerSource]) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.multiPlayer.setSources(sources)
         }
     }
     
     @objc public func setConfig(_ config: VZPlayerConfig) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.multiPlayer.setConfig(config)
         }
     }
     
     @objc public func sendEvent(_ eventName: String, paramsJson: String) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             if eventName == "NEXT_SOURCE" {
                 _ = self.multiPlayer.switchToNextSource()
             }
@@ -107,7 +107,8 @@ import CoreGraphics
     
     @objc public func get_volume() -> String {
         return executeOnMainThreadSync {
-            return self.toJSON(["volume": Double(self.multiPlayer.getVolume())])
+            let vol = Double(String(format: "%.2f", self.multiPlayer.getVolume())) ?? Double(self.multiPlayer.getVolume())
+            return self.toJSON(["volume": vol])
         }
     }
     
@@ -172,7 +173,8 @@ import CoreGraphics
     
     @objc public func get_speed() -> String {
         return executeOnMainThreadSync {
-            return self.toJSON(["speed": Double(self.multiPlayer.getSpeed())])
+            let speed = Double(String(format: "%.2f", self.multiPlayer.getSpeed())) ?? Double(self.multiPlayer.getSpeed())
+            return self.toJSON(["speed": speed])
         }
     }
     
@@ -227,7 +229,7 @@ import CoreGraphics
     // MARK: - VZMultiSourcePlayerDelegate 代理回调
     
     public func multiSourcePlayer(_ player: VZMultiSourcePlayer, stateDidChange state: PlayerState) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             switch state {
             case .idle, .stopped:
                 break
@@ -254,7 +256,7 @@ import CoreGraphics
     }
     
     public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didRenderFirstFrame: Void) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.eventListener?.onEvent("playing")
         }
     }
@@ -264,25 +266,25 @@ import CoreGraphics
     }
     
     public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didOccurError error: NSError) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.eventListener?.onError(error.code, errMsg: error.localizedDescription)
         }
     }
     
     public func multiSourcePlayerDidPlayToEnd(_ player: VZMultiSourcePlayer) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.eventListener?.onEvent("ended")
         }
     }
     
     public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didSwitchToSource source: VZPlayerSource) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.eventListener?.onEvent("PlayerWARN")
         }
     }
     
     public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didWarnMessage msg: String) {
-        DispatchQueue.main.async {
+        executeOnMainThread {
             self.eventListener?.onEvent("PlayerWARN")
         }
     }
@@ -303,6 +305,14 @@ import CoreGraphics
             return nil
         }
         return obj
+    }
+    
+    private func executeOnMainThread(_ block: @escaping () -> Void) {
+        if Thread.isMainThread {
+            block()
+        } else {
+            DispatchQueue.main.async(execute: block)
+        }
     }
     
     private func executeOnMainThreadSync<T>(_ block: () -> T) -> T {
