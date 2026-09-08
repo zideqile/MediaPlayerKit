@@ -32,6 +32,7 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
     private var savedLoop: Bool = false
     private var savedSpeed: Float = 1.0
     private var isDestroyed: Bool = false
+    private var needsReloadSource: Bool = false
     
     public init(playerView: MediaPlayerView, config: VZPlayerConfig = VZPlayerConfig()) {
         self.playerView = playerView
@@ -54,10 +55,22 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         self.sources = sources
         self.currentSourceIndex = 0
         self.currentEngineIndex = 0
+        self.needsReloadSource = true
     }
     
     public func setConfig(_ config: VZPlayerConfig) {
         self.playerConfig = config
+        self.savedVolume = config.volume
+        self.savedMuted = config.muted
+        self.savedLoop = config.loop
+        self.savedSpeed = config.speed
+        
+        if let ctrl = controller {
+            ctrl.config.isLoop = config.loop
+            ctrl.setVolume(config.volume)
+            ctrl.setMute(config.muted)
+            ctrl.setPlaybackRate(config.speed)
+        }
     }
     
     // MARK: - 播放控制
@@ -67,7 +80,8 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
             delegate?.multiSourcePlayer(self, didOccurError: NSError(domain: "VZMultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "sources is empty"]))
             return
         }
-        if controller == nil {
+        if controller == nil || needsReloadSource {
+            needsReloadSource = false
             startPlaybackWithCurrentSourceAndEngine()
         } else {
             if controller?.state == .completed {
@@ -116,6 +130,7 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
     
     public func setLoop(_ loop: Bool) {
         savedLoop = loop
+        controller?.config.isLoop = loop
     }
     
     public func isLoop() -> Bool {
@@ -156,10 +171,11 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
     
     private func startPlaybackWithCurrentSourceAndEngine() {
         guard !isDestroyed, let source = currentSource, let url = URL(string: source.url) else {
-            delegate?.multiSourcePlayer(self, didOccurError: NSError(domain: "VZMultiSourcePlayer", code: -1001, userInfo: [NSLocalizedDescriptionKey: "Invalid source URL"]))
+            delegate?.multiSourcePlayer(self, didOccurError: NSError(domain: "VZMultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid source URL"]))
             return
         }
         
+        needsReloadSource = false
         let engineType = engineOrder[currentEngineIndex]
         
         // 1. 释放旧的控制器
@@ -170,7 +186,10 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         // 2. 创建新控制器并配置
         let config = PlayerConfig()
         config.preferredEngine = engineType
-        config.enableHardwareDecode = (engineType == .avPlayer)
+        config.enableHardwareDecode = (engineType == .avPlayer) ? playerConfig.isHardwareDecode : false
+        config.isLoop = savedLoop
+        config.autoPlay = true
+        config.customHeaders = playerConfig.headers
         
         let ctrl = MediaPlayerController(config: config)
         ctrl.delegate = self
@@ -179,14 +198,16 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         // 3. 附加渲染视图
         playerView.attachRenderView(ctrl.playerView)
         
-        // 4. 应用缓存的状态
+        // 4. 加载媒体源 (先初始化底层的 AVPlayer / KSPlayer 实例)
+        delegate?.multiSourcePlayer(self, didSwitchToSource: source)
+        ctrl.setMediaSource(url: url)
+        
+        // 5. 待底层的解码播放器实例化后，立即应用缓存的用户音量/静音/倍速属性
         ctrl.setVolume(savedVolume)
         ctrl.setMute(savedMuted)
         ctrl.setPlaybackRate(savedSpeed)
         
-        // 5. 开始加载与起播
-        delegate?.multiSourcePlayer(self, didSwitchToSource: source)
-        ctrl.setMediaSource(url: url)
+        // 6. 起播
         ctrl.play()
     }
     

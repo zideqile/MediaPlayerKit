@@ -92,6 +92,12 @@ final class VZPlayerAPITests: XCTestCase {
         XCTAssertFalse(player.get_duration().isEmpty)
         XCTAssertFalse(player.get_pause().isEmpty)
         
+        // 8. Dynamic Source Switch
+        let newSource = VZPlayerSource(url: "https://example.com/new_live.m3u8", type: "hls")
+        player.setSources([newSource])
+        let updatedSourceJson = player.get_currentsource()
+        XCTAssertTrue(updatedSourceJson.contains("new_live.m3u8"))
+        
         player.destroy()
     }
 }

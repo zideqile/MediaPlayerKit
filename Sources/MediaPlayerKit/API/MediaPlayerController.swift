@@ -45,6 +45,10 @@ import CoreGraphics
     private var engine: MediaPlayerProtocol
     private var apmTracker: QoSAPMTracker?
     private var currentURL: URL?
+    private var savedVolume: Float = 1.0
+    private var savedPlaybackRate: Float = 1.0
+    private var savedMute: Bool = false
+    private var savedSubtitleURL: URL?
 
     // MARK: - 初始化
     @objc public init(config: PlayerConfig = PlayerConfig.defaultConfig()) {
@@ -130,6 +134,14 @@ import CoreGraphics
         apmTracker?.markPrepareStart()
         
         engine.prepare(with: playURL, config: config)
+        
+        // 立即恢复已保存的音量、倍速、静音及字幕配置
+        engine.setVolume(savedVolume)
+        engine.setMute(savedMute)
+        engine.setPlaybackRate(savedPlaybackRate)
+        if let subURL = savedSubtitleURL {
+            engine.setSubtitleURL(subURL)
+        }
     }
     
     /// 开始播放
@@ -163,21 +175,25 @@ import CoreGraphics
     
     /// 设置播放音量 (0.0 ~ 1.0)
     @objc public func setVolume(_ volume: Float) {
+        savedVolume = volume
         engine.setVolume(volume)
     }
     
     /// 设置倍速播放 (0.5x ~ 2.0x)
     @objc public func setPlaybackRate(_ rate: Float) {
+        savedPlaybackRate = rate
         engine.setPlaybackRate(rate)
     }
     
     /// 设置静音
     @objc public func setMute(_ isMuted: Bool) {
+        savedMute = isMuted
         engine.setMute(isMuted)
     }
     
     /// 挂载外部字幕源 (ASS / SSA / WebVTT / SRT)
     @objc public func setSubtitleSource(url: URL?) {
+        savedSubtitleURL = url
         engine.setSubtitleURL(url)
     }
     
