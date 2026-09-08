@@ -33,7 +33,6 @@ import CoreGraphics
         executeOnMainThread {
             self.multiPlayer.pause()
             self.stopTimeUpdateTimer()
-            self.eventListener?.onEvent("pause")
         }
     }
     
@@ -191,12 +190,12 @@ import CoreGraphics
     
     @objc public func get_buffered() -> String {
         return executeOnMainThreadSync {
-            let start = Int(self.multiPlayer.currentTime)
+            let start = 0
             let buffered = Int(self.multiPlayer.bufferedDuration)
             return self.toJSON([
                 "length": 1,
                 "start": start,
-                "end": start + buffered
+                "end": buffered
             ])
         }
     }
@@ -272,9 +271,7 @@ import CoreGraphics
     }
     
     public func multiSourcePlayerDidPlayToEnd(_ player: VZMultiSourcePlayer) {
-        executeOnMainThread {
-            self.eventListener?.onEvent("ended")
-        }
+        // ended 事件统一在 stateDidChange(.completed) 中派发，避免双重重复派发
     }
     
     public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didSwitchToSource source: VZPlayerSource) {

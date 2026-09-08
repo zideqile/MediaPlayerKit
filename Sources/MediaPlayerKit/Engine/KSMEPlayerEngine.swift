@@ -25,8 +25,10 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     public private(set) var state: PlayerState = .idle {
         didSet {
             if oldValue != state {
-                DispatchQueue.main.async {
-                    self.outputDelegate?.engine(self, stateDidChange: self.state)
+                let currentState = self.state
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.outputDelegate?.engine(self, stateDidChange: currentState)
                 }
             }
         }
@@ -44,6 +46,10 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     private var isFirstFrameRendered = false
     private var currentURL: URL?
     private var qosReport: PlayerQoSReport?
+    private var savedVolume: Float = 1.0
+    private var savedRate: Float = 1.0
+    private var savedMuted: Bool = false
+    private var savedSubtitleURL: URL?
     
     public override init() {
         super.init()
@@ -70,6 +76,10 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         
         let opt = KSOptions()
         playerView.set(url: url, options: opt)
+        
+        playerView.playerLayer?.player.playbackVolume = savedVolume
+        playerView.playerLayer?.player.playbackRate = savedRate
+        playerView.playerLayer?.player.isMuted = savedMuted
         
         if config.autoPlay {
             self.play()
@@ -111,10 +121,24 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         isFirstFrameRendered = false
     }
     
-    public func setVolume(_ volume: Float) {}
-    public func setPlaybackRate(_ rate: Float) {}
-    public func setMute(_ isMuted: Bool) {}
-    public func setSubtitleURL(_ url: URL?) {}
+    public func setVolume(_ volume: Float) {
+        savedVolume = volume
+        playerView.playerLayer?.player.playbackVolume = volume
+    }
+    
+    public func setPlaybackRate(_ rate: Float) {
+        savedRate = rate
+        playerView.playerLayer?.player.playbackRate = rate
+    }
+    
+    public func setMute(_ isMuted: Bool) {
+        savedMuted = isMuted
+        playerView.playerLayer?.player.isMuted = isMuted
+    }
+    
+    public func setSubtitleURL(_ url: URL?) {
+        savedSubtitleURL = url
+    }
     
     public func getQoSReport() -> PlayerQoSReport? {
         return qosReport
@@ -128,14 +152,12 @@ extension KSMEPlayerEngine: PlayerControllerDelegate {
             switch state {
             case .readyToPlay:
                 mapped = self.config.autoPlay ? .playing : .readyToPlay
-                if !self.isFirstFrameRendered {
-                    self.isFirstFrameRendered = true
-                    self.outputDelegate?.engineDidRenderFirstFrame(self)
-                }
             case .buffering:
                 mapped = .buffering
             case .bufferFinished:
                 mapped = .playing
+            case .paused:
+                mapped = .paused
             case .playedToTheEnd:
                 mapped = .completed
                 self.outputDelegate?.engineDidPlayToEnd(self)
@@ -153,6 +175,11 @@ extension KSMEPlayerEngine: PlayerControllerDelegate {
             self.currentPosition = currentTime
             self.duration = totalTime
             self.outputDelegate?.engine(self, currentTimeDidChange: currentTime, duration: totalTime)
+            
+            if !self.isFirstFrameRendered && (currentTime > 0 || self.isPlaying) {
+                self.isFirstFrameRendered = true
+                self.outputDelegate?.engineDidRenderFirstFrame(self)
+            }
         }
     }
     

@@ -49,8 +49,10 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public private(set) var state: PlayerState = .idle {
         didSet {
             if oldValue != state {
-                DispatchQueue.main.async {
-                    self.outputDelegate?.engine(self, stateDidChange: self.state)
+                let currentState = self.state
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.outputDelegate?.engine(self, stateDidChange: currentState)
                 }
             }
         }
@@ -213,15 +215,33 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
                     if self.config.autoPlay {
                         self.player?.play()
                     }
-                    if !self.isFirstFrameRendered {
-                        self.isFirstFrameRendered = true
-                        self.outputDelegate?.engineDidRenderFirstFrame(self)
-                    }
                 case .failed:
                     self.state = .error
                     let err = item.error as NSError? ?? NSError(domain: "MediaPlayerKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "播放加载失败"])
                     self.outputDelegate?.engine(self, didOccurError: err)
                 default:
+                    break
+                }
+            }
+        }
+        
+        timeControlStatusObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                switch player.timeControlStatus {
+                case .waitingToPlayAtSpecifiedRate:
+                    if self.state == .playing {
+                        self.state = .buffering
+                    }
+                case .playing:
+                    if self.state == .buffering || self.state == .readyToPlay || self.state == .preparing {
+                        self.state = .playing
+                    }
+                case .paused:
+                    if self.state != .completed && self.state != .idle && self.state != .stopped && self.state != .error {
+                        self.state = .paused
+                    }
+                @unknown default:
                     break
                 }
             }
@@ -268,11 +288,8 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
                 self.outputDelegate?.engine(self, currentTimeDidChange: current, duration: total)
             }
             
-            if !self.isFirstFrameRendered && current > 0 {
+            if !self.isFirstFrameRendered && (current > 0 || (self.player?.rate ?? 0) > 0) {
                 self.isFirstFrameRendered = true
-                if self.state != .paused {
-                    self.state = self.config.autoPlay ? .playing : .readyToPlay
-                }
                 self.outputDelegate?.engineDidRenderFirstFrame(self)
             }
         }
