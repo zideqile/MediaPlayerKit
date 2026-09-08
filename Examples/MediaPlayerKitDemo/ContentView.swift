@@ -1,14 +1,20 @@
 import SwiftUI
 
-public enum AppTab: String, CaseIterable {
-    case feed = "短视频流"
-    case player = "原生播放器"
-    case hybrid = "H5混合"
-    case qos = "QoS 大盘"
-    case settings = "节点配置"
+public enum AppTab: Int, CaseIterable {
+    case feed = 0
+    case player = 1
+    case hybrid = 2
+    case qos = 3
+    case settings = 4
     
     public var title: String {
-        return self.rawValue
+        switch self {
+        case .feed: return "短视频流"
+        case .player: return "原生播放器"
+        case .hybrid: return "H5混合"
+        case .qos: return "QoS 大盘"
+        case .settings: return "节点配置"
+        }
     }
     
     public var iconName: String {
@@ -24,82 +30,53 @@ public enum AppTab: String, CaseIterable {
 
 public struct ContentView: View {
     @ObservedObject private var apiService = StreamAPIService.shared
-    @State private var selectedTab: AppTab = .feed
+    @State private var selectedTab: Int = 2 // 默认进入 H5 混合播放器体验满屏与底部导航
 
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - 1. 顶部统一定义的导航栏（同层线性排布）
-            HStack {
-                Text(selectedTab.title)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                // 快捷节点指示状态
-                if !apiService.nodeItems.isEmpty && (selectedTab == .feed || selectedTab == .player || selectedTab == .hybrid) {
-                    HStack(spacing: 3) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .font(.system(size: 9))
-                        Text(apiService.activeNodeItem?.remark.isEmpty == false ? apiService.activeNodeItem!.remark : apiService.activeNodeDomain)
-                            .font(.system(size: 10, weight: .bold))
-                            .lineLimit(1)
-                    }
-                    .foregroundColor(.blue)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(6)
+        TabView(selection: $selectedTab) {
+            ShortVideoFeedView()
+                .tabItem {
+                    Image(systemName: AppTab.feed.iconName)
+                    Text(AppTab.feed.title)
                 }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color.secondary.opacity(0.06))
-            
-            Divider()
-            
-            // MARK: - 2. 主界面内容区域（同层占满剩余空间）
-            ZStack {
-                switch selectedTab {
-                case .feed:
-                    ShortVideoFeedView()
-                case .player:
-                    UniversalPlayerView()
-                case .hybrid:
-                    WebViewHybridPlayerView()
-                case .qos:
-                    QoSDashboardView()
-                case .settings:
-                    SettingsView()
+                .tag(AppTab.feed.rawValue)
+
+            UniversalPlayerView()
+                .tabItem {
+                    Image(systemName: AppTab.player.iconName)
+                    Text(AppTab.player.title)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            
-            Divider()
-            
-            // MARK: - 3. 底部导航栏（贴合底部安全区，占满全屏底部）
-            HStack(spacing: 0) {
-                ForEach(AppTab.allCases, id: \.self) { tab in
-                    Button(action: {
-                        selectedTab = tab
-                    }) {
-                        VStack(spacing: 3) {
-                            Image(systemName: tab.iconName)
-                                .font(.system(size: 19))
-                            Text(tab.title)
-                                .font(.system(size: 10, weight: selectedTab == tab ? .bold : .regular))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .foregroundColor(selectedTab == tab ? .blue : .secondary)
-                    }
-                    .buttonStyle(PlainButtonStyle())
+                .tag(AppTab.player.rawValue)
+
+            WebViewHybridPlayerView()
+                .tabItem {
+                    Image(systemName: AppTab.hybrid.iconName)
+                    Text(AppTab.hybrid.title)
                 }
+                .tag(AppTab.hybrid.rawValue)
+
+            NavigationView {
+                QoSDashboardView()
             }
-            .background(Color.secondary.opacity(0.06))
+            .navigationViewStyle(StackNavigationViewStyle())
+            .tabItem {
+                Image(systemName: AppTab.qos.iconName)
+                Text(AppTab.qos.title)
+            }
+            .tag(AppTab.qos.rawValue)
+
+            NavigationView {
+                SettingsView()
+            }
+            .navigationViewStyle(StackNavigationViewStyle())
+            .tabItem {
+                Image(systemName: AppTab.settings.iconName)
+                Text(AppTab.settings.title)
+            }
+            .tag(AppTab.settings.rawValue)
         }
-        .edgesIgnoringSafeArea(.all)
+        .accentColor(.blue)
     }
 }
