@@ -7,7 +7,7 @@ import WebKit
 import UIKit
 #endif
 
-// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (流与线路中心化架构 + 独立选流抽屉 + 紧凑线路管理)
+// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (流与线路中心化架构 + 独立选流抽屉 + 状态精准闭环)
 private let hybridPlayerHTML: String = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -360,7 +360,7 @@ private let hybridPlayerHTML: String = """
     </div>
 
     <script>
-        // 状态变量
+        // 核心状态变量
         let currentPosSec = 0;
         let totalDurationSec = 0;
         let isPlayingState = true;
@@ -371,10 +371,15 @@ private let hybridPlayerHTML: String = """
 
         let currentActiveStreamId = '';
         let currentActiveSourceIndex = 0;
-        let pendingSwitchSourceIndex = null; // 切换中状态索引
+        let pendingSwitchSourceIndex = null; // 切换中状态的索引 (null 表示无切换中)
+        let currentPlaybackState = 'idle'; // 'idle' | 'preparing' | 'playing' | 'paused' | 'buffering' | 'ended' | 'error'
+        let isStreamLoading = false;
+        let streamFetchError = null;
+
         let availableStreams = [];
         let availableSubSources = [];
-        let expandedLineDetails = {}; // 保存各线路详情折叠状态 idx -> bool
+        let lastSubSourcesSignature = ''; // 记录线路集合签名，防止重复 innerHTML 重绘
+        let expandedLineDetails = {}; // 保存各线路详情折叠状态: key(streamId_idx) -> bool
 
         // Tab 切换
         function switchTab(tabId) {
@@ -449,8 +454,11 @@ private let hybridPlayerHTML: String = """
             if (overlay) {
                 overlay.classList.add('active');
                 renderDrawerStreamList(availableStreams);
-                document.getElementById('streamSearchInput').value = '';
-                document.getElementById('streamSearchInput').focus();
+                const input = document.getElementById('streamSearchInput');
+                if (input) {
+                    input.value = '';
+                    input.focus();
+                }
             }
         }
 
@@ -510,54 +518,76 @@ private let hybridPlayerHTML: String = """
         // 从抽屉中选择流：不切页，保持在 Tab 2，清空旧线路进入加载态
         function selectStreamFromDrawer(streamId) {
             closeStreamDrawer();
-            if (streamId === currentActiveStreamId) return;
+            // 如果是同一个流且当前没有发生错误，且已有线路，则直接忽略
+            if (streamId === currentActiveStreamId && !streamFetchError && availableSubSources.length > 0) return;
 
             currentActiveStreamId = streamId;
             currentActiveSourceIndex = 0;
             pendingSwitchSourceIndex = null;
+            isStreamLoading = true;
+            streamFetchError = null;
             availableSubSources = [];
+            lastSubSourcesSignature = '';
 
             // 1. 更新 Tab 2 当前流摘要
             updateCurrentStreamHero();
 
-            // 2. 线路区显示加载态
-            const subContainer = document.getElementById('subSourcesListContainer');
-            if (subContainer) {
-                subContainer.innerHTML = '<div class="state-hint">⏳ 正在获取该流的真实播放线路...</div>';
-            }
+            // 2. 线路区进入加载态
+            renderSubSourcesList();
 
             // 3. 向 Native 发起切流
             sendCmd('switchStream', JSON.stringify({ streamId: streamId }));
-            log('Node', `已切换至在线推流 <b>${streamId}</b>，正在解析播放线路并起播...`);
+            log('Node', `已切换至在线推流 <b>${streamId}</b>，正在拉取播放线路并起播...`);
+        }
+
+        // 重试获取当前流的播放线路
+        function retryFetchCurrentStream() {
+            if (!currentActiveStreamId) return;
+            isStreamLoading = true;
+            streamFetchError = null;
+            availableSubSources = [];
+            lastSubSourcesSignature = '';
+
+            updateCurrentStreamHero();
+            renderSubSourcesList();
+
+            sendCmd('retryStream', JSON.stringify({ streamId: currentActiveStreamId }));
+            log('Node', `正在重新获取推流 <b>${currentActiveStreamId}</b> 的播放线路...`);
         }
 
         // ================= 线路手动切换与管理 =================
 
         // 手动切换流内子线路：留在当前页，目标行显示切换中...
         function onSwitchSubSource(idx) {
-            if (idx === currentActiveSourceIndex) return;
+            if (idx === currentActiveSourceIndex && !pendingSwitchSourceIndex && (currentPlaybackState === 'playing' || isPlayingState)) return;
 
             pendingSwitchSourceIndex = idx;
+            currentPlaybackState = 'preparing';
             updateSubSourcesVisualHighlight();
 
-            sendCmd('switchSubSource', JSON.stringify({ index: idx, sourceIndex: idx }));
+            sendCmd('switchSubSource', JSON.stringify({
+                streamId: currentActiveStreamId,
+                index: idx,
+                sourceIndex: idx
+            }));
             log('Line', `向原生发送切线指令 ➔ <b>线路 ${idx + 1}</b> (等待解码播放)`);
         }
 
         // 快捷切下一条线路
         function switchNextSubSource() {
-            if (availableSubSources.length <= 1) return;
+            if (availableSubSources.length <= 1 || isStreamLoading) return;
             const nextIdx = (currentActiveSourceIndex + 1) % availableSubSources.length;
             onSwitchSubSource(nextIdx);
         }
 
         // 展开/折叠单条线路的完整详情 (不触发切源)
         function toggleLineDetail(idx) {
-            expandedLineDetails[idx] = !expandedLineDetails[idx];
+            const detailKey = `${currentActiveStreamId}_${idx}`;
+            expandedLineDetails[detailKey] = !expandedLineDetails[detailKey];
             const detailBox = document.getElementById(`lineDetail_${idx}`);
             const arrowSpan = document.getElementById(`detailArrow_${idx}`);
             if (detailBox) {
-                if (expandedLineDetails[idx]) {
+                if (expandedLineDetails[detailKey]) {
                     detailBox.classList.add('open');
                     if (arrowSpan) arrowSpan.innerText = '收起 ▴';
                 } else {
@@ -611,10 +641,18 @@ private let hybridPlayerHTML: String = """
                 availableStreams = data.streams || [];
                 availableSubSources = data.subSources || [];
                 currentActiveStreamId = data.currentStreamId || currentActiveStreamId;
+                isStreamLoading = !!data.isStreamLoading;
+                streamFetchError = data.streamFetchError || null;
+                
+                if (data.playbackState) {
+                    currentPlaybackState = data.playbackState;
+                    if (currentPlaybackState === 'playing') {
+                        pendingSwitchSourceIndex = null;
+                    }
+                }
                 
                 if (data.currentSourceIndex !== undefined) {
                     currentActiveSourceIndex = data.currentSourceIndex;
-                    pendingSwitchSourceIndex = null;
                 }
 
                 // 更新节点信息
@@ -622,16 +660,23 @@ private let hybridPlayerHTML: String = """
                 document.getElementById('sourcesNodeRemark').innerText = nodeRemark || '当前节点';
                 document.getElementById('sourcesNodeDomain').innerText = nodeDomain;
                 
-                // 1. 更新当前流英雄卡片
+                // 1. 更新当前流卡片
                 updateCurrentStreamHero();
 
-                // 2. 渲染线路列表 (保留已展开的详情项)
+                // 2. 渲染线路列表
                 renderSubSourcesList();
 
                 // 3. 更新控制台快捷指示条
                 updateConsoleQuickBar();
 
-                log('Node', `已同步: <b>${availableStreams.length}</b> 条推流，当前流含 <b>${availableSubSources.length}</b> 条播放线路`);
+                // 4. 如果抽屉当前正处于打开状态，同步刷新抽屉流列表（保留搜索词与滚动）
+                const drawerOverlay = document.getElementById('streamDrawerOverlay');
+                if (drawerOverlay && drawerOverlay.classList.contains('active')) {
+                    const searchVal = (document.getElementById('streamSearchInput')?.value) || '';
+                    onStreamSearch(searchVal);
+                }
+
+                log('Node', `已同步: <b>${availableStreams.length}</b> 条推流，当前线路 <b>${availableSubSources.length}</b> 条 [${currentPlaybackState}]`);
             } catch(e) {
                 console.error(e);
             }
@@ -665,41 +710,88 @@ private let hybridPlayerHTML: String = """
             const ctrlNextBtn = document.getElementById('ctrlNextLineBtn');
 
             if (countNum) countNum.innerText = availableSubSources.length;
-            if (nextBtn) nextBtn.disabled = availableSubSources.length <= 1;
-            if (ctrlNextBtn) ctrlNextBtn.disabled = availableSubSources.length <= 1;
+            if (nextBtn) nextBtn.disabled = isStreamLoading || availableSubSources.length <= 1;
+            if (ctrlNextBtn) ctrlNextBtn.disabled = isStreamLoading || availableSubSources.length <= 1;
 
             if (!container) return;
 
+            // 1. 如果正在加载流的播放地址
+            if (isStreamLoading) {
+                container.innerHTML = `
+                    <div class="state-hint">
+                        <div style="font-size: 13px; font-weight: bold; margin-bottom: 4px; color: #60A5FA;">⏳ 正在获取「${currentActiveStreamId}」的播放线路...</div>
+                        <div style="font-size: 10.5px; color: #64748B;">正在通过 toolsapi 请求多协议多线路</div>
+                    </div>`;
+                lastSubSourcesSignature = '';
+                return;
+            }
+
+            // 2. 如果请求失败或发生错误
+            if (streamFetchError) {
+                container.innerHTML = `
+                    <div class="state-hint" style="border-color: #EF4444; background: rgba(239, 68, 68, 0.1);">
+                        <div style="color: #F87171; font-weight: bold; margin-bottom: 6px;">❌ 获取播放线路失败</div>
+                        <div style="color: #94A3B8; font-size: 11px; margin-bottom: 10px;">${streamFetchError}</div>
+                        <button class="btn btn-sm" style="background: #2563EB; color: #FFF; margin: 0 auto; display: inline-flex; align-items: center; gap: 4px;" onclick="retryFetchCurrentStream()">
+                            🔄 重新获取线路
+                        </button>
+                    </div>`;
+                lastSubSourcesSignature = '';
+                return;
+            }
+
+            // 3. 如果当前未选择流或列表为空
             if (!currentActiveStreamId) {
                 container.innerHTML = '<div class="state-hint">请先点击上方「更换流 ›」选择在线推流</div>';
+                lastSubSourcesSignature = '';
                 return;
             }
 
             if (availableSubSources.length === 0) {
-                container.innerHTML = '<div class="state-hint">⚠️ 当前流暂无可用的播放地址，请尝试刷新或更换流</div>';
+                container.innerHTML = `
+                    <div class="state-hint">
+                        <div style="margin-bottom: 6px;">⚠️ 当前流暂无活跃播放线路</div>
+                        <button class="btn btn-sm" style="background: #334155; color: #E2E8F0; margin: 0 auto;" onclick="retryFetchCurrentStream()">
+                            🔄 重新尝试拉取
+                        </button>
+                    </div>`;
+                lastSubSourcesSignature = '';
                 return;
             }
 
+            // 4. 计算当前线路数据签名 (检查是否需要全量重建 DOM)
+            const newSignature = currentActiveStreamId + '::' + availableSubSources.map(s => s.url + s.type + s.videoCodec).join('|');
+            if (newSignature === lastSubSourcesSignature) {
+                // 数据签名未变，仅局部更新状态（不销毁 DOM 节点）
+                updateSubSourcesVisualHighlight();
+                return;
+            }
+
+            // 数据签名已变化，重建 DOM
+            lastSubSourcesSignature = newSignature;
             let html = '';
             availableSubSources.forEach((sub, idx) => {
+                const detailKey = `${currentActiveStreamId}_${idx}`;
+                const isOpen = !!expandedLineDetails[detailKey];
                 const isActive = idx === currentActiveSourceIndex;
-                const isSwitching = idx === pendingSwitchSourceIndex;
-                const isOpen = !!expandedLineDetails[idx];
+                const isSwitching = (pendingSwitchSourceIndex !== null && idx === pendingSwitchSourceIndex) ||
+                                    (isActive && currentPlaybackState === 'preparing');
 
                 let cardClass = 'line-item-card';
                 if (isActive) cardClass += ' active';
                 if (isSwitching) cardClass += ' switching';
 
                 let actionBtnHtml = '';
-                if (isActive) {
-                    actionBtnHtml = '<button class="line-action-btn btn-active" disabled>● 播放中 ✓</button>';
-                } else if (isSwitching) {
+                if (isSwitching) {
                     actionBtnHtml = '<button class="line-action-btn btn-switching" disabled>⏳ 切换中...</button>';
+                } else if (isActive && (currentPlaybackState === 'playing' || isPlayingState)) {
+                    actionBtnHtml = '<button class="line-action-btn btn-active" disabled>● 播放中 ✓</button>';
+                } else if (isActive) {
+                    actionBtnHtml = '<button class="line-action-btn btn-switching" disabled>⏳ 缓冲中...</button>';
                 } else {
                     actionBtnHtml = `<button class="line-action-btn btn-switch" onclick="onSwitchSubSource(${idx})">切换</button>`;
                 }
 
-                // 提取域名或简要路径
                 let domainText = '主线播放地址';
                 try {
                     const u = new URL(sub.url);
@@ -747,24 +839,27 @@ private let hybridPlayerHTML: String = """
                 if (!card) return;
 
                 const isActive = idx === currentActiveSourceIndex;
-                const isSwitching = idx === pendingSwitchSourceIndex;
+                const isSwitching = (pendingSwitchSourceIndex !== null && idx === pendingSwitchSourceIndex) ||
+                                    (isActive && currentPlaybackState === 'preparing');
 
                 card.className = 'line-item-card' + (isActive ? ' active' : '') + (isSwitching ? ' switching' : '');
                 
-                const btnContainer = card.querySelector('.line-main-row');
-                if (btnContainer) {
-                    const oldBtn = btnContainer.querySelector('.line-action-btn');
+                const mainRow = card.querySelector('.line-main-row');
+                if (mainRow) {
+                    const oldBtn = mainRow.querySelector('.line-action-btn');
                     if (oldBtn) oldBtn.remove();
 
                     let newBtnHtml = '';
-                    if (isActive) {
-                        newBtnHtml = '<button class="line-action-btn btn-active" disabled>● 播放中 ✓</button>';
-                    } else if (isSwitching) {
+                    if (isSwitching) {
                         newBtnHtml = '<button class="line-action-btn btn-switching" disabled>⏳ 切换中...</button>';
+                    } else if (isActive && (currentPlaybackState === 'playing' || isPlayingState)) {
+                        newBtnHtml = '<button class="line-action-btn btn-active" disabled>● 播放中 ✓</button>';
+                    } else if (isActive) {
+                        newBtnHtml = '<button class="line-action-btn btn-switching" disabled>⏳ 缓冲中...</button>';
                     } else {
                         newBtnHtml = `<button class="line-action-btn btn-switch" onclick="onSwitchSubSource(${idx})">切换</button>`;
                     }
-                    btnContainer.insertAdjacentHTML('beforeend', newBtnHtml);
+                    mainRow.insertAdjacentHTML('beforeend', newBtnHtml);
                 }
             });
 
@@ -778,11 +873,14 @@ private let hybridPlayerHTML: String = """
             if (ctrlStreamId) ctrlStreamId.innerText = 'Stream: ' + (currentActiveStreamId || '-');
 
             if (ctrlLineInfoText) {
-                if (availableSubSources.length > 0 && availableSubSources[currentActiveSourceIndex]) {
+                if (isStreamLoading) {
+                    ctrlLineInfoText.innerText = `🔀 当前线路: 正在加载线路...`;
+                } else if (availableSubSources.length > 0 && availableSubSources[currentActiveSourceIndex]) {
                     const curSub = availableSubSources[currentActiveSourceIndex];
                     const typeStr = (curSub.type || 'HLS').toUpperCase();
                     const codecStr = curSub.codecText || 'H.264';
-                    ctrlLineInfoText.innerText = `🔀 当前线路: ${currentActiveSourceIndex + 1} / ${availableSubSources.length} · ${typeStr} · ${codecStr}`;
+                    const stateTag = (currentPlaybackState === 'playing' || isPlayingState) ? '● 播放中' : '⏳ 缓冲中';
+                    ctrlLineInfoText.innerText = `🔀 线路: ${currentActiveSourceIndex + 1}/${availableSubSources.length} · ${typeStr} · ${codecStr} (${stateTag})`;
                 } else {
                     ctrlLineInfoText.innerText = `🔀 当前线路: 暂无可用线路`;
                 }
@@ -912,9 +1010,12 @@ private let hybridPlayerHTML: String = """
             const playIcon = document.getElementById('mainPlayIcon');
             const playText = document.getElementById('mainPlayText');
 
-            if (eventName === 'playing' || eventName === 'play') {
+            if (eventName === 'playing' || eventName === 'play' || eventName === 'canplaythrough') {
                 isPlayingState = true;
-                pendingSwitchSourceIndex = null;
+                if (eventName === 'playing' || eventName === 'canplaythrough') {
+                    currentPlaybackState = 'playing';
+                    pendingSwitchSourceIndex = null;
+                }
                 updateSubSourcesVisualHighlight();
                 if (miniStatus) miniStatus.innerText = `Native 状态: ${eventName} (正在播放)`;
                 if (playBtn) {
@@ -924,6 +1025,8 @@ private let hybridPlayerHTML: String = """
                 }
             } else if (eventName === 'pause') {
                 isPlayingState = false;
+                currentPlaybackState = 'paused';
+                updateSubSourcesVisualHighlight();
                 if (miniStatus) miniStatus.innerText = 'Native 状态: pause (已暂停)';
                 if (playBtn) {
                     playBtn.className = 'main-play-btn';
@@ -931,9 +1034,13 @@ private let hybridPlayerHTML: String = """
                     playText.innerText = '开始播放 (Play)';
                 }
             } else if (eventName === 'waiting') {
+                currentPlaybackState = 'buffering';
+                updateSubSourcesVisualHighlight();
                 if (miniStatus) miniStatus.innerText = 'Native 状态: waiting (缓冲中...)';
             } else if (eventName === 'ended') {
                 isPlayingState = false;
+                currentPlaybackState = 'ended';
+                updateSubSourcesVisualHighlight();
                 if (miniStatus) miniStatus.innerText = 'Native 状态: ended (已结束)';
                 if (playBtn) {
                     playBtn.className = 'main-play-btn';
@@ -941,7 +1048,6 @@ private let hybridPlayerHTML: String = """
                     playText.innerText = '重新播放 (Replay)';
                 }
             } else if (eventName === 'PlayerWARN') {
-                // 播放器发生内核或线路自动回退
                 log('Line', '播放器触发容错或切线告警 (PlayerWARN)');
             }
             sendCmd('getProperties');
@@ -968,6 +1074,9 @@ private let hybridPlayerHTML: String = """
             log('Error', `播放异常 code=${code} msg=${errMsg}`);
             const miniStatus = document.getElementById('miniEventStatus');
             if (miniStatus) miniStatus.innerText = `Native 错误: ${code}`;
+            currentPlaybackState = 'error';
+            pendingSwitchSourceIndex = null;
+            updateSubSourcesVisualHighlight();
         };
 
         window.vzBridgeUpdateProperties = function(props) {
@@ -989,7 +1098,9 @@ private let hybridPlayerHTML: String = """
                 }
                 if (props.currentSource && props.currentSource.sourceIndex !== undefined) {
                     currentActiveSourceIndex = props.currentSource.sourceIndex;
-                    pendingSwitchSourceIndex = null;
+                    if (currentPlaybackState === 'playing') {
+                        pendingSwitchSourceIndex = null;
+                    }
                     updateSubSourcesVisualHighlight();
                 }
                 updateStats();
@@ -1046,7 +1157,7 @@ public struct HybridWKWebViewRepresentable: NSViewRepresentable {
 }
 #endif
 
-// MARK: - JSBridge 协调器与事件监听器 (全面支持节点在线流与流内多播放线路手动切换)
+// MARK: - JSBridge 协调器与事件监听器 (全面支持节点在线流与流内多播放线路精准状态闭环)
 final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5EventListener {
     weak var webView: WKWebView?
     weak var vzPlayer: IH5Player?
@@ -1060,6 +1171,15 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     
     // 当前正在播放的子源索引
     var currentSourceIndex: Int = 0
+    
+    // 当前流是否正在网络请求加载线路
+    var isStreamLoading: Bool = false
+    
+    // 获取线路失败时的错误信息
+    var streamFetchError: String? = nil
+    
+    // 当前底层内核状态: idle | preparing | playing | paused | buffering | ended | error
+    var currentPlaybackState: String = "idle"
     
     // 异步防竞争请求 Token
     private var activeFetchRequestId: UUID?
@@ -1097,22 +1217,37 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
             case "setMuted":
                 _ = player.set_muted(paramsJson)
             case "switchStream":
-                // 动态切节点推流：请求播放地址并起播
+                // 动态切节点推流：清空旧线路进入 loading 态并请求播放地址
                 if let dict = self.parseJSON(paramsJson),
                    let streamId = dict["streamId"] as? String {
                     self.playNodeStream(streamId: streamId)
                 }
+            case "retryStream":
+                // 重新请求当前流的播放地址
+                if let dict = self.parseJSON(paramsJson),
+                   let streamId = dict["streamId"] as? String {
+                    self.playNodeStream(streamId: streamId, isRetry: true)
+                } else if !self.currentPlayingStreamId.isEmpty {
+                    self.playNodeStream(streamId: self.currentPlayingStreamId, isRetry: true)
+                }
             case "switchSubSource":
-                // 手动切换当前流内的指定播放线路
+                // 手动切换当前流内的指定播放线路 (严格校验 streamId)
                 if let dict = self.parseJSON(paramsJson),
                    let idx = dict["index"] as? Int ?? (dict["sourceIndex"] as? Int) {
+                    if let reqStreamId = dict["streamId"] as? String, !reqStreamId.isEmpty, reqStreamId != self.currentPlayingStreamId {
+                        return // 忽略针对陈旧流 ID 的切线指令
+                    }
+                    guard idx >= 0, idx < self.currentStreamSources.count else { return }
                     self.currentSourceIndex = idx
+                    self.currentPlaybackState = "preparing"
                     _ = player.switchSource(index: idx)
                     self.syncNodeStreamsToH5()
                     self.syncPropertiesToH5()
                 }
             case "switchNextSubSource":
                 // 切换到下一条线路
+                guard !self.currentStreamSources.isEmpty else { return }
+                self.currentPlaybackState = "preparing"
                 player.sendEvent("NEXT_SOURCE", paramsJson: "{}")
                 self.syncNodeStreamsToH5()
                 self.syncPropertiesToH5()
@@ -1129,17 +1264,27 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
         }
     }
     
-    /// 播放节点的在线流：自动请求 toolsapi 播放地址并构造成多源容错管线 (防异步竞争)
-    func playNodeStream(streamId: String) {
+    /// 播放节点的在线流：自动请求 toolsapi 播放地址并构造成多源容错管线 (防异步竞争与数据串流)
+    func playNodeStream(streamId: String, isRetry: Bool = false) {
         guard let player = vzPlayer else { return }
+        
+        // 1. 立即重置状态，防止旧流数据在请求期间被操作或反向覆盖
         self.currentPlayingStreamId = streamId
+        self.currentStreamSources = []
         self.currentSourceIndex = 0
+        self.isStreamLoading = true
+        self.streamFetchError = nil
+        self.currentPlaybackState = "preparing"
         
         let requestId = UUID()
         self.activeFetchRequestId = requestId
         
+        // 2. 立即向 H5 发送加载状态与空线路
+        self.syncNodeStreamsToH5()
+        
         apiService.fetchPlayerSources(for: streamId) { [weak self] container in
             guard let self = self, self.activeFetchRequestId == requestId else { return }
+            self.isStreamLoading = false
             
             if let container = container, !container.allSources.isEmpty {
                 let vzSources = container.allSources.enumerated().map { (index, item) -> VZPlayerSource in
@@ -1157,11 +1302,13 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                 }
                 self.currentStreamSources = vzSources
                 self.currentSourceIndex = 0
+                self.streamFetchError = nil
                 player.setSources(vzSources)
                 player.play()
             } else {
                 self.currentStreamSources = []
                 self.currentSourceIndex = 0
+                self.streamFetchError = self.apiService.sourcesError ?? "未查询到当前流的可用播放地址"
             }
             self.syncNodeStreamsToH5()
             self.syncPropertiesToH5()
@@ -1209,14 +1356,20 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
             self.currentSourceIndex = activeIdx
         }
         
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "activeNodeDomain": apiService.activeNodeDomain,
             "activeNodeRemark": apiService.activeNodeItem?.remark ?? apiService.activeNodeDomain,
             "currentStreamId": currentPlayingStreamId,
+            "isStreamLoading": isStreamLoading,
+            "playbackState": currentPlaybackState,
             "streams": streamsArray,
             "subSources": subSourcesArray,
             "currentSourceIndex": currentSourceIndex
         ]
+        
+        if let err = streamFetchError {
+            payload["streamFetchError"] = err
+        }
         
         if let data = try? JSONSerialization.data(withJSONObject: payload),
            let jsonStr = String(data: data, encoding: .utf8) {
@@ -1271,10 +1424,21 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     func onEvent(_ eventName: String) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let webView = self.webView else { return }
+            
+            if eventName == "playing" || eventName == "canplaythrough" {
+                self.currentPlaybackState = "playing"
+            } else if eventName == "pause" {
+                self.currentPlaybackState = "paused"
+            } else if eventName == "waiting" {
+                self.currentPlaybackState = "buffering"
+            } else if eventName == "ended" {
+                self.currentPlaybackState = "ended"
+            }
+            
             let script = "if (window.vzBridgeReceiveEvent) { window.vzBridgeReceiveEvent('\(eventName)'); }"
             webView.evaluateJavaScript(script, completionHandler: nil)
             
-            if eventName == "PlayerWARN" || eventName == "playing" {
+            if eventName == "PlayerWARN" || eventName == "playing" || eventName == "canplaythrough" {
                 self.syncNodeStreamsToH5()
                 self.syncPropertiesToH5()
             }
@@ -1291,10 +1455,12 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     
     func onError(_ code: Int, errMsg: String) {
         DispatchQueue.main.async { [weak self] in
-            guard let webView = self?.webView else { return }
+            guard let self = self, let webView = self.webView else { return }
+            self.currentPlaybackState = "error"
             let safeMsg = errMsg.replacingOccurrences(of: "'", with: "\\'")
             let script = "if (window.vzBridgeReceiveError) { window.vzBridgeReceiveError(\(code), '\(safeMsg)'); }"
             webView.evaluateJavaScript(script, completionHandler: nil)
+            self.syncNodeStreamsToH5()
         }
     }
 }
