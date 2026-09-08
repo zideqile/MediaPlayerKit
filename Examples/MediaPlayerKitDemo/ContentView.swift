@@ -60,7 +60,6 @@ public struct ContentView: View {
             NavigationView {
                 QoSDashboardView()
             }
-            .navigationViewStyle(StackNavigationViewStyle())
             .tabItem {
                 Image(systemName: AppTab.qos.iconName)
                 Text(AppTab.qos.title)
@@ -70,7 +69,6 @@ public struct ContentView: View {
             NavigationView {
                 SettingsView()
             }
-            .navigationViewStyle(StackNavigationViewStyle())
             .tabItem {
                 Image(systemName: AppTab.settings.iconName)
                 Text(AppTab.settings.title)
