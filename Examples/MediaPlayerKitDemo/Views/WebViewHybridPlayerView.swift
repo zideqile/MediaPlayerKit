@@ -563,6 +563,7 @@ private let hybridPlayerHTML: String = """
                 document.getElementById('timeText').innerText = `${curStr} / ${durStr}`;
                 document.getElementById('miniEventTime').innerText = `${curStr}/${durStr}`;
             } else {
+                document.getElementById('seekSlider').value = 0;
                 document.getElementById('timeText').innerText = `${curStr} (直播)`;
                 document.getElementById('miniEventTime').innerText = curStr;
             }
@@ -576,7 +577,12 @@ private let hybridPlayerHTML: String = """
 
         window.vzBridgeUpdateProperties = function(props) {
             try {
-                if (props.duration !== undefined && props.duration > 0) {
+                const isLive = (props.currentSource && props.currentSource.isLive) || props.duration === 0;
+                if (isLive) {
+                    totalDurationSec = 0;
+                    document.getElementById('seekSlider').value = 0;
+                    document.getElementById('timeText').innerText = formatTime(currentPosSec) + ' (直播)';
+                } else if (props.duration !== undefined && props.duration > 0) {
                     totalDurationSec = props.duration;
                 }
                 if (props.speed !== undefined) {
@@ -596,6 +602,12 @@ private let hybridPlayerHTML: String = """
             const s = Math.floor(sec % 60);
             return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
         }
+
+        // 页面 DOM 加载完毕后立即向 Native 发起属性与流列表查询
+        document.addEventListener('DOMContentLoaded', () => {
+            sendCmd('getProperties');
+            sendCmd('refreshStreams');
+        });
     </script>
 </body>
 </html>
@@ -641,6 +653,9 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     
     // 当前正在播放的流 ID / 标记
     var currentPlayingStreamId: String = "vod_girl"
+    
+    // 异步防竞争请求 Token
+    private var activeFetchRequestId: UUID?
     
     // 基础备用源
     private let fallbackSources: [String: [VZPlayerSource]] = [
@@ -705,6 +720,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                     self?.syncNodeStreamsToH5()
                 }
             case "getProperties":
+                self.syncNodeStreamsToH5()
                 self.syncPropertiesToH5()
             default:
                 break
@@ -712,13 +728,17 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
         }
     }
     
-    /// 播放节点的在线流：自动请求 toolsapi 播放地址并构造成多源容错管线
+    /// 播放节点的在线流：自动请求 toolsapi 播放地址并构造成多源容错管线 (防异步竞争)
     func playNodeStream(streamId: String) {
         guard let player = vzPlayer else { return }
         self.currentPlayingStreamId = streamId
         
+        let requestId = UUID()
+        self.activeFetchRequestId = requestId
+        
         apiService.fetchPlayerSources(for: streamId) { [weak self] container in
-            guard let self = self else { return }
+            guard let self = self, self.activeFetchRequestId == requestId else { return }
+            
             if let container = container, !container.allSources.isEmpty {
                 let vzSources = container.allSources.enumerated().map { (index, item) -> VZPlayerSource in
                     let source = VZPlayerSource(
@@ -848,14 +868,85 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     }
 }
 
+// MARK: - H5 混合播放持久化 ViewModel (彻底解决渲染视图与播放器生命周期脱节)
+final class HybridPlayerViewModel: ObservableObject {
+    let playerView = MediaPlayerView()
+    @Published var vzPlayer: IH5Player?
+    @Published var coordinator: VZPlayerJSBridgeCoordinator?
+    @Published var webView: WKWebView?
+    
+    func setup(apiService: StreamAPIService) {
+        guard vzPlayer == nil else { return }
+        
+        // 1. 创建 IH5Player 实例
+        let player = export.CreateVZPlayer(playerView)
+        self.vzPlayer = player
+        
+        // 2. 初始化 WKUserContentController 与 WKWebViewConfiguration
+        let userController = WKUserContentController()
+        let config = WKWebViewConfiguration()
+        config.userContentController = userController
+        
+        let coord = VZPlayerJSBridgeCoordinator(webView: nil, vzPlayer: player)
+        self.coordinator = coord
+        
+        // 注册 JSBridge 消息监听
+        userController.add(coord, name: "vzPlayerBridge")
+        
+        let wv = WKWebView(frame: .zero, configuration: config)
+        coord.webView = wv
+        self.webView = wv
+        
+        // 注册播放器事件监听器
+        player.setOnH5EventListener(coord)
+        
+        // 3. 起播节点的首个流或预设备用源
+        if let firstStream = apiService.streamList.first {
+            coord.playNodeStream(streamId: firstStream.streamid)
+        } else {
+            let initialSources = [
+                VZPlayerSource(
+                    url: "https://vplayerctrl-dev.weizan.cn/girl.mp4",
+                    type: "hls",
+                    tag: "vod_girl",
+                    videoCodec: 2,
+                    orderno: 1,
+                    isLive: false,
+                    ext: "mp4"
+                ),
+                VZPlayerSource(
+                    url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8",
+                    type: "hls",
+                    tag: "live_backup",
+                    videoCodec: 2,
+                    orderno: 2,
+                    isLive: false,
+                    ext: "m3u8"
+                )
+            ]
+            player.setSources(initialSources)
+            player.play()
+        }
+        
+        // 4. 加载 H5 控制台页面并在加载后推送最新节点流
+        wv.loadHTMLString(hybridPlayerHTML, baseURL: nil)
+    }
+    
+    func teardown() {
+        if let userContentController = webView?.configuration.userContentController {
+            userContentController.removeScriptMessageHandler(forName: "vzPlayerBridge")
+        }
+        vzPlayer?.destroy()
+        vzPlayer = nil
+        coordinator = nil
+        webView = nil
+    }
+}
+
 // MARK: - H5 混合播放演示主视图 (WebViewHybridPlayerView)
 public struct WebViewHybridPlayerView: View {
     @ObservedObject private var apiService = StreamAPIService.shared
-    
-    private let playerView = MediaPlayerView()
-    @State private var vzPlayer: IH5Player?
-    @State private var coordinator: VZPlayerJSBridgeCoordinator?
-    @State private var webView: WKWebView?
+    @StateObject private var viewModel = HybridPlayerViewModel()
 
     public init() {}
 
@@ -863,7 +954,7 @@ public struct WebViewHybridPlayerView: View {
         VStack(spacing: 0) {
             // MARK: - 1. 顶部原生视频渲染窗口 (VZPlayerView)
             ZStack(alignment: .topLeading) {
-                VZPlayerViewRepresentable(playerView: playerView)
+                VZPlayerViewRepresentable(playerView: viewModel.playerView)
                     .frame(height: 220)
                     .background(Color.black)
                 
@@ -922,7 +1013,7 @@ public struct WebViewHybridPlayerView: View {
             Divider()
             
             // MARK: - 2. 下方 WKWebView (承载现代化底部导航 H5 控制台与 JSBridge)
-            if let wv = webView {
+            if let wv = viewModel.webView {
                 HybridWKWebViewRepresentable(webView: wv)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -936,85 +1027,18 @@ public struct WebViewHybridPlayerView: View {
             }
         }
         .onAppear {
-            setupHybridPlayer()
+            viewModel.setup(apiService: apiService)
             if apiService.hasCompleteConfig && apiService.streamList.isEmpty {
                 apiService.fetchStreamList { _ in
-                    coordinator?.syncNodeStreamsToH5()
+                    viewModel.coordinator?.syncNodeStreamsToH5()
                 }
             }
         }
-        .onReceive(apiService.$streamList) { streams in
-            coordinator?.syncNodeStreamsToH5()
+        .onReceive(apiService.$streamList) { _ in
+            viewModel.coordinator?.syncNodeStreamsToH5()
         }
         .onDisappear {
-            if let userContentController = webView?.configuration.userContentController {
-                userContentController.removeScriptMessageHandler(forName: "vzPlayerBridge")
-            }
-            vzPlayer?.destroy()
-            vzPlayer = nil
-            coordinator = nil
-            webView = nil
-        }
-    }
-
-    private func setupHybridPlayer() {
-        guard vzPlayer == nil else { return }
-
-        // 1. 创建 IH5Player 实例
-        let player = export.CreateVZPlayer(playerView)
-        self.vzPlayer = player
-
-        // 2. 初始化 WKUserContentController 与 WKWebViewConfiguration
-        let userController = WKUserContentController()
-        let config = WKWebViewConfiguration()
-        config.userContentController = userController
-
-        let coord = VZPlayerJSBridgeCoordinator(webView: nil, vzPlayer: player)
-        self.coordinator = coord
-        
-        // 注册 JSBridge 消息监听
-        userController.add(coord, name: "vzPlayerBridge")
-        
-        let wv = WKWebView(frame: .zero, configuration: config)
-        coord.webView = wv
-        self.webView = wv
-        
-        // 注册播放器事件监听器
-        player.setOnH5EventListener(coord)
-
-        // 3. 起播节点的首个流或预设备用源
-        if let firstStream = apiService.streamList.first {
-            coord.playNodeStream(streamId: firstStream.streamid)
-        } else {
-            let initialSources = [
-                VZPlayerSource(
-                    url: "https://vplayerctrl-dev.weizan.cn/girl.mp4",
-                    type: "hls",
-                    tag: "vod_girl",
-                    videoCodec: 2,
-                    orderno: 1,
-                    isLive: false,
-                    ext: "mp4"
-                ),
-                VZPlayerSource(
-                    url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8",
-                    type: "hls",
-                    tag: "live_backup",
-                    videoCodec: 2,
-                    orderno: 2,
-                    isLive: false,
-                    ext: "m3u8"
-                )
-            ]
-            player.setSources(initialSources)
-            player.play()
-        }
-
-        // 4. 加载 H5 控制台页面并在加载后推送最新节点流
-        wv.loadHTMLString(hybridPlayerHTML, baseURL: nil)
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            coord.syncNodeStreamsToH5()
+            viewModel.teardown()
         }
     }
 }

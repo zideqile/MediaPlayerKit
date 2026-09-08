@@ -6,26 +6,8 @@ import UIKit
 
 public struct UniversalPlayerView: View {
     @ObservedObject private var apiService = StreamAPIService.shared
-    
+    @StateObject private var viewModel = UniversalPlayerViewModel()
     @State private var customURLText: String = ""
-    
-    // MARK: - VZPlayer (IH5Player) 核心实例与渲染视图
-    private let playerView = MediaPlayerView()
-    @State private var vzPlayer: IH5Player?
-    @State private var coordinator: VZH5PlayerCoordinator?
-    
-    @State private var isPlaying = false
-    @State private var isBuffering = false
-    @State private var currentPosition: TimeInterval = 0
-    @State private var duration: TimeInterval = 0
-    @State private var bufferedText: String = "0"
-    @State private var playbackRate: Float = 1.0
-    @State private var isMuted = false
-    @State private var showH5Monitor = true
-    @State private var errorMessage: String?
-    @State private var currentPlayingTitle: String = "待播放"
-    @State private var currentSourceJSON: String = "{}"
-    @State private var recentH5Events: [String] = []
     
     public init() {}
 
@@ -91,12 +73,12 @@ public struct UniversalPlayerView: View {
                 
                 // MARK: - 2. 视频渲染窗口 (VZPlayerView)
                 ZStack(alignment: .topTrailing) {
-                    VZPlayerViewRepresentable(playerView: playerView)
+                    VZPlayerViewRepresentable(playerView: viewModel.playerView)
                         .frame(height: 220)
                         .background(Color.black)
                     
                     // 状态加载指示器
-                    if isBuffering {
+                    if viewModel.isBuffering {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                             .scaleEffect(1.4)
@@ -104,7 +86,7 @@ public struct UniversalPlayerView: View {
                     }
                     
                     // 错误提示蒙层
-                    if let err = errorMessage {
+                    if let err = viewModel.errorMessage {
                         VStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.title2)
@@ -120,23 +102,23 @@ public struct UniversalPlayerView: View {
                     }
                     
                     // 实时 H5 API 监控指示悬浮窗
-                    if showH5Monitor {
+                    if viewModel.showH5Monitor {
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
                                 Text("⚡️ IH5Player API 监控")
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundColor(.yellow)
                                 Spacer()
-                                Text(currentPlayingTitle)
+                                Text(viewModel.currentPlayingTitle)
                                     .font(.system(size: 8))
                                     .foregroundColor(.green)
                                     .lineLimit(1)
                             }
-                            Text("进度: \(vzPlayer?.get_currentTime() ?? "{}") | 时长: \(vzPlayer?.get_duration() ?? "{}")")
-                            Text("音量: \(vzPlayer?.get_volume() ?? "{}") | 静音: \(vzPlayer?.get_muted() ?? "{}")")
-                            Text("倍速: \(vzPlayer?.get_speed() ?? "{}") | 缓冲: \(vzPlayer?.get_buffered() ?? "{}")")
-                            if !recentH5Events.isEmpty {
-                                Text("事件: \(recentH5Events.suffix(3).joined(separator: " ➔ "))")
+                            Text("进度: \(viewModel.vzPlayer?.get_currentTime() ?? "{}") | 时长: \(viewModel.vzPlayer?.get_duration() ?? "{}")")
+                            Text("音量: \(viewModel.vzPlayer?.get_volume() ?? "{}") | 静音: \(viewModel.vzPlayer?.get_muted() ?? "{}")")
+                            Text("倍速: \(viewModel.vzPlayer?.get_speed() ?? "{}") | 缓冲: \(viewModel.vzPlayer?.get_buffered() ?? "{}")")
+                            if !viewModel.recentH5Events.isEmpty {
+                                Text("事件: \(viewModel.recentH5Events.suffix(3).joined(separator: " ➔ "))")
                                     .foregroundColor(Color(red: 0.0, green: 0.8, blue: 0.9))
                                     .lineLimit(1)
                             }
@@ -154,20 +136,20 @@ public struct UniversalPlayerView: View {
                 VStack(spacing: 6) {
                     // 时间进度条
                     VStack(spacing: 2) {
-                        Slider(value: $currentPosition, in: 0...max(1, duration)) { editing in
+                        Slider(value: $viewModel.currentPosition, in: 0...max(1, viewModel.duration)) { editing in
                             if !editing {
-                                _ = vzPlayer?.set_currentTime("{\"currentTime\": \(Int(currentPosition))}")
+                                _ = viewModel.vzPlayer?.set_currentTime("{\"currentTime\": \(Int(viewModel.currentPosition))}")
                             }
                         }
                         .accentColor(.blue)
                         
                         HStack {
-                            Text(timeString(currentPosition))
+                            Text(viewModel.timeString(viewModel.currentPosition))
                             Spacer()
-                            Text(isPlaying ? "🟢 播放中" : "⚪️ 已暂停")
-                                .foregroundColor(isPlaying ? .green : .secondary)
+                            Text(viewModel.isPlaying ? "🟢 播放中" : "⚪️ 已暂停")
+                                .foregroundColor(viewModel.isPlaying ? .green : .secondary)
                             Spacer()
-                            Text(timeString(duration))
+                            Text(viewModel.timeString(viewModel.duration))
                         }
                         .font(.caption2)
                         .foregroundColor(.secondary)
@@ -177,8 +159,8 @@ public struct UniversalPlayerView: View {
                     // 控制按钮条 (对标 IH5Player play/pause/set_speed/set_muted/SendEvent)
                     HStack(spacing: 16) {
                         Button(action: {
-                            let newPos = max(0, currentPosition - 10)
-                            _ = vzPlayer?.set_currentTime("{\"currentTime\": \(Int(newPos))}")
+                            let newPos = max(0, viewModel.currentPosition - 10)
+                            _ = viewModel.vzPlayer?.set_currentTime("{\"currentTime\": \(Int(newPos))}")
                         }) {
                             Image(systemName: "gobackward.10")
                                 .font(.body)
@@ -186,20 +168,20 @@ public struct UniversalPlayerView: View {
                         }
                         
                         Button(action: {
-                            if isPlaying {
-                                vzPlayer?.pause()
+                            if viewModel.isPlaying {
+                                viewModel.vzPlayer?.pause()
                             } else {
-                                vzPlayer?.play()
+                                viewModel.vzPlayer?.play()
                             }
                         }) {
-                            Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.system(size: 36))
                                 .foregroundColor(.blue)
                         }
                         
                         Button(action: {
-                            let newPos = min(duration, currentPosition + 10)
-                            _ = vzPlayer?.set_currentTime("{\"currentTime\": \(Int(newPos))}")
+                            let newPos = min(viewModel.duration, viewModel.currentPosition + 10)
+                            _ = viewModel.vzPlayer?.set_currentTime("{\"currentTime\": \(Int(newPos))}")
                         }) {
                             Image(systemName: "goforward.10")
                                 .font(.body)
@@ -208,8 +190,8 @@ public struct UniversalPlayerView: View {
                         
                         // 主动切下一个源 (SendEvent NEXT_SOURCE)
                         Button(action: {
-                            vzPlayer?.sendEvent("NEXT_SOURCE", paramsJson: "{}")
-                            refreshH5State()
+                            viewModel.vzPlayer?.sendEvent("NEXT_SOURCE", paramsJson: "{}")
+                            viewModel.refreshH5State()
                         }) {
                             VStack(spacing: 1) {
                                 Image(systemName: "arrow.triangle.swap")
@@ -226,13 +208,13 @@ public struct UniversalPlayerView: View {
                         Menu {
                             ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { rate in
                                 Button("\(String(format: "%.2fx", rate))") {
-                                    playbackRate = Float(rate)
-                                    _ = vzPlayer?.set_speed("{\"speed\": \(rate)}")
-                                    refreshH5State()
+                                    viewModel.playbackRate = Float(rate)
+                                    _ = viewModel.vzPlayer?.set_speed("{\"speed\": \(rate)}")
+                                    viewModel.refreshH5State()
                                 }
                             }
                         } label: {
-                            Text("\(String(format: "%.2fx", playbackRate))")
+                            Text("\(String(format: "%.2fx", viewModel.playbackRate))")
                                 .font(.system(size: 11, weight: .bold))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
@@ -242,20 +224,20 @@ public struct UniversalPlayerView: View {
                         
                         // 静音切换 (set_muted)
                         Button(action: {
-                            isMuted.toggle()
-                            _ = vzPlayer?.set_muted("{\"muted\": \(isMuted)}")
-                            refreshH5State()
+                            viewModel.isMuted.toggle()
+                            _ = viewModel.vzPlayer?.set_muted("{\"muted\": \(viewModel.isMuted)}")
+                            viewModel.refreshH5State()
                         }) {
-                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                .foregroundColor(isMuted ? .red : .primary)
+                            Image(systemName: viewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .foregroundColor(viewModel.isMuted ? .red : .primary)
                         }
                         
                         // H5 监控悬浮窗开关
                         Button(action: {
-                            showH5Monitor.toggle()
+                            viewModel.showH5Monitor.toggle()
                         }) {
-                            Image(systemName: showH5Monitor ? "gauge.with.needle.fill" : "gauge.with.needle")
-                                .foregroundColor(showH5Monitor ? .yellow : .secondary)
+                            Image(systemName: viewModel.showH5Monitor ? "gauge.with.needle.fill" : "gauge.with.needle")
+                                .foregroundColor(viewModel.showH5Monitor ? .yellow : .secondary)
                         }
                     }
                 }
@@ -302,7 +284,7 @@ public struct UniversalPlayerView: View {
                             HStack(spacing: 8) {
                                 ForEach(apiService.streamList) { stream in
                                     Button(action: {
-                                        playNodeStream(stream)
+                                        viewModel.playNodeStream(stream, apiService: apiService)
                                     }) {
                                         VStack(alignment: .leading, spacing: 3) {
                                             Text(stream.streamid)
@@ -348,7 +330,7 @@ public struct UniversalPlayerView: View {
                             .font(.system(size: 12))
                         
                         Button(action: {
-                            playCustomURL(customURLText)
+                            viewModel.playCustomURL(customURLText)
                         }) {
                             Text("播放")
                                 .font(.system(size: 12, weight: .bold))
@@ -365,18 +347,36 @@ public struct UniversalPlayerView: View {
             }
         }
         .onAppear {
-            setupVZPlayer()
+            viewModel.setupVZPlayer()
         }
         .onDisappear {
-            vzPlayer?.destroy()
-            vzPlayer = nil
-            coordinator = nil
+            viewModel.teardown()
         }
     }
+}
+
+// MARK: - UniversalPlayerViewModel
+final class UniversalPlayerViewModel: ObservableObject {
+    let playerView = MediaPlayerView()
+    @Published var vzPlayer: IH5Player?
+    @Published var coordinator: VZH5PlayerCoordinator?
     
-    // MARK: - 初始化 VZPlayer 与 H5 事件监听
+    @Published var isPlaying = false
+    @Published var isBuffering = false
+    @Published var currentPosition: TimeInterval = 0
+    @Published var duration: TimeInterval = 0
+    @Published var bufferedText: String = "0"
+    @Published var playbackRate: Float = 1.0
+    @Published var isMuted = false
+    @Published var showH5Monitor = true
+    @Published var errorMessage: String?
+    @Published var currentPlayingTitle: String = "待播放"
+    @Published var currentSourceJSON: String = "{}"
+    @Published var recentH5Events: [String] = []
     
-    private func setupVZPlayer() {
+    private var activeFetchRequestId: UUID?
+    
+    func setupVZPlayer() {
         guard vzPlayer == nil else { return }
         
         // 1. 初始化全局配置 (对标 export.Init)
@@ -391,31 +391,34 @@ public struct UniversalPlayerView: View {
         
         // 3. 绑定 H5 事件监听器 (对标 IH5Player.H5EventListener)
         let coord = VZH5PlayerCoordinator(
-            onEvent: { eventName in
-                recentH5Events.append(eventName)
+            onEvent: { [weak self] eventName in
+                guard let self = self else { return }
+                self.recentH5Events.append(eventName)
                 if eventName == "play" || eventName == "playing" {
-                    isPlaying = true
-                    errorMessage = nil
+                    self.isPlaying = true
+                    self.errorMessage = nil
                 } else if eventName == "pause" {
-                    isPlaying = false
+                    self.isPlaying = false
                 } else if eventName == "waiting" {
-                    isBuffering = true
+                    self.isBuffering = true
                 } else if eventName == "canplaythrough" {
-                    isBuffering = false
+                    self.isBuffering = false
                 } else if eventName == "ended" {
-                    isPlaying = false
+                    self.isPlaying = false
                 }
-                refreshH5State()
+                self.refreshH5State()
             },
-            onError: { code, errMsg in
-                errorMessage = "播放错误 [\(code)]: \(errMsg)"
-                isPlaying = false
-                isBuffering = false
+            onError: { [weak self] code, errMsg in
+                guard let self = self else { return }
+                self.errorMessage = "播放错误 [\(code)]: \(errMsg)"
+                self.isPlaying = false
+                self.isBuffering = false
             },
-            onTimeUpdate: { curTime in
-                currentPosition = TimeInterval(curTime)
-                if duration == 0 {
-                    refreshDuration()
+            onTimeUpdate: { [weak self] curTime in
+                guard let self = self else { return }
+                self.currentPosition = TimeInterval(curTime)
+                if self.duration == 0 {
+                    self.refreshDuration()
                 }
             }
         )
@@ -425,14 +428,20 @@ public struct UniversalPlayerView: View {
         self.coordinator = coord
     }
     
-    private func refreshH5State() {
+    func teardown() {
+        vzPlayer?.destroy()
+        vzPlayer = nil
+        coordinator = nil
+    }
+    
+    func refreshH5State() {
         guard let player = vzPlayer else { return }
         currentSourceJSON = player.get_currentsource()
         bufferedText = player.get_buffered()
         refreshDuration()
     }
     
-    private func refreshDuration() {
+    func refreshDuration() {
         guard let player = vzPlayer else { return }
         if let durData = player.get_duration().data(using: .utf8),
            let durDict = try? JSONSerialization.jsonObject(with: durData) as? [String: Any],
@@ -442,15 +451,17 @@ public struct UniversalPlayerView: View {
         }
     }
     
-    // MARK: - 业务播放拉起 (注入 VZPlayerSource 多源)
-    
-    private func playNodeStream(_ stream: NodeStreamInfo) {
+    func playNodeStream(_ stream: NodeStreamInfo, apiService: StreamAPIService) {
         currentPlayingTitle = stream.streamid
         errorMessage = nil
         
-        apiService.fetchPlayerSources(for: stream.streamid) { container in
+        let requestId = UUID()
+        self.activeFetchRequestId = requestId
+        
+        apiService.fetchPlayerSources(for: stream.streamid) { [weak self] container in
+            guard let self = self, self.activeFetchRequestId == requestId else { return }
             guard let container = container, !container.allSources.isEmpty else {
-                errorMessage = "未解析出该流的播放源"
+                self.errorMessage = "未解析出该流的播放源"
                 return
             }
             
@@ -470,13 +481,13 @@ public struct UniversalPlayerView: View {
             }
             
             // 调用 IH5Player API
-            vzPlayer?.setSources(vzSources)
-            vzPlayer?.play()
-            refreshH5State()
+            self.vzPlayer?.setSources(vzSources)
+            self.vzPlayer?.play()
+            self.refreshH5State()
         }
     }
     
-    private func playCustomURL(_ urlStr: String) {
+    func playCustomURL(_ urlStr: String) {
         guard !urlStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         currentPlayingTitle = "自定义源"
         errorMessage = nil
@@ -489,7 +500,7 @@ public struct UniversalPlayerView: View {
         refreshH5State()
     }
     
-    private func timeString(_ time: TimeInterval) -> String {
+    func timeString(_ time: TimeInterval) -> String {
         let totalSeconds = Int(time)
         let minutes = totalSeconds / 60
         let seconds = totalSeconds % 60
