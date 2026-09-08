@@ -15,7 +15,10 @@ public struct VZPlayerViewRepresentable: UIViewRepresentable {
         return playerView
     }
 
-    public func updateUIView(_ uiView: MediaPlayerView, context: Context) {}
+    public func updateUIView(_ uiView: MediaPlayerView, context: Context) {
+        uiView.setNeedsLayout()
+        uiView.layoutIfNeeded()
+    }
 }
 
 #elseif canImport(AppKit)
@@ -33,6 +36,8 @@ public struct VZPlayerViewRepresentable: NSViewRepresentable {
         return playerView
     }
 
-    public func updateNSView(_ nsView: MediaPlayerView, context: Context) {}
+    public func updateNSView(_ nsView: MediaPlayerView, context: Context) {
+        nsView.needsLayout = true
+    }
 }
 #endif

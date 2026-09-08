@@ -55,7 +55,28 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         self.sources = sources
         self.currentSourceIndex = 0
         self.currentEngineIndex = 0
+        if let first = sources.first {
+            self.engineOrder = computeEngineOrder(for: first)
+        } else {
+            self.engineOrder = [.avPlayer, .mePlayer]
+        }
         self.needsReloadSource = true
+    }
+    
+    private func computeEngineOrder(for source: VZPlayerSource) -> [PlayerEngineType] {
+        let type = source.type.lowercased()
+        let urlStr = source.url.lowercased()
+        let isFlv = type == "flv" || urlStr.contains(".flv")
+        let isRtmp = type == "rtmp" || urlStr.hasPrefix("rtmp://")
+        let isH265 = source.videoCodec == 4 || source.tag.lowercased().contains("265") || urlStr.contains("265")
+        
+        if isFlv || isRtmp {
+            return [.mePlayer]
+        } else if isH265 {
+            return [.mePlayer, .avPlayer]
+        } else {
+            return [.avPlayer, .mePlayer]
+        }
     }
     
     public func setConfig(_ config: VZPlayerConfig) {
@@ -240,7 +261,9 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         if currentSourceIndex + 1 < sources.count {
             currentSourceIndex += 1
             currentEngineIndex = 0
-            delegate?.multiSourcePlayer(self, didWarnMessage: "Switch to nextSource [\(currentSourceIndex + 1)/\(sources.count)]")
+            let nextSource = sources[currentSourceIndex]
+            self.engineOrder = computeEngineOrder(for: nextSource)
+            delegate?.multiSourcePlayer(self, didWarnMessage: "Switch to nextSource [\(currentSourceIndex + 1)/\(sources.count)] (\(nextSource.tag))")
             startPlaybackWithCurrentSourceAndEngine()
         } else {
             // 所有地址和内核全部耗尽，最终上报错误
@@ -252,6 +275,8 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         if currentSourceIndex + 1 < sources.count {
             currentSourceIndex += 1
             currentEngineIndex = 0
+            let nextSource = sources[currentSourceIndex]
+            self.engineOrder = computeEngineOrder(for: nextSource)
             startPlaybackWithCurrentSourceAndEngine()
             return true
         }
