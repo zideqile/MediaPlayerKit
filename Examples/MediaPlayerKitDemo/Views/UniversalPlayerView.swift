@@ -369,6 +369,8 @@ public struct UniversalPlayerView: View {
         }
         .onDisappear {
             vzPlayer?.destroy()
+            vzPlayer = nil
+            coordinator = nil
         }
     }
     
@@ -412,6 +414,9 @@ public struct UniversalPlayerView: View {
             },
             onTimeUpdate: { curTime in
                 currentPosition = TimeInterval(curTime)
+                if duration == 0 {
+                    refreshDuration()
+                }
             }
         )
         player.setOnH5EventListener(coord)
@@ -424,6 +429,17 @@ public struct UniversalPlayerView: View {
         guard let player = vzPlayer else { return }
         currentSourceJSON = player.get_currentsource()
         bufferedText = player.get_buffered()
+        refreshDuration()
+    }
+    
+    private func refreshDuration() {
+        guard let player = vzPlayer else { return }
+        if let durData = player.get_duration().data(using: .utf8),
+           let durDict = try? JSONSerialization.jsonObject(with: durData) as? [String: Any],
+           let dur = (durDict["duration"] as? Double) ?? (durDict["duration"] as? Int64).map(Double.init),
+           dur > 0 {
+            self.duration = dur
+        }
     }
     
     // MARK: - 业务播放拉起 (注入 VZPlayerSource 多源)

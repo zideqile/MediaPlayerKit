@@ -191,6 +191,12 @@ import CoreGraphics
         engine.setMute(isMuted)
     }
     
+    /// 设置循环播放
+    @objc public func setLoop(_ isLoop: Bool) {
+        config.isLoop = isLoop
+        engine.setLoop(isLoop)
+    }
+    
     /// 挂载外部字幕源 (ASS / SSA / WebVTT / SRT)
     @objc public func setSubtitleSource(url: URL?) {
         savedSubtitleURL = url

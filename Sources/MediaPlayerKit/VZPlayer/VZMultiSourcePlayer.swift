@@ -130,7 +130,7 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
     
     public func setLoop(_ loop: Bool) {
         savedLoop = loop
-        controller?.config.isLoop = loop
+        controller?.setLoop(loop)
     }
     
     public func isLoop() -> Bool {

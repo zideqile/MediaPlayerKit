@@ -95,6 +95,7 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     private var isFirstFrameRendered = false
     private var currentURL: URL?
     private var qosReport: PlayerQoSReport?
+    private var savedPlaybackRate: Float = 1.0
 
     public override init() {
         super.init()
@@ -139,6 +140,9 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public func play() {
         guard let player = player else { return }
         player.play()
+        if savedPlaybackRate != 1.0 {
+            player.rate = savedPlaybackRate
+        }
         if state == .readyToPlay || state == .paused || state == .preparing {
             state = .playing
         }
@@ -183,6 +187,7 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         player = nil
         state = .idle
         isFirstFrameRendered = false
+        savedPlaybackRate = 1.0
     }
     
     public func setVolume(_ volume: Float) {
@@ -190,11 +195,19 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     public func setPlaybackRate(_ rate: Float) {
-        player?.rate = rate
+        savedPlaybackRate = rate
+        if isPlaying {
+            player?.rate = rate
+        }
     }
     
     public func setMute(_ isMuted: Bool) {
         player?.isMuted = isMuted
+    }
+    
+    public func setLoop(_ loop: Bool) {
+        config.isLoop = loop
+        player?.actionAtItemEnd = loop ? .none : .pause
     }
     
     public func setSubtitleURL(_ url: URL?) {}
@@ -214,6 +227,9 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
                     }
                     if self.config.autoPlay {
                         self.player?.play()
+                        if self.savedPlaybackRate != 1.0 {
+                            self.player?.rate = self.savedPlaybackRate
+                        }
                     }
                 case .failed:
                     self.state = .error

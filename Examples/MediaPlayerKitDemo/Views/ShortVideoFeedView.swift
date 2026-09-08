@@ -345,6 +345,8 @@ public struct ShortVideoFeedView: View {
         }
         .onDisappear {
             vzPlayer?.destroy()
+            vzPlayer = nil
+            coordinator = nil
         }
     }
     
