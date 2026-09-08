@@ -79,26 +79,35 @@ public struct ContentView: View {
             
             Divider()
             
-            // MARK: - 3. 底部导航栏（同层线性排布在最下方，绝不遮挡主界面内容）
+            // MARK: - 3. 底部导航栏（贴合底部安全区，占满全屏底部）
             HStack(spacing: 0) {
                 ForEach(AppTab.allCases, id: \.self) { tab in
                     Button(action: {
                         selectedTab = tab
                     }) {
-                        VStack(spacing: 4) {
+                        VStack(spacing: 3) {
                             Image(systemName: tab.iconName)
-                                .font(.system(size: 20))
+                                .font(.system(size: 19))
                             Text(tab.title)
                                 .font(.system(size: 10, weight: selectedTab == tab ? .bold : .regular))
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 6)
                         .foregroundColor(selectedTab == tab ? .blue : .secondary)
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
             }
-            .background(Color.secondary.opacity(0.06))
+            .background(
+                #if canImport(UIKit)
+                Color(UIColor.secondarySystemBackground)
+                #else
+                Color.secondary.opacity(0.08)
+                #endif
+            )
         }
+        #if canImport(UIKit)
+        .background(Color(UIColor.systemBackground).ignoresSafeArea())
+        #endif
     }
 }

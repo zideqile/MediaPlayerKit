@@ -7,7 +7,7 @@ import WebKit
 import UIKit
 #endif
 
-// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (现代选项卡 Tab 分栏架构)
+// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (底部导航栏 + 沉浸式全屏布局架构)
 private let hybridPlayerHTML: String = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -17,55 +17,55 @@ private let hybridPlayerHTML: String = """
     <title>IH5Player 混合控制台</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
-        html, body { height: 100%; background-color: #0B0F19; color: #F8FAFC; font-size: 13px; overflow: hidden; display: flex; flex-direction: column; }
+        html, body { height: 100%; width: 100%; background-color: #0B0F19; color: #F8FAFC; font-size: 13px; overflow: hidden; display: flex; flex-direction: column; }
         
-        /* 1. 顶部 Tab 分段导航栏 */
-        .tab-bar { display: flex; background: #1E293B; border-bottom: 1px solid #334155; padding: 4px; gap: 4px; flex-shrink: 0; }
-        .tab-btn { flex: 1; padding: 8px 2px; text-align: center; font-size: 11.5px; font-weight: 600; color: #94A3B8; background: transparent; border: none; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
-        .tab-btn.active { background: #2563EB; color: #FFFFFF; font-weight: 700; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.4); }
-        .tab-badge { font-size: 9px; background: rgba(255, 255, 255, 0.2); padding: 1px 4px; border-radius: 4px; margin-left: 2px; }
-
-        /* 内容区域容器 */
-        .tab-content-container { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 10px; }
-        .tab-pane { display: none; }
-        .tab-pane.active { display: block; animation: fadeIn 0.15s ease-in-out; }
+        /* 1. 主内容区域容器 (置于上方，自适应占满所有可用空间) */
+        .tab-content-container { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px; }
+        .tab-pane { display: none; height: 100%; }
+        .tab-pane.active { display: flex; flex-direction: column; animation: fadeIn 0.15s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* 2. 底部 Tab 导航栏 (贴近大拇指操作区，单手轻松切换) */
+        .tab-bar { display: flex; background: #1E293B; border-top: 1px solid #334155; padding: 6px 6px 8px 6px; gap: 6px; flex-shrink: 0; }
+        .tab-btn { flex: 1; padding: 8px 2px; text-align: center; font-size: 12px; font-weight: 600; color: #94A3B8; background: transparent; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+        .tab-btn.active { background: #2563EB; color: #FFFFFF; font-weight: 700; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4); }
+        .tab-badge { font-size: 9.5px; background: rgba(255, 255, 255, 0.25); padding: 1px 5px; border-radius: 6px; }
 
         /* 卡片样式 */
         .card { background: #1E293B; border-radius: 10px; padding: 10px; margin-bottom: 10px; border: 1px solid #334155; }
         
         /* 迷你实时事件横幅 */
-        .mini-event-banner { background: #0F172A; border: 1px solid #3B82F6; border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
-        .mini-event-text { color: #60A5FA; font-weight: 600; display: flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mini-event-banner { background: #0F172A; border: 1px solid #3B82F6; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; flex-shrink: 0; }
+        .mini-event-text { color: #60A5FA; font-weight: 600; display: flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         
         /* 主播放大按钮 */
-        .main-play-btn { width: 100%; height: 44px; border-radius: 10px; border: none; font-size: 15px; font-weight: 700; color: #FFFFFF; background: #2563EB; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; margin-bottom: 10px; transition: all 0.15s; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35); }
+        .main-play-btn { width: 100%; height: 44px; border-radius: 10px; border: none; font-size: 15px; font-weight: 700; color: #FFFFFF; background: #2563EB; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; margin-bottom: 10px; flex-shrink: 0; transition: all 0.15s; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35); }
         .main-play-btn.playing { background: #D97706; box-shadow: 0 4px 10px rgba(217, 119, 6, 0.35); }
         .main-play-btn:active { transform: scale(0.98); }
 
         /* 快捷按钮网格 */
-        .btn-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
-        .btn-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 8px; }
-        .btn { background: #334155; color: #F1F5F9; border: none; border-radius: 8px; padding: 9px 4px; font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+        .btn-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; flex-shrink: 0; }
+        .btn-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 8px; flex-shrink: 0; }
+        .btn { background: #334155; color: #F1F5F9; border: none; border-radius: 8px; padding: 10px 4px; font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s; display: flex; align-items: center; justify-content: center; gap: 4px; }
         .btn:active { background: #2563EB; color: #FFF; transform: scale(0.96); }
         .btn.active { background: #2563EB; color: #FFF; border: 1px solid #60A5FA; font-weight: 700; }
 
         /* 滑块控制器 */
-        .slider-box { background: #0F172A; border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; border: 1px solid #334155; }
-        .slider-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11.5px; }
-        .slider-row input[type=range] { flex: 1; accent-color: #3B82F6; height: 5px; border-radius: 3px; }
+        .slider-box { background: #0F172A; border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid #334155; flex-shrink: 0; }
+        .slider-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+        .slider-row input[type=range] { flex: 1; accent-color: #3B82F6; height: 6px; border-radius: 3px; }
 
         /* 预设源选择卡片 */
-        .source-card { background: #0F172A; border: 1.5px solid #334155; border-radius: 8px; padding: 10px; margin-bottom: 8px; cursor: pointer; transition: all 0.2s; }
+        .source-card { background: #0F172A; border: 1.5px solid #334155; border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
         .source-card.active { border-color: #3B82F6; background: rgba(59, 130, 246, 0.15); }
-        .source-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; font-weight: 700; font-size: 12.5px; color: #F1F5F9; }
-        .source-desc { font-size: 10.5px; color: #94A3B8; word-break: break-all; }
-        .source-badge { font-size: 9.5px; padding: 2px 6px; border-radius: 4px; background: #334155; color: #CBD5E1; }
+        .source-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; font-weight: 700; font-size: 13px; color: #F1F5F9; }
+        .source-desc { font-size: 11px; color: #94A3B8; word-break: break-all; }
+        .source-badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: #334155; color: #CBD5E1; }
         .source-badge.active-badge { background: #2563EB; color: #FFF; font-weight: 700; }
 
-        /* 日志盒子 */
-        .log-box { background: #020617; border-radius: 8px; padding: 8px; height: calc(100vh - 350px); min-height: 180px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10.5px; border: 1px solid #334155; }
-        .log-item { margin-bottom: 5px; line-height: 1.4; border-bottom: 1px solid rgba(51, 65, 85, 0.3); padding-bottom: 3px; }
+        /* 日志盒子 (全高占满) */
+        .log-box { background: #020617; border-radius: 8px; padding: 10px; flex: 1; min-height: 200px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; border: 1px solid #334155; }
+        .log-item { margin-bottom: 6px; line-height: 1.4; border-bottom: 1px solid rgba(51, 65, 85, 0.3); padding-bottom: 4px; }
         .log-time { color: #64748B; margin-right: 4px; }
         .log-event { color: #34D399; font-weight: bold; }
         .log-error { color: #F87171; font-weight: bold; }
@@ -73,28 +73,20 @@ private let hybridPlayerHTML: String = """
         .log-auto { color: #FBBF24; font-weight: bold; }
 
         /* 属性指标网格 */
-        .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; font-size: 11px; margin-top: 6px; }
+        .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; font-size: 11.5px; margin-top: 4px; flex-shrink: 0; }
         .stat-box { background: #0F172A; padding: 6px 8px; border-radius: 6px; border: 1px solid #334155; }
-        .stat-label { color: #94A3B8; font-size: 9.5px; margin-bottom: 2px; }
+        .stat-label { color: #94A3B8; font-size: 10px; margin-bottom: 2px; }
         .stat-val { font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700; color: #38BDF8; }
 
         /* 演练指南卡片 */
-        .guide-box { background: linear-gradient(135deg, #1E293B, #0F172A); border: 1.5px solid #3B82F6; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
-        .auto-btn { width: 100%; background: linear-gradient(90deg, #2563EB, #4F46E5); color: #FFFFFF; border: none; border-radius: 8px; padding: 11px; font-size: 13.5px; font-weight: 700; cursor: pointer; text-align: center; box-shadow: 0 3px 8px rgba(37, 99, 235, 0.4); margin-top: 8px; }
+        .guide-box { background: linear-gradient(135deg, #1E293B, #0F172A); border: 1.5px solid #3B82F6; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+        .auto-btn { width: 100%; background: linear-gradient(90deg, #2563EB, #4F46E5); color: #FFFFFF; border: none; border-radius: 8px; padding: 12px; font-size: 14px; font-weight: 700; cursor: pointer; text-align: center; box-shadow: 0 3px 8px rgba(37, 99, 235, 0.4); margin-top: 10px; }
         .auto-btn:active { transform: scale(0.98); }
     </style>
 </head>
 <body>
 
-    <!-- 1. 顶部 Tab 导航栏 (彻底解决一屏多卡片拥挤问题) -->
-    <div class="tab-bar">
-        <button class="tab-btn active" onclick="switchTab('tabControls')">🎮 控制台</button>
-        <button class="tab-btn" onclick="switchTab('tabSources')">📺 换播放源</button>
-        <button class="tab-btn" onclick="switchTab('tabLogs')">📡 实时日志<span class="tab-badge" id="logCountBadge">0</span></button>
-        <button class="tab-btn" onclick="switchTab('tabGuide')">🚀 自动演练</button>
-    </div>
-
-    <!-- 内容区域容器 -->
+    <!-- 1. 内容区域容器 (置于上方，垂直方向最大化展开) -->
     <div class="tab-content-container">
 
         <!-- ================= TAB 1: 核心控制器 (单屏即可操作所有常用控制) ================= -->
@@ -105,7 +97,7 @@ private let hybridPlayerHTML: String = """
                 <div class="mini-event-text">
                     <span>⚡️</span><span id="miniEventStatus">Native 状态: playing (正在播放)</span>
                 </div>
-                <span style="font-size: 9.5px; color: #94A3B8;" id="miniEventTime">00:00</span>
+                <span style="font-size: 10px; color: #94A3B8;" id="miniEventTime">00:00</span>
             </div>
 
             <!-- 主播放/暂停大按钮 -->
@@ -118,7 +110,7 @@ private let hybridPlayerHTML: String = """
                 <div class="slider-row">
                     <span style="min-width: 35px; color: #94A3B8;">进度</span>
                     <input type="range" id="seekSlider" min="0" max="100" value="0" onchange="onSeekChange(this.value)">
-                    <span id="timeText" style="min-width: 80px; text-align: right; font-family: monospace; font-weight: 700; color: #38BDF8;">00:00 / 00:00</span>
+                    <span id="timeText" style="min-width: 90px; text-align: right; font-family: monospace; font-weight: 700; color: #38BDF8;">00:00 / 00:00</span>
                 </div>
             </div>
 
@@ -151,7 +143,7 @@ private let hybridPlayerHTML: String = """
             <div class="stat-grid">
                 <div class="stat-box">
                     <div class="stat-label">当前倍速 / 音量</div>
-                    <div class="stat-val" id="statSpeedVol">1.0x / 1.0</div>
+                    <div class="stat-val" id="statSpeedVol">1.0x / 100%</div>
                 </div>
                 <div class="stat-box">
                     <div class="stat-label">视频自然分辨率</div>
@@ -162,7 +154,7 @@ private let hybridPlayerHTML: String = """
 
         <!-- ================= TAB 2: 换播放源与容错 ================= -->
         <div class="tab-pane" id="tabSources">
-            <div style="font-size: 11px; color: #94A3B8; margin-bottom: 8px;">点击下方任一源，H5 即刻通过 JSBridge 重新注入 <code>setSources</code> 并起播：</div>
+            <div style="font-size: 12px; color: #94A3B8; margin-bottom: 10px;">点击下方任一源，H5 即刻通过 JSBridge 注入 <code>setSources</code> 并重新起播：</div>
             
             <div class="source-card active" id="srcVod1" onclick="selectPresetSource('vod_girl')">
                 <div class="source-header">
@@ -199,9 +191,9 @@ private let hybridPlayerHTML: String = """
 
         <!-- ================= TAB 3: 实时事件流日志 ================= -->
         <div class="tab-pane" id="tabLogs">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                <span style="font-size: 11px; color: #94A3B8;">实时记录 VZH5EventListener 抛出的心跳与事件：</span>
-                <button class="btn" style="padding: 2px 8px; font-size: 10.5px;" onclick="clearLogs()">清空日志</button>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-shrink: 0;">
+                <span style="font-size: 12px; color: #94A3B8;">实时记录 VZH5EventListener 广播事件：</span>
+                <button class="btn" style="padding: 3px 10px; font-size: 11px;" onclick="clearLogs()">清空日志</button>
             </div>
             <div class="log-box" id="logBox">
                 <div class="log-item"><span class="log-time">[Init]</span><span class="log-cmd">🚀 JSBridge 准备就绪，已向原生发送起播指令...</span></div>
@@ -211,13 +203,13 @@ private let hybridPlayerHTML: String = """
         <!-- ================= TAB 4: 演练与指南 ================= -->
         <div class="tab-pane" id="tabGuide">
             <div class="guide-box">
-                <div style="font-size: 13px; font-weight: 700; color: #60A5FA; margin-bottom: 6px;">💡 混合开发原理</div>
-                <div style="font-size: 11.5px; color: #CBD5E1; line-height: 1.5; margin-bottom: 8px;">
+                <div style="font-size: 13.5px; font-weight: 700; color: #60A5FA; margin-bottom: 6px;">💡 混合开发原理</div>
+                <div style="font-size: 12px; color: #CBD5E1; line-height: 1.55; margin-bottom: 10px;">
                     上方视频由 <b>iOS 原生 Metal / AVPlayer</b> 硬件加速渲染；<br>
                     下方由 <b>WKWebView</b> 承载 H5 控制台。所有点击指令与事件回调均采用统一的 <b>JSON 契约</b> 通过 JSBridge 双向透传。
                 </div>
-                <div style="font-size: 12px; font-weight: 700; color: #FBBF24; margin-bottom: 4px;">🚀 懒人体验：一键自动全流程演练</div>
-                <div style="font-size: 11px; color: #94A3B8; margin-bottom: 6px;">
+                <div style="font-size: 12.5px; font-weight: 700; color: #FBBF24; margin-bottom: 4px;">🚀 懒人体验：一键自动全流程演练</div>
+                <div style="font-size: 11.5px; color: #94A3B8; margin-bottom: 8px;">
                     点击下方按钮，将全自动按顺序执行：起播 ➔ Seek 5s ➔ 1.5x 倍速 ➔ 静音切换 ➔ 切直播源 ➔ 恢复 1.0x。
                 </div>
                 <button class="auto-btn" onclick="runAutoDemonstration()">
@@ -226,6 +218,14 @@ private let hybridPlayerHTML: String = """
             </div>
         </div>
 
+    </div>
+
+    <!-- 2. 最下方 Tab 导航栏 (贴合大拇指操作区，单手轻松切换) -->
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('tabControls')">🎮 控制台</button>
+        <button class="tab-btn" onclick="switchTab('tabSources')">📺 换播源</button>
+        <button class="tab-btn" onclick="switchTab('tabLogs')">📡 实时日志<span class="tab-badge" id="logCountBadge">0</span></button>
+        <button class="tab-btn" onclick="switchTab('tabGuide')">🚀 自动演练</button>
     </div>
 
     <script>
@@ -297,7 +297,7 @@ private let hybridPlayerHTML: String = """
             }
         }
 
-        // Web 独立模式下的自闭环模拟响应，保证在任何普通浏览器中均可独立预览与体验
+        // Web 独立模式下的自闭环模拟响应
         function simulateWebResponse(method, paramsJson) {
             if (method === 'play') {
                 window.vzBridgeReceiveEvent('playing');
@@ -738,7 +738,7 @@ public struct WebViewHybridPlayerView: View {
             // MARK: - 1. 顶部原生视频渲染窗口 (VZPlayerView)
             ZStack(alignment: .topLeading) {
                 VZPlayerViewRepresentable(playerView: playerView)
-                    .frame(height: 200)
+                    .frame(height: 220)
                     .background(Color.black)
                 
                 // 顶部状态提示条
@@ -771,7 +771,7 @@ public struct WebViewHybridPlayerView: View {
             
             Divider()
             
-            // MARK: - 2. 下方 WKWebView (承载现代化分栏 H5 控制台与 JSBridge)
+            // MARK: - 2. 下方 WKWebView (承载现代化底部导航 H5 控制台与 JSBridge)
             if let wv = webView {
                 HybridWKWebViewRepresentable(webView: wv)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
