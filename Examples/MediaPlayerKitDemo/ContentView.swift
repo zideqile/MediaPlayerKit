@@ -55,12 +55,12 @@ public struct ContentView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
             .background(Color.secondary.opacity(0.06))
             
             Divider()
             
-            // MARK: - 2. 主界面内容区域（同层占满剩余空间，绝对不与导航栏遮挡）
+            // MARK: - 2. 主界面内容区域（同层占满剩余空间）
             ZStack {
                 switch selectedTab {
                 case .feed:
@@ -98,16 +98,8 @@ public struct ContentView: View {
                     .buttonStyle(PlainButtonStyle())
                 }
             }
-            .background(
-                #if canImport(UIKit)
-                Color(UIColor.secondarySystemBackground)
-                #else
-                Color.secondary.opacity(0.08)
-                #endif
-            )
+            .background(Color.secondary.opacity(0.06))
         }
-        #if canImport(UIKit)
-        .background(Color(UIColor.systemBackground).ignoresSafeArea())
-        #endif
+        .edgesIgnoringSafeArea(.all)
     }
 }
