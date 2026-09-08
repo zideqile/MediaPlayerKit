@@ -41,7 +41,10 @@ let package = Package(
         .executableTarget(
             name: "MediaPlayerKitDemo",
             dependencies: ["MediaPlayerKit"],
-            path: "Examples/MediaPlayerKitDemo"
+            path: "Examples/MediaPlayerKitDemo",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "MediaPlayerKitTests",
