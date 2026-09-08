@@ -135,7 +135,7 @@ html, body {
     display: flex; 
     align-items: center; 
     justify-content: space-between; 
-    margin-bottom: 4px; 
+    margin-bottom: 5px; 
 }
 
 .node-name { 
@@ -150,9 +150,65 @@ html, body {
     display: flex; 
     align-items: center; 
     justify-content: space-between; 
-    padding-top: 4px; 
+    padding-top: 5px; 
     border-top: 1px dashed rgba(59, 130, 246, 0.25); 
     font-size: 11px; 
+}
+
+/* 指标药丸徽章 */
+.metric-pill { 
+    font-size: 10px; 
+    font-weight: 700; 
+    color: #38BDF8; 
+    background: rgba(56, 189, 248, 0.15); 
+    border: 1px solid rgba(56, 189, 248, 0.35); 
+    border-radius: 12px; 
+    padding: 1.5px 7px; 
+    font-family: ui-monospace, SFMono-Regular, monospace; 
+    display: inline-flex; 
+    align-items: center; 
+    white-space: nowrap; 
+}
+
+/* 快捷导航按钮组 */
+.nav-btn-group { 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 4px; 
+}
+
+/* 迷你导航按钮 */
+.nav-mini-btn { 
+    background: #334155; 
+    color: #E2E8F0; 
+    border: 1px solid #475569; 
+    border-radius: 5px; 
+    padding: 2.5px 6px; 
+    font-size: 10.5px; 
+    font-weight: 600; 
+    cursor: pointer; 
+    transition: all 0.15s; 
+    white-space: nowrap; 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 2px; 
+}
+
+.nav-mini-btn:hover { 
+    background: #475569; 
+    color: #FFF; 
+}
+
+.nav-mini-btn:active { 
+    transform: scale(0.95); 
+    background: #2563EB; 
+    border-color: #3B82F6; 
+}
+
+.nav-mini-btn:disabled { 
+    opacity: 0.35; 
+    cursor: not-allowed; 
+    pointer-events: none; 
 }
 
 /* 主播放大按钮 */
@@ -305,6 +361,7 @@ html, body {
     align-items: center; 
     justify-content: space-between; 
     margin-bottom: 6px; 
+    gap: 6px; 
 }
 
 .hero-title-label { 
@@ -315,13 +372,54 @@ html, body {
     letter-spacing: 0.5px; 
 }
 
+.hero-index-badge { 
+    font-size: 10.5px; 
+    font-weight: 700; 
+    color: #FBBF24; 
+    background: rgba(245, 158, 11, 0.18); 
+    border: 1px solid rgba(245, 158, 11, 0.35); 
+    border-radius: 4px; 
+    padding: 1px 6px; 
+    font-family: ui-monospace, SFMono-Regular, monospace; 
+}
+
+.hero-nav-btn { 
+    background: rgba(30, 41, 59, 0.85); 
+    color: #93C5FD; 
+    border: 1px solid #3B82F6; 
+    border-radius: 6px; 
+    padding: 4px 8px; 
+    font-size: 11px; 
+    font-weight: 600; 
+    cursor: pointer; 
+    transition: all 0.15s; 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 3px; 
+}
+
+.hero-nav-btn:hover { 
+    background: #2563EB; 
+    color: #FFF; 
+}
+
+.hero-nav-btn:active { 
+    transform: scale(0.95); 
+}
+
+.hero-nav-btn:disabled { 
+    opacity: 0.35; 
+    cursor: not-allowed; 
+    pointer-events: none; 
+}
+
 .hero-switch-btn { 
     background: #2563EB; 
     color: #FFF; 
     border: none; 
     border-radius: 6px; 
-    padding: 5px 10px; 
-    font-size: 11.5px; 
+    padding: 5px 9px; 
+    font-size: 11px; 
     font-weight: 700; 
     cursor: pointer; 
     display: flex; 
@@ -368,6 +466,13 @@ html, body {
     border-color: rgba(16, 185, 129, 0.4); 
 }
 
+.hero-tag.metric { 
+    background: rgba(168, 85, 247, 0.18); 
+    color: #D8B4FE; 
+    border-color: rgba(168, 85, 247, 0.35); 
+    font-weight: 700; 
+}
+
 /* 线路列表头部工具栏 */
 .lines-header-bar { 
     display: flex; 
@@ -386,19 +491,26 @@ html, body {
     gap: 5px; 
 }
 
+.lines-count-info { 
+    font-size: 11px; 
+    color: #A78BFA; 
+    font-weight: 600; 
+    font-family: ui-monospace, SFMono-Regular, monospace; 
+}
+
 .next-line-btn { 
     background: #4C1D95; 
     color: #E9D5FF; 
     border: 1px solid #7C3AED; 
     border-radius: 6px; 
-    padding: 4px 10px; 
+    padding: 4px 8px; 
     font-size: 11px; 
     font-weight: 700; 
     cursor: pointer; 
     transition: all 0.15s; 
-    display: flex; 
+    display: inline-flex; 
     align-items: center; 
-    gap: 4px; 
+    gap: 3px; 
 }
 
 .next-line-btn:active { 
@@ -408,8 +520,9 @@ html, body {
 }
 
 .next-line-btn:disabled { 
-    opacity: 0.4; 
+    opacity: 0.35; 
     cursor: not-allowed; 
+    pointer-events: none; 
 }
 
 /* 紧凑型线路卡片列表 */

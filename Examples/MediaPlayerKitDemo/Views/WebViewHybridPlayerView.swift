@@ -151,6 +151,15 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                     self.syncNodeStreamsToH5()
                     self.syncPropertiesToH5()
                 }
+            case "switchPrevSubSource":
+                // 切换到上一条线路
+                guard !self.currentStreamSources.isEmpty else { return }
+                let prevIdx = (self.currentSourceIndex - 1 + self.currentStreamSources.count) % self.currentStreamSources.count
+                self.currentSourceIndex = prevIdx
+                self.currentPlaybackState = "preparing"
+                _ = player.switchSource(index: prevIdx)
+                self.syncNodeStreamsToH5()
+                self.syncPropertiesToH5()
             case "switchNextSubSource":
                 // 切换到下一条线路
                 guard !self.currentStreamSources.isEmpty else { return }
@@ -158,6 +167,26 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                 player.sendEvent("NEXT_SOURCE", paramsJson: "{}")
                 self.syncNodeStreamsToH5()
                 self.syncPropertiesToH5()
+            case "switchPrevStream":
+                // 切换到上一路推流
+                let list = self.apiService.streamList
+                guard !list.isEmpty else { return }
+                if let currIdx = list.firstIndex(where: { $0.streamid == self.currentPlayingStreamId }) {
+                    let prevIdx = (currIdx - 1 + list.count) % list.count
+                    self.playNodeStream(streamId: list[prevIdx].streamid)
+                } else if let first = list.first {
+                    self.playNodeStream(streamId: first.streamid)
+                }
+            case "switchNextStream":
+                // 切换到下一路推流
+                let list = self.apiService.streamList
+                guard !list.isEmpty else { return }
+                if let currIdx = list.firstIndex(where: { $0.streamid == self.currentPlayingStreamId }) {
+                    let nextIdx = (currIdx + 1) % list.count
+                    self.playNodeStream(streamId: list[nextIdx].streamid)
+                } else if let first = list.first {
+                    self.playNodeStream(streamId: first.streamid)
+                }
             case "refreshStreams":
                 self.apiService.fetchStreamList { [weak self] _ in
                     self?.syncNodeStreamsToH5()
