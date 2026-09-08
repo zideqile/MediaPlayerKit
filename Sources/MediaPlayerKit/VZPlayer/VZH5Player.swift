@@ -67,7 +67,18 @@ import CoreGraphics
         executeOnMainThread {
             if eventName == "NEXT_SOURCE" {
                 _ = self.multiPlayer.switchToNextSource()
+            } else if eventName == "SWITCH_SOURCE" {
+                if let dict = self.parseJSON(paramsJson),
+                   let idx = dict["index"] as? Int ?? (dict["sourceIndex"] as? Int) {
+                    _ = self.multiPlayer.switchToSource(index: idx)
+                }
             }
+        }
+    }
+    
+    @objc public func switchSource(index: Int) -> Bool {
+        return executeOnMainThreadSync {
+            return self.multiPlayer.switchToSource(index: index)
         }
     }
     

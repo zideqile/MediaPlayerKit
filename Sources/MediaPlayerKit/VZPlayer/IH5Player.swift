@@ -29,8 +29,11 @@ import Foundation
     /// 设置运行时策略配置
     func setConfig(_ config: VZPlayerConfig)
     
-    /// 向播放器派发自定义事件 (如 NEXT_SOURCE, SWITCH_PLAYER)
+    /// 向播放器派发自定义事件 (如 NEXT_SOURCE, SWITCH_SOURCE)
     func sendEvent(_ eventName: String, paramsJson: String)
+    
+    /// 手动指定切换到某个播放源索引
+    func switchSource(index: Int) -> Bool
     
     // MARK: - H5 风格属性存取 (JSON 入参出参)
     

@@ -7,7 +7,7 @@ import WebKit
 import UIKit
 #endif
 
-// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (动态节点流与多源容错架构)
+// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (动态节点流与流内多播放线路切换)
 private let hybridPlayerHTML: String = """
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -70,6 +70,13 @@ private let hybridPlayerHTML: String = """
         .source-badge.active-badge { background: #2563EB; color: #FFF; font-weight: 700; }
         .source-badge.live-badge { background: #059669; color: #FFF; font-weight: 700; }
 
+        /* 子播放线路卡片 */
+        .subsource-card { background: #0F172A; border: 1.5px solid #334155; border-radius: 8px; padding: 9px 11px; cursor: pointer; transition: all 0.2s; }
+        .subsource-card.active { border-color: #8B5CF6; background: rgba(139, 92, 246, 0.18); box-shadow: 0 0 10px rgba(139, 92, 246, 0.25); }
+        .subsource-url { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px; color: #94A3B8; word-break: break-all; margin-top: 4px; background: #020617; padding: 4px 6px; border-radius: 4px; border: 1px solid rgba(51, 65, 85, 0.5); }
+
+        .empty-hint { text-align: center; color: #64748B; padding: 16px; font-size: 11.5px; background: #0F172A; border-radius: 8px; border: 1px dashed #334155; }
+
         /* 日志盒子 (全高占满) */
         .log-box { background: #020617; border-radius: 8px; padding: 10px; flex: 1; min-height: 200px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; border: 1px solid #334155; }
         .log-item { margin-bottom: 6px; line-height: 1.4; border-bottom: 1px solid rgba(51, 65, 85, 0.3); padding-bottom: 4px; }
@@ -83,7 +90,7 @@ private let hybridPlayerHTML: String = """
         .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; font-size: 11.5px; margin-top: 4px; flex-shrink: 0; }
         .stat-box { background: #0F172A; padding: 6px 8px; border-radius: 6px; border: 1px solid #334155; }
         .stat-label { color: #94A3B8; font-size: 10px; margin-bottom: 2px; }
-        .stat-val { font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700; color: #38BDF8; }
+        .stat-val { font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 700; color: #38BDF8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         /* 演练指南卡片 */
         .guide-box { background: linear-gradient(135deg, #1E293B, #0F172A); border: 1.5px solid #3B82F6; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
@@ -110,7 +117,7 @@ private let hybridPlayerHTML: String = """
             <!-- 当前节点与流标识 -->
             <div class="node-chip">
                 <span class="node-name">📡 <span id="ctrlNodeName">节点: 未连接</span></span>
-                <span style="font-family: monospace; font-size: 10.5px; color: #CBD5E1;" id="ctrlStreamId">Stream: vod_girl</span>
+                <span style="font-family: monospace; font-size: 10.5px; color: #CBD5E1;" id="ctrlStreamId">Stream: -</span>
             </div>
 
             <!-- 主播放/暂停大按钮 -->
@@ -159,7 +166,7 @@ private let hybridPlayerHTML: String = """
                     <div class="stat-val" id="statSpeedVol">1.0x / 100%</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-label">视频自然分辨率</div>
+                    <div class="stat-label">视频分辨率 / 协议</div>
                     <div class="stat-val" id="statResolution">自适应</div>
                 </div>
             </div>
@@ -169,33 +176,27 @@ private let hybridPlayerHTML: String = """
         <div class="tab-pane" id="tabSources">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
                 <div style="font-size: 12px; color: #94A3B8;">
-                    当前节点: <b style="color: #60A5FA;" id="sourcesNodeRemark">火山北京</b> (<span id="sourcesNodeDomain">p8.vzan.com</span>)
+                    当前节点: <b style="color: #60A5FA;" id="sourcesNodeRemark">默认节点</b> (<span id="sourcesNodeDomain">-</span>)
                 </div>
-                <button class="btn" style="padding: 3px 8px; font-size: 11px;" onclick="refreshNodeStreams()">🔄 刷新流</button>
+                <button class="btn" style="padding: 4px 10px; font-size: 11px;" onclick="refreshNodeStreams()">🔄 刷新推流</button>
             </div>
 
-            <!-- 动态节点流容器 -->
+            <!-- 1. 节点实时在线推流列表 -->
+            <div style="margin-bottom: 6px; font-size: 11.5px; font-weight: bold; color: #38BDF8; display: flex; align-items: center; justify-content: space-between;">
+                <span>📡 节点实时在线推流 (<span id="streamCountText">0</span>)</span>
+                <span style="font-size: 10px; color: #64748B; font-weight: normal;">点击卡片切换流</span>
+            </div>
             <div class="stream-card-list" id="dynamicStreamsContainer">
-                <div style="text-align: center; color: #64748B; padding: 20px; font-size: 11.5px;">正在加载节点实时流列表...</div>
+                <div class="empty-hint">正在加载节点实时推流列表...</div>
             </div>
 
-            <div style="margin-top: 12px; margin-bottom: 6px; font-size: 11px; font-weight: bold; color: #64748B;">测试与备用播放源</div>
-            <div class="stream-card-list">
-                <div class="source-card" id="src_vod_girl" onclick="selectPresetSource('vod_girl')">
-                    <div class="source-header">
-                        <span>🎬 经典点播 MP4 (官方测试)</span>
-                        <span class="source-badge" id="badge_vod_girl">点此切换</span>
-                    </div>
-                    <div class="source-desc">https://vplayerctrl-dev.weizan.cn/girl.mp4 (720P)</div>
-                </div>
-
-                <div class="source-card" id="src_live_test" onclick="selectPresetSource('live_test')">
-                    <div class="source-header">
-                        <span>⚡️ 官方容错直播测试流</span>
-                        <span class="source-badge" id="badge_live_test">点此切换</span>
-                    </div>
-                    <div class="source-desc">https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8</div>
-                </div>
+            <!-- 2. 当前流内的所有播放线路/地址列表 (支持手动切源) -->
+            <div style="margin-top: 14px; margin-bottom: 6px; font-size: 11.5px; font-weight: bold; color: #A78BFA; display: flex; align-items: center; justify-content: space-between;">
+                <span>🔀 当前流播放线路/地址 (<span id="subSourceCountText">0</span>)</span>
+                <span style="font-size: 10px; color: #64748B; font-weight: normal;">点击卡片手动切源</span>
+            </div>
+            <div class="stream-card-list" id="dynamicSubSourcesContainer">
+                <div class="empty-hint">请先在上方选择一条在线推流</div>
             </div>
         </div>
 
@@ -206,7 +207,7 @@ private let hybridPlayerHTML: String = """
                 <button class="btn" style="padding: 3px 10px; font-size: 11px;" onclick="clearLogs()">清空日志</button>
             </div>
             <div class="log-box" id="logBox">
-                <div class="log-item"><span class="log-time">[Init]</span><span class="log-cmd">🚀 JSBridge 准备就绪，已向原生发送起播指令...</span></div>
+                <div class="log-item"><span class="log-time">[Init]</span><span class="log-cmd">🚀 JSBridge 准备就绪，已向原生注册事件管道...</span></div>
             </div>
         </div>
 
@@ -216,11 +217,11 @@ private let hybridPlayerHTML: String = """
                 <div style="font-size: 13.5px; font-weight: 700; color: #60A5FA; margin-bottom: 6px;">💡 混合开发原理</div>
                 <div style="font-size: 12px; color: #CBD5E1; line-height: 1.55; margin-bottom: 10px;">
                     上方视频由 <b>iOS 原生 Metal / AVPlayer</b> 硬件加速渲染；<br>
-                    下方由 <b>WKWebView</b> 承载 H5 控制台。通过 <code>StreamAPIService</code> 动态拉取当前节点的在线流与播放地址，并通过 <b>JSON 契约</b> 双向透传。
+                    下方由 <b>WKWebView</b> 承载 H5 控制台。通过 <code>StreamAPIService</code> 动态拉取当前节点的在线流与真实播放地址，并通过 <b>JSON 契约</b> 与 <code>IH5Player</code> 接口实现双向透传与手动切源。
                 </div>
                 <div style="font-size: 12.5px; font-weight: 700; color: #FBBF24; margin-bottom: 4px;">🚀 懒人体验：一键自动全流程演练</div>
                 <div style="font-size: 11.5px; color: #94A3B8; margin-bottom: 8px;">
-                    点击下方按钮，将全自动按顺序执行：起播节点首选流 ➔ Seek 5s ➔ 1.5x 倍速 ➔ 静音切换 ➔ 动态切流 ➔ 恢复 1.0x。
+                    点击下方按钮，将全自动按顺序执行：起播节点首选流 ➔ Seek 5s ➔ 1.5x 倍速 ➔ 静音切换 ➔ 多线路/切流演练 ➔ 恢复 1.0x。
                 </div>
                 <button class="auto-btn" onclick="runAutoDemonstration()">
                     <span id="autoBtnText">立即开始「一键全功能自动化演练」</span>
@@ -247,7 +248,9 @@ private let hybridPlayerHTML: String = """
         let logCounter = 0;
         let isAutoTesting = false;
         let currentActiveStreamId = '';
+        let currentActiveSourceIndex = 0;
         let availableStreams = [];
+        let availableSubSources = [];
 
         // 选项卡切换
         function switchTab(tabId) {
@@ -286,8 +289,10 @@ private let hybridPlayerHTML: String = """
 
         function clearLogs() {
             logCounter = 0;
-            document.getElementById('logCountBadge').innerText = '0';
-            document.getElementById('logBox').innerHTML = '';
+            const badge = document.getElementById('logCountBadge');
+            if (badge) badge.innerText = '0';
+            const box = document.getElementById('logBox');
+            if (box) box.innerHTML = '';
         }
 
         // JSBridge 通信
@@ -304,22 +309,23 @@ private let hybridPlayerHTML: String = """
             }
         }
 
-        // 动态切节点流
+        // 动态切节点推流
         function selectNodeStream(streamId) {
             currentActiveStreamId = streamId;
+            currentActiveSourceIndex = 0;
             document.getElementById('ctrlStreamId').innerText = 'Stream: ' + streamId;
-            updateStreamCardsHighlight();
+            updateHighlight();
             sendCmd('switchStream', JSON.stringify({ streamId: streamId }));
-            setTimeout(() => switchTab('tabControls'), 300);
+            log('Node', `手动切换到推流 <b>${streamId}</b>，正在解析播放线路...`);
         }
 
-        // 选择内置备用源
-        function selectPresetSource(sourceKey) {
-            currentActiveStreamId = sourceKey;
-            document.getElementById('ctrlStreamId').innerText = 'Stream: ' + sourceKey;
-            updateStreamCardsHighlight();
-            sendCmd('switchSource', JSON.stringify({ sourceKey: sourceKey }));
-            setTimeout(() => switchTab('tabControls'), 300);
+        // 手动切换当前流内的子播放地址/线路
+        function selectSubSource(index) {
+            currentActiveSourceIndex = index;
+            updateHighlight();
+            sendCmd('switchSubSource', JSON.stringify({ index: index, sourceIndex: index }));
+            log('Node', `手动切换当前流播放线路 ➔ <b>线路 ${index + 1}</b>`);
+            setTimeout(() => switchTab('tabControls'), 250);
         }
 
         function refreshNodeStreams() {
@@ -327,65 +333,123 @@ private let hybridPlayerHTML: String = """
             sendCmd('refreshStreams');
         }
 
-        // Native 注入节点流列表
+        // Native 注入节点流列表与子播放线路
         window.vzBridgeUpdateStreamList = function(data) {
             try {
                 const nodeRemark = data.activeNodeRemark || '默认节点';
                 const nodeDomain = data.activeNodeDomain || '';
                 availableStreams = data.streams || [];
+                availableSubSources = data.subSources || [];
                 currentActiveStreamId = data.currentStreamId || currentActiveStreamId;
+                if (data.currentSourceIndex !== undefined) {
+                    currentActiveSourceIndex = data.currentSourceIndex;
+                }
 
                 document.getElementById('ctrlNodeName').innerText = '节点: ' + (nodeRemark || nodeDomain);
                 document.getElementById('sourcesNodeRemark').innerText = nodeRemark || '当前节点';
                 document.getElementById('sourcesNodeDomain').innerText = nodeDomain;
+                
+                // 1. 渲染推流列表
+                const streamContainer = document.getElementById('dynamicStreamsContainer');
+                const streamCountText = document.getElementById('streamCountText');
+                if (streamCountText) streamCountText.innerText = availableStreams.length;
 
-                const container = document.getElementById('dynamicStreamsContainer');
-                if (!container) return;
-
-                if (availableStreams.length === 0) {
-                    container.innerHTML = '<div style="text-align: center; color: #94A3B8; padding: 15px; background: #0F172A; border-radius: 8px;">当前节点暂无活跃在线推流，可点击下方测试播放源</div>';
-                    return;
+                if (streamContainer) {
+                    if (availableStreams.length === 0) {
+                        streamContainer.innerHTML = '<div class="empty-hint">当前节点暂无活跃在线推流，请在顶部切换节点或刷新</div>';
+                    } else {
+                        let html = '';
+                        availableStreams.forEach((s) => {
+                            const isActive = s.streamid === currentActiveStreamId;
+                            const resBadge = s.resolution ? `<span style="font-size: 9px; background: rgba(59,130,246,0.2); color:#60A5FA; padding: 1px 4px; border-radius:3px;">${s.resolution}</span>` : '';
+                            const fpsBadge = s.fps ? `<span style="font-size: 9px; color:#94A3B8;">${s.fps}</span>` : '';
+                            const bitrateBadge = s.bitrate ? `<span style="font-size: 9px; color:#A78BFA;">${s.bitrate}</span>` : '';
+                            
+                            html += `
+                            <div class="source-card ${isActive ? 'active' : ''}" id="stream_${s.streamid}" onclick="selectNodeStream('${s.streamid}')">
+                                <div class="source-header">
+                                    <span class="source-stream-id">📡 ${s.streamid}</span>
+                                    <span class="source-badge ${isActive ? 'active-badge' : 'live-badge'}">${isActive ? '当前选中 ✓' : '在线推流'}</span>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+                                    ${resBadge} ${fpsBadge} ${bitrateBadge}
+                                </div>
+                            </div>`;
+                        });
+                        streamContainer.innerHTML = html;
+                    }
                 }
 
-                let html = '';
-                availableStreams.forEach((s, idx) => {
-                    const isActive = s.streamid === currentActiveStreamId;
-                    const resBadge = s.resolution ? `<span style="font-size: 9px; background: rgba(59,130,246,0.2); color:#60A5FA; padding: 1px 4px; border-radius:3px;">${s.resolution}</span>` : '';
-                    const fpsBadge = s.fps ? `<span style="font-size: 9px; color:#94A3B8;">${s.fps}</span>` : '';
-                    
-                    html += `
-                    <div class="source-card ${isActive ? 'active' : ''}" id="stream_${s.streamid}" onclick="selectNodeStream('${s.streamid}')">
-                        <div class="source-header">
-                            <span class="source-stream-id">📡 ${s.streamid}</span>
-                            <span class="source-badge ${isActive ? 'active-badge' : 'live-badge'}">${isActive ? '当前播放中 ✓' : '在线直播'}</span>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
-                            ${resBadge} ${fpsBadge}
-                            <span style="font-size: 9.5px; color:#64748B;">HLS/FLV 多源容错</span>
-                        </div>
-                    </div>`;
-                });
-                container.innerHTML = html;
-                log('Node', `已加载 <b>${availableStreams.length}</b> 条节点在线流`);
+                // 2. 渲染当前流内播放线路/地址列表 (支持手动切源)
+                const subContainer = document.getElementById('dynamicSubSourcesContainer');
+                const subCountText = document.getElementById('subSourceCountText');
+                if (subCountText) subCountText.innerText = availableSubSources.length;
+
+                if (subContainer) {
+                    if (availableSubSources.length === 0) {
+                        subContainer.innerHTML = `<div class="empty-hint">${currentActiveStreamId ? '正在请求该流的播放线路或该流暂无可用地址...' : '请先在上方选择一条在线推流'}</div>`;
+                    } else {
+                        let subHtml = '';
+                        availableSubSources.forEach((sub, idx) => {
+                            const isSubActive = idx === currentActiveSourceIndex;
+                            const typeBadge = sub.type ? `<span style="font-size: 9px; background: #334155; color:#F1F5F9; padding: 1px 5px; border-radius:3px; font-weight:bold;">${sub.type.toUpperCase()}</span>` : '';
+                            const codecBadge = sub.codecText ? `<span style="font-size: 9px; background: rgba(139,92,246,0.2); color:#C4B5FD; padding: 1px 5px; border-radius:3px;">${sub.codecText}</span>` : '';
+                            const tagBadge = sub.tag ? `<span style="font-size: 9px; color:#94A3B8;">${sub.tag}</span>` : '';
+
+                            subHtml += `
+                            <div class="subsource-card ${isSubActive ? 'active' : ''}" id="subsource_${idx}" onclick="selectSubSource(${idx})">
+                                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 3px;">
+                                    <div style="display:flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:#F8FAFC;">
+                                        <span>线路 ${idx + 1}</span>
+                                        ${typeBadge}
+                                        ${codecBadge}
+                                        ${tagBadge}
+                                    </div>
+                                    <span class="source-badge ${isSubActive ? 'active-badge' : ''}" style="${isSubActive ? 'background:#8B5CF6;' : ''}">${isSubActive ? '当前播放中 ✓' : '点击切换此线路'}</span>
+                                </div>
+                                <div class="subsource-url">${sub.url}</div>
+                            </div>`;
+                        });
+                        subContainer.innerHTML = subHtml;
+                    }
+                }
+
+                if (currentActiveStreamId) {
+                    const activeSub = availableSubSources[currentActiveSourceIndex];
+                    const subTagStr = activeSub ? ` (线路 ${currentActiveSourceIndex + 1} ${activeSub.type.toUpperCase()})` : '';
+                    document.getElementById('ctrlStreamId').innerText = 'Stream: ' + currentActiveStreamId + subTagStr;
+                }
+
+                log('Node', `已刷新: <b>${availableStreams.length}</b> 条在线流，当前流拥有 <b>${availableSubSources.length}</b> 条播放线路`);
             } catch(e) {
                 console.error(e);
             }
         };
 
-        function updateStreamCardsHighlight() {
+        function updateHighlight() {
             document.querySelectorAll('.source-card').forEach(c => c.classList.remove('active'));
-            document.querySelectorAll('.source-badge').forEach(b => {
-                if (!b.classList.contains('live-badge')) b.innerText = '点此切换';
-            });
-            const activeCard = document.getElementById('stream_' + currentActiveStreamId) || document.getElementById('src_' + currentActiveStreamId);
-            if (activeCard) {
-                activeCard.classList.add('active');
-                const badge = activeCard.querySelector('.source-badge');
-                if (badge) {
-                    badge.innerText = '当前播放中 ✓';
-                    badge.className = 'source-badge active-badge';
+            const activeStreamCard = document.getElementById('stream_' + currentActiveStreamId);
+            if (activeStreamCard) activeStreamCard.classList.add('active');
+
+            document.querySelectorAll('.subsource-card').forEach((c, idx) => {
+                if (idx === currentActiveSourceIndex) {
+                    c.classList.add('active');
+                    const badge = c.querySelector('.source-badge');
+                    if (badge) {
+                        badge.innerText = '当前播放中 ✓';
+                        badge.className = 'source-badge active-badge';
+                        badge.style.background = '#8B5CF6';
+                    }
+                } else {
+                    c.classList.remove('active');
+                    const badge = c.querySelector('.source-badge');
+                    if (badge) {
+                        badge.innerText = '点击切换此线路';
+                        badge.className = 'source-badge';
+                        badge.style.background = '';
+                    }
                 }
-            }
+            });
         }
 
         // Web 独立模式下的自闭环模拟
@@ -397,7 +461,7 @@ private let hybridPlayerHTML: String = """
             } else if (method === 'getProperties') {
                 window.vzBridgeUpdateProperties({
                     currentTime: currentPosSec,
-                    duration: totalDurationSec || 120,
+                    duration: totalDurationSec || 0,
                     speed: currentSpeed,
                     volume: 1.0,
                     muted: isMutedState,
@@ -475,7 +539,7 @@ private let hybridPlayerHTML: String = """
 
             (async () => {
                 try {
-                    log('Auto', '步骤 1/5: 播放并 Seek 到 5 秒');
+                    log('Auto', '步骤 1/5: 播放并 Seek 5 秒');
                     sendCmd('play');
                     await sleep(1200);
                     sendCmd('setCurrentTime', JSON.stringify({ currentTime: 5 }));
@@ -491,11 +555,17 @@ private let hybridPlayerHTML: String = """
                     toggleMute();
                     await sleep(1000);
 
-                    log('Auto', '步骤 4/5: 动态切换节点流/备用源');
-                    if (availableStreams.length > 0) {
-                        selectNodeStream(availableStreams[0].streamid);
+                    log('Auto', '步骤 4/5: 测试流内多线路/多流切换');
+                    if (availableSubSources.length > 1) {
+                        const targetSubIdx = (currentActiveSourceIndex + 1) % availableSubSources.length;
+                        log('Auto', `切换到当前流的线路 ${targetSubIdx + 1}`);
+                        selectSubSource(targetSubIdx);
+                    } else if (availableStreams.length > 1) {
+                        const nextStream = availableStreams.find(s => s.streamid !== currentActiveStreamId) || availableStreams[0];
+                        log('Auto', `切换到推流 ${nextStream.streamid}`);
+                        selectNodeStream(nextStream.streamid);
                     } else {
-                        selectPresetSource('vod_girl');
+                        log('Auto', '当前仅有单条流/线路，已验证多源容错协议');
                     }
                     await sleep(2000);
 
@@ -589,7 +659,12 @@ private let hybridPlayerHTML: String = """
                     currentSpeed = props.speed;
                 }
                 if (props.videoWidth && props.videoHeight) {
-                    document.getElementById('statResolution').innerText = `${props.videoWidth}x${props.videoHeight}`;
+                    const typeStr = (props.currentSource && props.currentSource.type) ? ` (${props.currentSource.type.toUpperCase()})` : '';
+                    document.getElementById('statResolution').innerText = `${props.videoWidth}x${props.videoHeight}${typeStr}`;
+                }
+                if (props.currentSource && props.currentSource.sourceIndex !== undefined) {
+                    currentActiveSourceIndex = props.currentSource.sourceIndex;
+                    updateHighlight();
                 }
                 updateStats();
             } catch(e) {
@@ -645,28 +720,23 @@ public struct HybridWKWebViewRepresentable: NSViewRepresentable {
 }
 #endif
 
-// MARK: - JSBridge 协调器与事件监听器 (全面支持节点流与动态地址解析)
+// MARK: - JSBridge 协调器与事件监听器 (全面支持节点在线流与流内多播放线路手动切换)
 final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5EventListener {
     weak var webView: WKWebView?
     weak var vzPlayer: IH5Player?
     private let apiService = StreamAPIService.shared
     
-    // 当前正在播放的流 ID / 标记
-    var currentPlayingStreamId: String = "vod_girl"
+    // 当前正在播放的流 ID
+    var currentPlayingStreamId: String = ""
+    
+    // 当前流解析出的所有子播放线路
+    var currentStreamSources: [VZPlayerSource] = []
+    
+    // 当前正在播放的子源索引
+    var currentSourceIndex: Int = 0
     
     // 异步防竞争请求 Token
     private var activeFetchRequestId: UUID?
-    
-    // 基础备用源
-    private let fallbackSources: [String: [VZPlayerSource]] = [
-        "vod_girl": [
-            VZPlayerSource(url: "https://vplayerctrl-dev.weizan.cn/girl.mp4", type: "hls", tag: "vod_girl", videoCodec: 2, orderno: 1, isLive: false, ext: "mp4"),
-            VZPlayerSource(url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8", type: "hls", tag: "live_backup", videoCodec: 2, orderno: 2, isLive: false, ext: "m3u8")
-        ],
-        "live_test": [
-            VZPlayerSource(url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", type: "hls", tag: "live_test", videoCodec: 2, orderno: 1, isLive: true, ext: "m3u8")
-        ]
-    ]
     
     init(webView: WKWebView? = nil, vzPlayer: IH5Player?) {
         self.webView = webView
@@ -701,19 +771,19 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
             case "setMuted":
                 _ = player.set_muted(paramsJson)
             case "switchStream":
-                // 动态切节点流：通过 API 解析真实播放地址
-                if let streamId = self.extractParam(from: paramsJson, key: "streamId") {
+                // 动态切节点推流：请求播放地址并起播
+                if let dict = self.parseJSON(paramsJson),
+                   let streamId = dict["streamId"] as? String {
                     self.playNodeStream(streamId: streamId)
                 }
-            case "switchSource":
-                // 切换备用测试源
-                if let key = self.extractParam(from: paramsJson, key: "sourceKey"), let sources = self.fallbackSources[key] {
-                    self.currentPlayingStreamId = key
-                    player.setSources(sources)
-                    player.play()
+            case "switchSubSource":
+                // 手动切换当前流内的指定播放线路
+                if let dict = self.parseJSON(paramsJson),
+                   let idx = dict["index"] as? Int ?? (dict["sourceIndex"] as? Int) {
+                    self.currentSourceIndex = idx
+                    _ = player.switchSource(index: idx)
+                    self.syncNodeStreamsToH5()
                     self.syncPropertiesToH5()
-                } else {
-                    self.playNodeStream(streamId: "vod_girl")
                 }
             case "refreshStreams":
                 self.apiService.fetchStreamList { [weak self] _ in
@@ -732,6 +802,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     func playNodeStream(streamId: String) {
         guard let player = vzPlayer else { return }
         self.currentPlayingStreamId = streamId
+        self.currentSourceIndex = 0
         
         let requestId = UUID()
         self.activeFetchRequestId = requestId
@@ -753,27 +824,28 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                     source.sourceIndex = index
                     return source
                 }
+                self.currentStreamSources = vzSources
+                self.currentSourceIndex = 0
                 player.setSources(vzSources)
                 player.play()
-            } else if let fallback = self.fallbackSources[streamId] ?? self.fallbackSources["vod_girl"] {
-                player.setSources(fallback)
-                player.play()
+            } else {
+                self.currentStreamSources = []
+                self.currentSourceIndex = 0
             }
             self.syncNodeStreamsToH5()
             self.syncPropertiesToH5()
         }
     }
     
-    private func extractParam(from json: String, key: String) -> String? {
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let val = dict[key] as? String else {
+    private func parseJSON(_ jsonStr: String) -> [String: Any]? {
+        guard let data = jsonStr.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        return val
+        return dict
     }
     
-    /// 将节点最新在线流与状态实时同步给 H5
+    /// 将节点最新在线流与当前流的子播放线路实时同步给 H5
     func syncNodeStreamsToH5() {
         guard let webView = webView else { return }
         
@@ -781,15 +853,38 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
             return [
                 "streamid": s.streamid,
                 "resolution": s.resolutionText,
-                "fps": s.fpsText
+                "fps": s.fpsText,
+                "bitrate": s.bitrateText,
+                "location": s.locationText
             ]
+        }
+        
+        let subSourcesArray: [[String: Any]] = currentStreamSources.enumerated().map { (index, s) in
+            return [
+                "index": index,
+                "tag": s.tag,
+                "type": s.type,
+                "videoCodec": s.videoCodec,
+                "codecText": s.videoCodec == 4 ? "H.265" : "H.264",
+                "url": s.url,
+                "isLive": s.isLive
+            ]
+        }
+        
+        if let player = vzPlayer,
+           let srcData = player.get_currentsource().data(using: .utf8),
+           let srcDict = try? JSONSerialization.jsonObject(with: srcData) as? [String: Any],
+           let activeIdx = srcDict["sourceIndex"] as? Int {
+            self.currentSourceIndex = activeIdx
         }
         
         let payload: [String: Any] = [
             "activeNodeDomain": apiService.activeNodeDomain,
             "activeNodeRemark": apiService.activeNodeItem?.remark ?? apiService.activeNodeDomain,
             "currentStreamId": currentPlayingStreamId,
-            "streams": streamsArray
+            "streams": streamsArray,
+            "subSources": subSourcesArray,
+            "currentSourceIndex": currentSourceIndex
         ]
         
         if let data = try? JSONSerialization.data(withJSONObject: payload),
@@ -844,9 +939,14 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     // MARK: - VZH5EventListener (Native ➔ H5 实时广播)
     func onEvent(_ eventName: String) {
         DispatchQueue.main.async { [weak self] in
-            guard let webView = self?.webView else { return }
+            guard let self = self, let webView = self.webView else { return }
             let script = "if (window.vzBridgeReceiveEvent) { window.vzBridgeReceiveEvent('\(eventName)'); }"
             webView.evaluateJavaScript(script, completionHandler: nil)
+            
+            if eventName == "PlayerWARN" || eventName == "playing" {
+                self.syncNodeStreamsToH5()
+                self.syncPropertiesToH5()
+            }
         }
     }
     
@@ -900,36 +1000,21 @@ final class HybridPlayerViewModel: ObservableObject {
         // 注册播放器事件监听器
         player.setOnH5EventListener(coord)
         
-        // 3. 起播节点的首个流或预设备用源
+        // 3. 加载 H5 控制台页面
+        wv.loadHTMLString(hybridPlayerHTML, baseURL: nil)
+        
+        // 4. 起播节点的首个流 (如有)
         if let firstStream = apiService.streamList.first {
             coord.playNodeStream(streamId: firstStream.streamid)
-        } else {
-            let initialSources = [
-                VZPlayerSource(
-                    url: "https://vplayerctrl-dev.weizan.cn/girl.mp4",
-                    type: "hls",
-                    tag: "vod_girl",
-                    videoCodec: 2,
-                    orderno: 1,
-                    isLive: false,
-                    ext: "mp4"
-                ),
-                VZPlayerSource(
-                    url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8",
-                    type: "hls",
-                    tag: "live_backup",
-                    videoCodec: 2,
-                    orderno: 2,
-                    isLive: false,
-                    ext: "m3u8"
-                )
-            ]
-            player.setSources(initialSources)
-            player.play()
+        } else if apiService.hasCompleteConfig {
+            apiService.fetchStreamList { streams in
+                if let first = streams.first {
+                    coord.playNodeStream(streamId: first.streamid)
+                } else {
+                    coord.syncNodeStreamsToH5()
+                }
+            }
         }
-        
-        // 4. 加载 H5 控制台页面并在加载后推送最新节点流
-        wv.loadHTMLString(hybridPlayerHTML, baseURL: nil)
     }
     
     func teardown() {
