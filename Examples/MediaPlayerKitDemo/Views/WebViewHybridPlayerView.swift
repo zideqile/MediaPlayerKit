@@ -277,16 +277,42 @@ private let hybridPlayerHTML: String = """
             document.getElementById('logBox').innerHTML = '';
         }
 
-        // JSBridge 通信
+        // JSBridge 通信 (支持 iOS WKWebView / Android WebView / 纯 Web 浏览器独立运行模式)
         function sendCmd(method, paramsJson = '{}') {
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.vzPlayerBridge) {
+                // 1. iOS Native 容器
                 window.webkit.messageHandlers.vzPlayerBridge.postMessage({
                     method: method,
                     paramsJson: paramsJson
                 });
-                log('H5➔Native', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
+                log('H5➔iOS', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
+            } else if (window.vzPlayerBridge && typeof window.vzPlayerBridge.sendCmd === 'function') {
+                // 2. Android Native 容器
+                window.vzPlayerBridge.sendCmd(method, paramsJson);
+                log('H5➔Android', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
             } else {
-                log('Error', '未检测到 vzPlayerBridge 容器');
+                // 3. 纯 Web 浏览器独立模式 (Safari / Chrome / 微信)
+                log('Web独立', `[独立模式] 执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
+                simulateWebResponse(method, paramsJson);
+            }
+        }
+
+        // Web 独立模式下的自闭环模拟响应，保证在任何普通浏览器中均可独立预览与体验
+        function simulateWebResponse(method, paramsJson) {
+            if (method === 'play') {
+                window.vzBridgeReceiveEvent('playing');
+            } else if (method === 'pause') {
+                window.vzBridgeReceiveEvent('pause');
+            } else if (method === 'getProperties') {
+                window.vzBridgeUpdateProperties({
+                    currentTime: currentPosSec,
+                    duration: totalDurationSec || 120,
+                    speed: currentSpeed,
+                    volume: 1.0,
+                    muted: isMutedState,
+                    videoWidth: 1920,
+                    videoHeight: 1080
+                });
             }
         }
 
@@ -763,7 +789,13 @@ public struct WebViewHybridPlayerView: View {
             setupHybridPlayer()
         }
         .onDisappear {
+            if let userContentController = webView?.configuration.userContentController {
+                userContentController.removeScriptMessageHandler(forName: "vzPlayerBridge")
+            }
             vzPlayer?.destroy()
+            vzPlayer = nil
+            coordinator = nil
+            webView = nil
         }
     }
 
@@ -774,19 +806,20 @@ public struct WebViewHybridPlayerView: View {
         let player = export.CreateVZPlayer(playerView)
         self.vzPlayer = player
 
-        // 2. 初始化 WKWebView 与 JSBridge 注入
-        let config = WKWebViewConfiguration()
+        // 2. 初始化 WKUserContentController 与 WKWebViewConfiguration (必须在实例化 WKWebView 前配置)
         let userController = WKUserContentController()
-        
-        let wv = WKWebView(frame: .zero, configuration: config)
-        self.webView = wv
+        let config = WKWebViewConfiguration()
+        config.userContentController = userController
 
-        let coord = VZPlayerJSBridgeCoordinator(webView: wv, vzPlayer: player)
+        let coord = VZPlayerJSBridgeCoordinator(webView: nil, vzPlayer: player)
         self.coordinator = coord
         
-        // 注册 JSBridge 消息监听
+        // 注册 JSBridge 消息监听 (必须在 webView 创建前或直接注册)
         userController.add(coord, name: "vzPlayerBridge")
-        config.userContentController = userController
+        
+        let wv = WKWebView(frame: .zero, configuration: config)
+        coord.webView = wv
+        self.webView = wv
         
         // 注册播放器事件监听器
         player.setOnH5EventListener(coord)

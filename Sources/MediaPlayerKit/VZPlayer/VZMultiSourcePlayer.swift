@@ -70,6 +70,9 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
         if controller == nil {
             startPlaybackWithCurrentSourceAndEngine()
         } else {
+            if controller?.state == .completed {
+                controller?.seek(to: 0)
+            }
             controller?.play()
         }
     }
