@@ -7,14 +7,14 @@ import WebKit
 import UIKit
 #endif
 
-// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (底部导航栏 + 沉浸式全屏布局架构)
+// MARK: - HTML 嵌入式 H5 播放控制器页面模板 (动态节点流与多源容错架构)
 private let hybridPlayerHTML: String = """
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IH5Player 混合控制台</title>
+    <title>IH5Player 节点混合控制台</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
         html, body { height: 100%; width: 100%; background-color: #0B0F19; color: #F8FAFC; font-size: 13px; overflow: hidden; display: flex; flex-direction: column; }
@@ -38,6 +38,10 @@ private let hybridPlayerHTML: String = """
         .mini-event-banner { background: #0F172A; border: 1px solid #3B82F6; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; flex-shrink: 0; }
         .mini-event-text { color: #60A5FA; font-weight: 600; display: flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         
+        /* 节点状态指示条 */
+        .node-chip { background: rgba(59, 130, 246, 0.15); border: 1px solid #3B82F6; border-radius: 6px; padding: 4px 8px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
+        .node-name { color: #93C5FD; font-weight: 700; display: flex; align-items: center; gap: 4px; }
+
         /* 主播放大按钮 */
         .main-play-btn { width: 100%; height: 44px; border-radius: 10px; border: none; font-size: 15px; font-weight: 700; color: #FFFFFF; background: #2563EB; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; margin-bottom: 10px; flex-shrink: 0; transition: all 0.15s; box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35); }
         .main-play-btn.playing { background: #D97706; box-shadow: 0 4px 10px rgba(217, 119, 6, 0.35); }
@@ -55,13 +59,16 @@ private let hybridPlayerHTML: String = """
         .slider-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
         .slider-row input[type=range] { flex: 1; accent-color: #3B82F6; height: 6px; border-radius: 3px; }
 
-        /* 预设源选择卡片 */
-        .source-card { background: #0F172A; border: 1.5px solid #334155; border-radius: 8px; padding: 12px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
-        .source-card.active { border-color: #3B82F6; background: rgba(59, 130, 246, 0.15); }
-        .source-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; font-weight: 700; font-size: 13px; color: #F1F5F9; }
-        .source-desc { font-size: 11px; color: #94A3B8; word-break: break-all; }
+        /* 流与播放源卡片列表 */
+        .stream-card-list { display: flex; flex-direction: column; gap: 8px; }
+        .source-card { background: #0F172A; border: 1.5px solid #334155; border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: all 0.2s; }
+        .source-card.active { border-color: #3B82F6; background: rgba(59, 130, 246, 0.18); box-shadow: 0 0 10px rgba(59, 130, 246, 0.2); }
+        .source-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; font-weight: 700; font-size: 12.5px; color: #F1F5F9; }
+        .source-stream-id { font-family: monospace; font-size: 12px; color: #38BDF8; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+        .source-desc { font-size: 10.5px; color: #94A3B8; word-break: break-all; margin-top: 3px; }
         .source-badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: #334155; color: #CBD5E1; }
         .source-badge.active-badge { background: #2563EB; color: #FFF; font-weight: 700; }
+        .source-badge.live-badge { background: #059669; color: #FFF; font-weight: 700; }
 
         /* 日志盒子 (全高占满) */
         .log-box { background: #020617; border-radius: 8px; padding: 10px; flex: 1; min-height: 200px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; border: 1px solid #334155; }
@@ -95,9 +102,15 @@ private let hybridPlayerHTML: String = """
             <!-- 实时事件吸顶迷你横幅 -->
             <div class="mini-event-banner">
                 <div class="mini-event-text">
-                    <span>⚡️</span><span id="miniEventStatus">Native 状态: playing (正在播放)</span>
+                    <span>⚡️</span><span id="miniEventStatus">Native 状态: preparing (准备就绪)</span>
                 </div>
                 <span style="font-size: 10px; color: #94A3B8;" id="miniEventTime">00:00</span>
+            </div>
+
+            <!-- 当前节点与流标识 -->
+            <div class="node-chip">
+                <span class="node-name">📡 <span id="ctrlNodeName">节点: 未连接</span></span>
+                <span style="font-family: monospace; font-size: 10.5px; color: #CBD5E1;" id="ctrlStreamId">Stream: vod_girl</span>
             </div>
 
             <!-- 主播放/暂停大按钮 -->
@@ -152,40 +165,37 @@ private let hybridPlayerHTML: String = """
             </div>
         </div>
 
-        <!-- ================= TAB 2: 换播放源与容错 ================= -->
+        <!-- ================= TAB 2: 换播放源与节点在线流 ================= -->
         <div class="tab-pane" id="tabSources">
-            <div style="font-size: 12px; color: #94A3B8; margin-bottom: 10px;">点击下方任一源，H5 即刻通过 JSBridge 注入 <code>setSources</code> 并重新起播：</div>
-            
-            <div class="source-card active" id="srcVod1" onclick="selectPresetSource('vod_girl')">
-                <div class="source-header">
-                    <span>🎬 经典点播 MP4</span>
-                    <span class="source-badge active-badge" id="badge_vod_girl">当前生效 ✓</span>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <div style="font-size: 12px; color: #94A3B8;">
+                    当前节点: <b style="color: #60A5FA;" id="sourcesNodeRemark">火山北京</b> (<span id="sourcesNodeDomain">p8.vzan.com</span>)
                 </div>
-                <div class="source-desc">https://vplayerctrl-dev.weizan.cn/girl.mp4 (720P)</div>
+                <button class="btn" style="padding: 3px 8px; font-size: 11px;" onclick="refreshNodeStreams()">🔄 刷新流</button>
             </div>
 
-            <div class="source-card" id="srcLive1" onclick="selectPresetSource('live_vzan1')">
-                <div class="source-header">
-                    <span>📡 微赞直播流 1 (HLS)</span>
-                    <span class="source-badge" id="badge_live_vzan1">点此切换</span>
-                </div>
-                <div class="source-desc">https://p8.vzan.com/509306325/623870780773300121/live.m3u8</div>
+            <!-- 动态节点流容器 -->
+            <div class="stream-card-list" id="dynamicStreamsContainer">
+                <div style="text-align: center; color: #64748B; padding: 20px; font-size: 11.5px;">正在加载节点实时流列表...</div>
             </div>
 
-            <div class="source-card" id="srcLive2" onclick="selectPresetSource('live_vzan2')">
-                <div class="source-header">
-                    <span>📡 微赞备用直播流 2</span>
-                    <span class="source-badge" id="badge_live_vzan2">点此切换</span>
+            <div style="margin-top: 12px; margin-bottom: 6px; font-size: 11px; font-weight: bold; color: #64748B;">测试与备用播放源</div>
+            <div class="stream-card-list">
+                <div class="source-card" id="src_vod_girl" onclick="selectPresetSource('vod_girl')">
+                    <div class="source-header">
+                        <span>🎬 经典点播 MP4 (官方测试)</span>
+                        <span class="source-badge" id="badge_vod_girl">点此切换</span>
+                    </div>
+                    <div class="source-desc">https://vplayerctrl-dev.weizan.cn/girl.mp4 (720P)</div>
                 </div>
-                <div class="source-desc">https://p2.vzan.com/teststream40/teststream40/live.m3u8</div>
-            </div>
 
-            <div class="source-card" id="srcLive3" onclick="selectPresetSource('live_test')">
-                <div class="source-header">
-                    <span>⚡️ 官方容错测试源</span>
-                    <span class="source-badge" id="badge_live_test">点此切换</span>
+                <div class="source-card" id="src_live_test" onclick="selectPresetSource('live_test')">
+                    <div class="source-header">
+                        <span>⚡️ 官方容错直播测试流</span>
+                        <span class="source-badge" id="badge_live_test">点此切换</span>
+                    </div>
+                    <div class="source-desc">https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8</div>
                 </div>
-                <div class="source-desc">https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8</div>
             </div>
         </div>
 
@@ -206,11 +216,11 @@ private let hybridPlayerHTML: String = """
                 <div style="font-size: 13.5px; font-weight: 700; color: #60A5FA; margin-bottom: 6px;">💡 混合开发原理</div>
                 <div style="font-size: 12px; color: #CBD5E1; line-height: 1.55; margin-bottom: 10px;">
                     上方视频由 <b>iOS 原生 Metal / AVPlayer</b> 硬件加速渲染；<br>
-                    下方由 <b>WKWebView</b> 承载 H5 控制台。所有点击指令与事件回调均采用统一的 <b>JSON 契约</b> 通过 JSBridge 双向透传。
+                    下方由 <b>WKWebView</b> 承载 H5 控制台。通过 <code>StreamAPIService</code> 动态拉取当前节点的在线流与播放地址，并通过 <b>JSON 契约</b> 双向透传。
                 </div>
                 <div style="font-size: 12.5px; font-weight: 700; color: #FBBF24; margin-bottom: 4px;">🚀 懒人体验：一键自动全流程演练</div>
                 <div style="font-size: 11.5px; color: #94A3B8; margin-bottom: 8px;">
-                    点击下方按钮，将全自动按顺序执行：起播 ➔ Seek 5s ➔ 1.5x 倍速 ➔ 静音切换 ➔ 切直播源 ➔ 恢复 1.0x。
+                    点击下方按钮，将全自动按顺序执行：起播节点首选流 ➔ Seek 5s ➔ 1.5x 倍速 ➔ 静音切换 ➔ 动态切流 ➔ 恢复 1.0x。
                 </div>
                 <button class="auto-btn" onclick="runAutoDemonstration()">
                     <span id="autoBtnText">立即开始「一键全功能自动化演练」</span>
@@ -236,6 +246,8 @@ private let hybridPlayerHTML: String = """
         let currentSpeed = 1.0;
         let logCounter = 0;
         let isAutoTesting = false;
+        let currentActiveStreamId = '';
+        let availableStreams = [];
 
         // 选项卡切换
         function switchTab(tabId) {
@@ -265,6 +277,7 @@ private let hybridPlayerHTML: String = """
             if (type === 'Event') tag = `<span class="log-event">[Native事件]</span>`;
             if (type === 'Error') tag = `<span class="log-error">[错误]</span>`;
             if (type === 'Auto') tag = `<span class="log-auto">[演练]</span>`;
+            if (type === 'Node') tag = `<span class="log-cmd" style="color:#A78BFA;">[节点调度]</span>`;
             
             item.innerHTML = `<span class="log-time">${timeStr}</span>${tag} ${msg}`;
             box.appendChild(item);
@@ -277,27 +290,105 @@ private let hybridPlayerHTML: String = """
             document.getElementById('logBox').innerHTML = '';
         }
 
-        // JSBridge 通信 (支持 iOS WKWebView / Android WebView / 纯 Web 浏览器独立运行模式)
+        // JSBridge 通信
         function sendCmd(method, paramsJson = '{}') {
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.vzPlayerBridge) {
-                // 1. iOS Native 容器
                 window.webkit.messageHandlers.vzPlayerBridge.postMessage({
                     method: method,
                     paramsJson: paramsJson
                 });
                 log('H5➔iOS', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
-            } else if (window.vzPlayerBridge && typeof window.vzPlayerBridge.sendCmd === 'function') {
-                // 2. Android Native 容器
-                window.vzPlayerBridge.sendCmd(method, paramsJson);
-                log('H5➔Android', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
             } else {
-                // 3. 纯 Web 浏览器独立模式 (Safari / Chrome / 微信)
                 log('Web独立', `[独立模式] 执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
                 simulateWebResponse(method, paramsJson);
             }
         }
 
-        // Web 独立模式下的自闭环模拟响应
+        // 动态切节点流
+        function selectNodeStream(streamId) {
+            currentActiveStreamId = streamId;
+            document.getElementById('ctrlStreamId').innerText = 'Stream: ' + streamId;
+            updateStreamCardsHighlight();
+            sendCmd('switchStream', JSON.stringify({ streamId: streamId }));
+            setTimeout(() => switchTab('tabControls'), 300);
+        }
+
+        // 选择内置备用源
+        function selectPresetSource(sourceKey) {
+            currentActiveStreamId = sourceKey;
+            document.getElementById('ctrlStreamId').innerText = 'Stream: ' + sourceKey;
+            updateStreamCardsHighlight();
+            sendCmd('switchSource', JSON.stringify({ sourceKey: sourceKey }));
+            setTimeout(() => switchTab('tabControls'), 300);
+        }
+
+        function refreshNodeStreams() {
+            log('Node', '向 Native 发送刷新节点在线流指令...');
+            sendCmd('refreshStreams');
+        }
+
+        // Native 注入节点流列表
+        window.vzBridgeUpdateStreamList = function(data) {
+            try {
+                const nodeRemark = data.activeNodeRemark || '默认节点';
+                const nodeDomain = data.activeNodeDomain || '';
+                availableStreams = data.streams || [];
+                currentActiveStreamId = data.currentStreamId || currentActiveStreamId;
+
+                document.getElementById('ctrlNodeName').innerText = '节点: ' + (nodeRemark || nodeDomain);
+                document.getElementById('sourcesNodeRemark').innerText = nodeRemark || '当前节点';
+                document.getElementById('sourcesNodeDomain').innerText = nodeDomain;
+
+                const container = document.getElementById('dynamicStreamsContainer');
+                if (!container) return;
+
+                if (availableStreams.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; color: #94A3B8; padding: 15px; background: #0F172A; border-radius: 8px;">当前节点暂无活跃在线推流，可点击下方测试播放源</div>';
+                    return;
+                }
+
+                let html = '';
+                availableStreams.forEach((s, idx) => {
+                    const isActive = s.streamid === currentActiveStreamId;
+                    const resBadge = s.resolution ? `<span style="font-size: 9px; background: rgba(59,130,246,0.2); color:#60A5FA; padding: 1px 4px; border-radius:3px;">${s.resolution}</span>` : '';
+                    const fpsBadge = s.fps ? `<span style="font-size: 9px; color:#94A3B8;">${s.fps}</span>` : '';
+                    
+                    html += `
+                    <div class="source-card ${isActive ? 'active' : ''}" id="stream_${s.streamid}" onclick="selectNodeStream('${s.streamid}')">
+                        <div class="source-header">
+                            <span class="source-stream-id">📡 ${s.streamid}</span>
+                            <span class="source-badge ${isActive ? 'active-badge' : 'live-badge'}">${isActive ? '当前播放中 ✓' : '在线直播'}</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+                            ${resBadge} ${fpsBadge}
+                            <span style="font-size: 9.5px; color:#64748B;">HLS/FLV 多源容错</span>
+                        </div>
+                    </div>`;
+                });
+                container.innerHTML = html;
+                log('Node', `已加载 <b>${availableStreams.length}</b> 条节点在线流`);
+            } catch(e) {
+                console.error(e);
+            }
+        };
+
+        function updateStreamCardsHighlight() {
+            document.querySelectorAll('.source-card').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.source-badge').forEach(b => {
+                if (!b.classList.contains('live-badge')) b.innerText = '点此切换';
+            });
+            const activeCard = document.getElementById('stream_' + currentActiveStreamId) || document.getElementById('src_' + currentActiveStreamId);
+            if (activeCard) {
+                activeCard.classList.add('active');
+                const badge = activeCard.querySelector('.source-badge');
+                if (badge) {
+                    badge.innerText = '当前播放中 ✓';
+                    badge.className = 'source-badge active-badge';
+                }
+            }
+        }
+
+        // Web 独立模式下的自闭环模拟
         function simulateWebResponse(method, paramsJson) {
             if (method === 'play') {
                 window.vzBridgeReceiveEvent('playing');
@@ -361,34 +452,6 @@ private let hybridPlayerHTML: String = """
             updateStats();
         }
 
-        function selectPresetSource(sourceKey) {
-            document.querySelectorAll('.source-card').forEach(c => c.classList.remove('active'));
-            document.querySelectorAll('.source-badge').forEach(b => {
-                b.classList.remove('active-badge');
-                b.innerText = '点此切换';
-            });
-
-            let cardId = 'srcVod1';
-            if (sourceKey === 'vod_girl') cardId = 'srcVod1';
-            if (sourceKey === 'live_vzan1') cardId = 'srcLive1';
-            if (sourceKey === 'live_vzan2') cardId = 'srcLive2';
-            if (sourceKey === 'live_test') cardId = 'srcLive3';
-
-            const activeCard = document.getElementById(cardId);
-            if (activeCard) {
-                activeCard.classList.add('active');
-                const badge = activeCard.querySelector('.source-badge');
-                if (badge) {
-                    badge.classList.add('active-badge');
-                    badge.innerText = '当前生效 ✓';
-                }
-            }
-
-            sendCmd('switchSource', JSON.stringify({ sourceKey: sourceKey }));
-            // 自动跳回控制台 Tab 方便用户操作
-            setTimeout(() => switchTab('tabControls'), 300);
-        }
-
         function refreshProperties() {
             sendCmd('getProperties');
         }
@@ -406,7 +469,7 @@ private let hybridPlayerHTML: String = """
             const btn = document.getElementById('autoBtnText');
             btn.innerText = '⏳ 演练中... 请查看画面与控制台';
             switchTab('tabLogs');
-            log('Auto', '=== 🚀 开始全功能自动化测试演练 ===');
+            log('Auto', '=== 🚀 开始节点流自动化测试演练 ===');
 
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -428,16 +491,19 @@ private let hybridPlayerHTML: String = """
                     toggleMute();
                     await sleep(1000);
 
-                    log('Auto', '步骤 4/5: 切换至微赞直播源 1');
-                    selectPresetSource('live_vzan1');
+                    log('Auto', '步骤 4/5: 动态切换节点流/备用源');
+                    if (availableStreams.length > 0) {
+                        selectNodeStream(availableStreams[0].streamid);
+                    } else {
+                        selectPresetSource('vod_girl');
+                    }
                     await sleep(2000);
 
-                    log('Auto', '步骤 5/5: 恢复 1.0x 倍速与点播源');
+                    log('Auto', '步骤 5/5: 恢复 1.0x 倍速');
                     setSpeed(1.0);
-                    selectPresetSource('vod_girl');
                     await sleep(1000);
 
-                    log('Auto', '🎉 自动化演练全部完成！各项 API 响应正常。');
+                    log('Auto', '🎉 自动化演练全部完成！各节点 API 响应正常。');
                 } catch(e) {
                     log('Error', '演练异常: ' + e);
                 } finally {
@@ -449,7 +515,6 @@ private let hybridPlayerHTML: String = """
 
         // ================= Native ➔ H5 回调注入方法 =================
 
-        // 1. 原生生命周期事件
         window.vzBridgeReceiveEvent = function(eventName) {
             log('Event', `接收事件: <b>${eventName}</b>`);
             const miniStatus = document.getElementById('miniEventStatus');
@@ -487,7 +552,6 @@ private let hybridPlayerHTML: String = """
             sendCmd('getProperties');
         };
 
-        // 2. 进度定时心跳 (500ms)
         window.vzBridgeReceiveTimeUpdate = function(currentTimeSec) {
             currentPosSec = currentTimeSec;
             const curStr = formatTime(currentPosSec);
@@ -504,14 +568,12 @@ private let hybridPlayerHTML: String = """
             }
         };
 
-        // 3. 错误回调
         window.vzBridgeReceiveError = function(code, errMsg) {
             log('Error', `播放异常 code=${code} msg=${errMsg}`);
             const miniStatus = document.getElementById('miniEventStatus');
             if (miniStatus) miniStatus.innerText = `Native 错误: ${code}`;
         };
 
-        // 4. 属性更新回传
         window.vzBridgeUpdateProperties = function(props) {
             try {
                 if (props.duration !== undefined && props.duration > 0) {
@@ -571,24 +633,20 @@ public struct HybridWKWebViewRepresentable: NSViewRepresentable {
 }
 #endif
 
-// MARK: - JSBridge 协调器与事件监听器
+// MARK: - JSBridge 协调器与事件监听器 (全面支持节点流与动态地址解析)
 final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5EventListener {
     weak var webView: WKWebView?
     weak var vzPlayer: IH5Player?
+    private let apiService = StreamAPIService.shared
     
-    // 预设源映射
-    private let presetSources: [String: [VZPlayerSource]] = [
+    // 当前正在播放的流 ID / 标记
+    var currentPlayingStreamId: String = "vod_girl"
+    
+    // 基础备用源
+    private let fallbackSources: [String: [VZPlayerSource]] = [
         "vod_girl": [
             VZPlayerSource(url: "https://vplayerctrl-dev.weizan.cn/girl.mp4", type: "hls", tag: "vod_girl", videoCodec: 2, orderno: 1, isLive: false, ext: "mp4"),
             VZPlayerSource(url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8", type: "hls", tag: "live_backup", videoCodec: 2, orderno: 2, isLive: false, ext: "m3u8")
-        ],
-        "live_vzan1": [
-            VZPlayerSource(url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8", type: "hls", tag: "live_vzan1", videoCodec: 2, orderno: 1, isLive: true, ext: "m3u8"),
-            VZPlayerSource(url: "https://p2.vzan.com/teststream40/teststream40/live.m3u8", type: "hls", tag: "live_backup", videoCodec: 2, orderno: 2, isLive: true, ext: "m3u8")
-        ],
-        "live_vzan2": [
-            VZPlayerSource(url: "https://p2.vzan.com/teststream40/teststream40/live.m3u8", type: "hls", tag: "live_vzan2", videoCodec: 2, orderno: 1, isLive: true, ext: "m3u8"),
-            VZPlayerSource(url: "https://vplayerctrl-dev.weizan.cn/girl.mp4", type: "hls", tag: "vod_backup", videoCodec: 2, orderno: 2, isLive: true, ext: "mp4")
         ],
         "live_test": [
             VZPlayerSource(url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", type: "hls", tag: "live_test", videoCodec: 2, orderno: 1, isLive: true, ext: "m3u8")
@@ -627,16 +685,24 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                 _ = player.set_volume(paramsJson)
             case "setMuted":
                 _ = player.set_muted(paramsJson)
+            case "switchStream":
+                // 动态切节点流：通过 API 解析真实播放地址
+                if let streamId = self.extractParam(from: paramsJson, key: "streamId") {
+                    self.playNodeStream(streamId: streamId)
+                }
             case "switchSource":
-                if let key = self.extractSourceKey(from: paramsJson), let sources = self.presetSources[key] {
+                // 切换备用测试源
+                if let key = self.extractParam(from: paramsJson, key: "sourceKey"), let sources = self.fallbackSources[key] {
+                    self.currentPlayingStreamId = key
                     player.setSources(sources)
                     player.play()
-                } else if paramsJson.contains("live") {
-                    player.setSources(self.presetSources["live_vzan1"] ?? [])
-                    player.play()
+                    self.syncPropertiesToH5()
                 } else {
-                    player.setSources(self.presetSources["vod_girl"] ?? [])
-                    player.play()
+                    self.playNodeStream(streamId: "vod_girl")
+                }
+            case "refreshStreams":
+                self.apiService.fetchStreamList { [weak self] _ in
+                    self?.syncNodeStreamsToH5()
                 }
             case "getProperties":
                 self.syncPropertiesToH5()
@@ -646,16 +712,74 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
         }
     }
     
-    private func extractSourceKey(from json: String) -> String? {
-        guard let data = json.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let key = dict["sourceKey"] as? String else {
-            return nil
+    /// 播放节点的在线流：自动请求 toolsapi 播放地址并构造成多源容错管线
+    func playNodeStream(streamId: String) {
+        guard let player = vzPlayer else { return }
+        self.currentPlayingStreamId = streamId
+        
+        apiService.fetchPlayerSources(for: streamId) { [weak self] container in
+            guard let self = self else { return }
+            if let container = container, !container.allSources.isEmpty {
+                let vzSources = container.allSources.enumerated().map { (index, item) -> VZPlayerSource in
+                    let source = VZPlayerSource(
+                        url: item.src,
+                        type: item.type.lowercased(),
+                        tag: item.tag ?? "source_\(index)",
+                        videoCodec: item.videoCodec ?? (item.codecText.contains("265") ? 4 : 2),
+                        orderno: index + 1,
+                        isLive: true,
+                        ext: item.type.lowercased()
+                    )
+                    source.sourceIndex = index
+                    return source
+                }
+                player.setSources(vzSources)
+                player.play()
+            } else if let fallback = self.fallbackSources[streamId] ?? self.fallbackSources["vod_girl"] {
+                player.setSources(fallback)
+                player.play()
+            }
+            self.syncNodeStreamsToH5()
+            self.syncPropertiesToH5()
         }
-        return key
     }
     
-    private func syncPropertiesToH5() {
+    private func extractParam(from json: String, key: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let val = dict[key] as? String else {
+            return nil
+        }
+        return val
+    }
+    
+    /// 将节点最新在线流与状态实时同步给 H5
+    func syncNodeStreamsToH5() {
+        guard let webView = webView else { return }
+        
+        let streamsArray: [[String: Any]] = apiService.streamList.map { s in
+            return [
+                "streamid": s.streamid,
+                "resolution": s.resolutionText,
+                "fps": s.fpsText
+            ]
+        }
+        
+        let payload: [String: Any] = [
+            "activeNodeDomain": apiService.activeNodeDomain,
+            "activeNodeRemark": apiService.activeNodeItem?.remark ?? apiService.activeNodeDomain,
+            "currentStreamId": currentPlayingStreamId,
+            "streams": streamsArray
+        ]
+        
+        if let data = try? JSONSerialization.data(withJSONObject: payload),
+           let jsonStr = String(data: data, encoding: .utf8) {
+            let script = "if (window.vzBridgeUpdateStreamList) { window.vzBridgeUpdateStreamList(\(jsonStr)); }"
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+    }
+    
+    func syncPropertiesToH5() {
         guard let player = vzPlayer, let webView = webView else { return }
         let curTimeJson = player.get_currentTime()
         let durJson = player.get_duration()
@@ -726,6 +850,8 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
 
 // MARK: - H5 混合播放演示主视图 (WebViewHybridPlayerView)
 public struct WebViewHybridPlayerView: View {
+    @ObservedObject private var apiService = StreamAPIService.shared
+    
     private let playerView = MediaPlayerView()
     @State private var vzPlayer: IH5Player?
     @State private var coordinator: VZPlayerJSBridgeCoordinator?
@@ -741,7 +867,7 @@ public struct WebViewHybridPlayerView: View {
                     .frame(height: 220)
                     .background(Color.black)
                 
-                // 顶部状态提示条
+                // 顶部状态提示条与快捷节点菜单
                 HStack {
                     HStack(spacing: 4) {
                         Circle()
@@ -758,13 +884,37 @@ public struct WebViewHybridPlayerView: View {
                     
                     Spacer()
                     
-                    Text("⚡️ IH5Player Core")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundColor(Color(red: 0.0, green: 0.8, blue: 0.9))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color.black.opacity(0.75))
-                        .cornerRadius(6)
+                    if !apiService.nodeItems.isEmpty {
+                        Menu {
+                            ForEach(apiService.nodeItems) { item in
+                                Button(action: {
+                                    apiService.setActiveNode(domain: item.domain)
+                                }) {
+                                    HStack {
+                                        Text(item.displayText)
+                                        if apiService.activeNodeDomain == item.domain {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                    .font(.system(size: 9))
+                                Text(apiService.activeNodeItem?.remark.isEmpty == false ? apiService.activeNodeItem!.remark : apiService.activeNodeDomain)
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 7.5))
+                            }
+                            .foregroundColor(Color(red: 0.0, green: 0.8, blue: 0.9))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.75))
+                            .cornerRadius(6)
+                        }
+                    }
                 }
                 .padding(6)
             }
@@ -787,6 +937,14 @@ public struct WebViewHybridPlayerView: View {
         }
         .onAppear {
             setupHybridPlayer()
+            if apiService.hasCompleteConfig && apiService.streamList.isEmpty {
+                apiService.fetchStreamList { _ in
+                    coordinator?.syncNodeStreamsToH5()
+                }
+            }
+        }
+        .onReceive(apiService.$streamList) { streams in
+            coordinator?.syncNodeStreamsToH5()
         }
         .onDisappear {
             if let userContentController = webView?.configuration.userContentController {
@@ -806,7 +964,7 @@ public struct WebViewHybridPlayerView: View {
         let player = export.CreateVZPlayer(playerView)
         self.vzPlayer = player
 
-        // 2. 初始化 WKUserContentController 与 WKWebViewConfiguration (必须在实例化 WKWebView 前配置)
+        // 2. 初始化 WKUserContentController 与 WKWebViewConfiguration
         let userController = WKUserContentController()
         let config = WKWebViewConfiguration()
         config.userContentController = userController
@@ -814,7 +972,7 @@ public struct WebViewHybridPlayerView: View {
         let coord = VZPlayerJSBridgeCoordinator(webView: nil, vzPlayer: player)
         self.coordinator = coord
         
-        // 注册 JSBridge 消息监听 (必须在 webView 创建前或直接注册)
+        // 注册 JSBridge 消息监听
         userController.add(coord, name: "vzPlayerBridge")
         
         let wv = WKWebView(frame: .zero, configuration: config)
@@ -824,31 +982,39 @@ public struct WebViewHybridPlayerView: View {
         // 注册播放器事件监听器
         player.setOnH5EventListener(coord)
 
-        // 默认载入测试播放源并自动起播
-        let initialSources = [
-            VZPlayerSource(
-                url: "https://vplayerctrl-dev.weizan.cn/girl.mp4",
-                type: "hls",
-                tag: "vod_girl",
-                videoCodec: 2,
-                orderno: 1,
-                isLive: false,
-                ext: "mp4"
-            ),
-            VZPlayerSource(
-                url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8",
-                type: "hls",
-                tag: "live_backup",
-                videoCodec: 2,
-                orderno: 2,
-                isLive: false,
-                ext: "m3u8"
-            )
-        ]
-        player.setSources(initialSources)
-        player.play()
+        // 3. 起播节点的首个流或预设备用源
+        if let firstStream = apiService.streamList.first {
+            coord.playNodeStream(streamId: firstStream.streamid)
+        } else {
+            let initialSources = [
+                VZPlayerSource(
+                    url: "https://vplayerctrl-dev.weizan.cn/girl.mp4",
+                    type: "hls",
+                    tag: "vod_girl",
+                    videoCodec: 2,
+                    orderno: 1,
+                    isLive: false,
+                    ext: "mp4"
+                ),
+                VZPlayerSource(
+                    url: "https://p8.vzan.com/509306325/623870780773300121/live.m3u8",
+                    type: "hls",
+                    tag: "live_backup",
+                    videoCodec: 2,
+                    orderno: 2,
+                    isLive: false,
+                    ext: "m3u8"
+                )
+            ]
+            player.setSources(initialSources)
+            player.play()
+        }
 
-        // 3. 加载 H5 控制台页面
+        // 4. 加载 H5 控制台页面并在加载后推送最新节点流
         wv.loadHTMLString(hybridPlayerHTML, baseURL: nil)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            coord.syncNodeStreamsToH5()
+        }
     }
 }
