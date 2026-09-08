@@ -36,12 +36,24 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     
     public var currentPosition: TimeInterval = 0
     public var duration: TimeInterval = 0
-    public var bufferedDuration: TimeInterval = 0
+    public var bufferedDuration: TimeInterval {
+        if let time = playerView.playerLayer?.player.playableTime, time > 0 {
+            return time
+        }
+        return bufferedDurationValue
+    }
     public var isPlaying: Bool {
         return state == .playing
     }
-    public var naturalSize: CGSize = .zero
+    public var naturalSize: CGSize {
+        if let size = playerView.playerLayer?.player.naturalSize, size != .zero {
+            return size
+        }
+        return naturalSizeValue
+    }
     
+    private var bufferedDurationValue: TimeInterval = 0
+    private var naturalSizeValue: CGSize = .zero
     private var config: PlayerConfig = PlayerConfig()
     private var isFirstFrameRendered = false
     private var currentURL: URL?
@@ -73,13 +85,31 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         
         KSOptions.isAutoPlay = config.autoPlay
         KSOptions.isLoopPlay = config.isLoop
+        KSOptions.hardwareDecode = config.enableHardwareDecode
         
         let opt = KSOptions()
+        opt.hardwareDecode = config.enableHardwareDecode
+        opt.isLoopPlay = config.isLoop
+        opt.isSeekedAutoPlay = config.autoPlay
+        opt.startPlayRate = savedRate
+        
+        if !config.customHeaders.isEmpty {
+            var headerLines = ""
+            for (k, v) in config.customHeaders {
+                headerLines += "\(k): \(v)\r\n"
+            }
+            opt.formatContextOptions["headers"] = headerLines
+        }
+        
         playerView.set(url: url, options: opt)
         
         playerView.playerLayer?.player.playbackVolume = savedVolume
         playerView.playerLayer?.player.playbackRate = savedRate
         playerView.playerLayer?.player.isMuted = savedMuted
+        
+        if let subURL = savedSubtitleURL {
+            playerView.srtControl.addSubtitle(dataSouce: SubtitleURLDataSouce(url: subURL))
+        }
         
         if config.autoPlay {
             self.play()
@@ -116,7 +146,8 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         playerView.resetPlayer()
         currentPosition = 0
         duration = 0
-        bufferedDuration = 0
+        bufferedDurationValue = 0
+        naturalSizeValue = .zero
         state = .idle
         isFirstFrameRendered = false
     }
@@ -136,8 +167,17 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         playerView.playerLayer?.player.isMuted = isMuted
     }
     
+    public func setLoop(_ loop: Bool) {
+        config.isLoop = loop
+        KSOptions.isLoopPlay = loop
+        playerView.playerLayer?.options.isLoopPlay = loop
+    }
+    
     public func setSubtitleURL(_ url: URL?) {
         savedSubtitleURL = url
+        if let subURL = url {
+            playerView.srtControl.addSubtitle(dataSouce: SubtitleURLDataSouce(url: subURL))
+        }
     }
     
     public func getQoSReport() -> PlayerQoSReport? {

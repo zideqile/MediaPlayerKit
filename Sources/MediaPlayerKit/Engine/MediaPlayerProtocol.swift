@@ -40,6 +40,7 @@ public protocol MediaPlayerProtocol: AnyObject {
     func setVolume(_ volume: Float)
     func setPlaybackRate(_ rate: Float)
     func setMute(_ isMuted: Bool)
+    func setLoop(_ loop: Bool)
     
     func setSubtitleURL(_ url: URL?)
     func getQoSReport() -> PlayerQoSReport?
