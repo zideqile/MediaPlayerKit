@@ -29,6 +29,8 @@ import Foundation
     
     @objc public var isLive: Bool = false
     @objc public var env: String = "dev" // "dev", "test", "prod"
+    @objc public var isHardwareDecode: Bool = true
+    @objc public var headers: [String: String] = [:]
     
     @objc public var logConfig: VZLogConfig = VZLogConfig()
     @objc public var logServerConfig: VZLogServerConfig = VZLogServerConfig()
