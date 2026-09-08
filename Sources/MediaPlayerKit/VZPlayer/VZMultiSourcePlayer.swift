@@ -52,6 +52,9 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
     }
     
     public func setSources(_ sources: [VZPlayerSource]) {
+        for (idx, s) in sources.enumerated() {
+            s.sourceIndex = idx
+        }
         self.sources = sources
         self.currentSourceIndex = 0
         self.currentEngineIndex = 0
@@ -273,14 +276,20 @@ public final class VZMultiSourcePlayer: NSObject, MediaPlayerDelegate {
     
     public func switchToNextSource() -> Bool {
         if currentSourceIndex + 1 < sources.count {
-            currentSourceIndex += 1
-            currentEngineIndex = 0
-            let nextSource = sources[currentSourceIndex]
-            self.engineOrder = computeEngineOrder(for: nextSource)
-            startPlaybackWithCurrentSourceAndEngine()
-            return true
+            return switchToSource(index: currentSourceIndex + 1)
         }
         return false
+    }
+    
+    public func switchToSource(index: Int) -> Bool {
+        guard index >= 0 && index < sources.count else { return false }
+        currentSourceIndex = index
+        currentEngineIndex = 0
+        let targetSource = sources[currentSourceIndex]
+        self.engineOrder = computeEngineOrder(for: targetSource)
+        delegate?.multiSourcePlayer(self, didWarnMessage: "Switch to source [\(currentSourceIndex + 1)/\(sources.count)] (\(targetSource.tag))")
+        startPlaybackWithCurrentSourceAndEngine()
+        return true
     }
     
     // MARK: - MediaPlayerDelegate 代理桥接
