@@ -25,17 +25,24 @@
                 <span style="font-size: 10px; color: #94A3B8;" id="miniEventTime">00:00</span>
             </div>
 
-            <!-- 节点、推流与当前线路快捷条 -->
+            <!-- 节点、推流与当前线路快捷条 (展示总流数、流序号、地址数、地址序号及上下切换) -->
             <div class="node-chip">
                 <div class="node-chip-row1">
                     <span class="node-name">📡 <span id="ctrlNodeName">节点: 未连接</span></span>
-                    <span style="font-family: ui-monospace, monospace; font-weight: 700; color: #38BDF8;" id="ctrlStreamId">Stream: -</span>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span class="metric-pill" id="ctrlStreamMetric">流: -/-</span>
+                        <div class="nav-btn-group">
+                            <button class="nav-mini-btn" id="ctrlPrevStreamBtn" onclick="switchPrevStream()" title="上一路流">⏮ 上一流</button>
+                            <button class="nav-mini-btn" id="ctrlNextStreamBtn" onclick="switchNextStream()" title="下一路流">下一流 ⏭</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="node-chip-row2">
-                    <span style="color: #CBD5E1;" id="ctrlLineInfoText">🔀 当前线路: 1 / 1 · HLS · H.264</span>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="btn btn-sm" style="background:#2563EB; color:#FFF;" onclick="switchTab('tabSources')">切线路 ›</button>
-                        <button class="btn btn-sm next-line-btn" id="ctrlNextLineBtn" onclick="switchNextSubSource()">下一线 ⏩</button>
+                    <span style="color: #CBD5E1;" id="ctrlLineInfoText">🔀 线路: 1/1 · HLS · H.264</span>
+                    <div class="nav-btn-group">
+                        <button class="nav-mini-btn" id="ctrlPrevLineBtn" onclick="switchPrevSubSource()" title="上一线路">⏮ 上一线</button>
+                        <button class="nav-mini-btn" id="ctrlNextLineBtn" onclick="switchNextSubSource()" title="下一线路">下一线 ⏩</button>
+                        <button class="btn btn-sm" style="background:#2563EB; color:#FFF; padding: 2px 7px;" onclick="switchTab('tabSources')">切线路 ›</button>
                     </div>
                 </div>
             </div>
@@ -92,41 +99,58 @@
             </div>
         </div>
 
-        <!-- ================= TAB 2: 流与线路 (当前流置顶 + 线路直接可切 + 独立换流抽屉) ================= -->
+        <!-- ================= TAB 2: 流与线路 (当前流置顶 + 上下流/上下线切换 + 详细指标 + 独立选流抽屉) ================= -->
         <div class="tab-pane" id="tabSources">
             
-            <!-- 节点头部 -->
+            <!-- 节点与总流数头部 -->
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-shrink: 0;">
                 <div style="font-size: 11.5px; color: #94A3B8;">
                     当前节点: <b style="color: #60A5FA;" id="sourcesNodeRemark">默认节点</b> (<span id="sourcesNodeDomain">-</span>)
                 </div>
-                <button class="btn btn-sm" onclick="refreshNodeStreams()">🔄 刷新节点</button>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="metric-pill" id="sourcesTotalStreamsBadge">共 0 路推流</span>
+                    <button class="btn btn-sm" onclick="refreshNodeStreams()">🔄 刷新节点</button>
+                </div>
             </div>
 
             <!-- 1. 当前流摘要置顶卡片 -->
             <div class="current-stream-hero" id="currentStreamHero">
                 <div class="hero-top-row">
-                    <span class="hero-title-label">📡 当前在线推流</span>
-                    <button class="hero-switch-btn" onclick="openStreamDrawer()">更换流 ›</button>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="hero-title-label">📡 当前在线推流</span>
+                        <span class="hero-index-badge" id="heroStreamIndexBadge">第 1 / 1 路</span>
+                    </div>
+                    <div class="nav-btn-group">
+                        <button class="hero-nav-btn" id="heroPrevStreamBtn" onclick="switchPrevStream()" title="上一路流">⏮ 上一路</button>
+                        <button class="hero-nav-btn" id="heroNextStreamBtn" onclick="switchNextStream()" title="下一路流">下一路 ⏭</button>
+                        <button class="hero-switch-btn" onclick="openStreamDrawer()">更换流 ›</button>
+                    </div>
                 </div>
                 <div class="hero-stream-id" id="heroStreamId">暂无活跃流</div>
                 <div class="hero-tags-row" id="heroTagsRow">
                     <span class="hero-tag live">在线直播</span>
+                    <span class="hero-tag metric" id="heroStreamCountTag">流序号: 0 / 0</span>
+                    <span class="hero-tag metric" id="heroLineCountTag">线路: 0 / 0 (共0条)</span>
                     <span class="hero-tag" id="heroResTag">自适应</span>
                     <span class="hero-tag" id="heroFpsTag">V:--/A:--</span>
                     <span class="hero-tag" id="heroBitrateTag">-- Kbps</span>
                 </div>
             </div>
 
-            <!-- 2. 播放线路列表头部工具栏 -->
+            <!-- 2. 播放线路列表头部工具栏 (支持上一线路/下一线路切换) -->
             <div class="lines-header-bar">
                 <div class="lines-title">
                     <span>🔀 播放线路</span>
-                    <span style="font-size: 11px; color: #94A3B8; font-weight: normal;">(<span id="linesCountNum">0</span> 条)</span>
+                    <span class="lines-count-info" id="linesCountInfo">(当前第 0 / 0 条 · 共 0 条)</span>
                 </div>
-                <button class="next-line-btn" id="sourcesNextLineBtn" onclick="switchNextSubSource()">
-                    <span>下一线路 ⏩</span>
-                </button>
+                <div class="nav-btn-group">
+                    <button class="next-line-btn" id="sourcesPrevLineBtn" onclick="switchPrevSubSource()" title="上一条线路">
+                        <span>⏮ 上一条</span>
+                    </button>
+                    <button class="next-line-btn" id="sourcesNextLineBtn" onclick="switchNextSubSource()" title="下一条线路">
+                        <span>下一条 ⏩</span>
+                    </button>
+                </div>
             </div>
 
             <!-- 3. 播放线路列表容器 (紧凑展示，完整 URL 折叠) -->

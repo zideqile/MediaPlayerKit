@@ -19,6 +19,22 @@ let availableSubSources = [];
 let lastSubSourcesSignature = ''; // 记录线路集合签名，防止重复 innerHTML 重绘
 let expandedLineDetails = {}; // 保存各线路详情折叠状态: key(streamId_idx) -> bool
 
+// ================= 指标计算工具方法 =================
+function getMetrics() {
+    const totalStreams = availableStreams.length;
+    const streamIdx = availableStreams.findIndex(s => s.streamid === currentActiveStreamId);
+    const currentStreamNum = streamIdx >= 0 ? (streamIdx + 1) : (currentActiveStreamId ? 1 : 0);
+    const totalLines = availableSubSources.length;
+    const currentLineNum = totalLines > 0 ? (currentActiveSourceIndex + 1) : 0;
+    return {
+        totalStreams,
+        currentStreamNum,
+        streamIdx,
+        totalLines,
+        currentLineNum
+    };
+}
+
 // ================= Tab 切换 =================
 function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -82,7 +98,6 @@ function sendCmd(method, paramsJson = '{}') {
         log('H5➔iOS', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
     } else {
         log('Web独立', `[独立模式] 执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
-        simulateWebResponse(method, paramsJson);
     }
 }
 
@@ -133,7 +148,7 @@ function renderDrawerStreamList(list) {
     }
 
     let html = '';
-    list.forEach(s => {
+    list.forEach((s, idx) => {
         const isSelected = s.streamid === currentActiveStreamId;
         const resBadge = s.resolution ? `<span style="font-size: 9.5px; background: rgba(59,130,246,0.2); color:#93C5FD; padding: 1px 5px; border-radius:3px;">${s.resolution}</span>` : '';
         const fpsBadge = s.fps ? `<span style="font-size: 9.5px; color:#94A3B8;">${s.fps}</span>` : '';
@@ -143,7 +158,7 @@ function renderDrawerStreamList(list) {
         html += `
         <div class="drawer-stream-card ${isSelected ? 'selected' : ''}" onclick="selectStreamFromDrawer('${s.streamid}')">
             <div class="drawer-stream-header">
-                <span class="drawer-stream-id">📡 ${s.streamid}</span>
+                <span class="drawer-stream-id">[${idx + 1}/${list.length}] 📡 ${s.streamid}</span>
                 ${checkmark}
             </div>
             <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
@@ -154,10 +169,9 @@ function renderDrawerStreamList(list) {
     container.innerHTML = html;
 }
 
-// 从抽屉中选择流：不切页，保持在 Tab 2，清空旧线路进入加载态
+// 从抽屉中选择流：不切页，保持在当前 Tab，清空旧线路进入加载态
 function selectStreamFromDrawer(streamId) {
     closeStreamDrawer();
-    // 如果是同一个流且当前没有发生错误，且已有线路，则直接忽略
     if (streamId === currentActiveStreamId && !streamFetchError && availableSubSources.length > 0) return;
 
     currentActiveStreamId = streamId;
@@ -168,15 +182,43 @@ function selectStreamFromDrawer(streamId) {
     availableSubSources = [];
     lastSubSourcesSignature = '';
 
-    // 1. 更新 Tab 2 当前流摘要
+    // 1. 更新当前流摘要与控制台快捷指示
     updateCurrentStreamHero();
+    updateConsoleQuickBar();
 
     // 2. 线路区进入加载态
     renderSubSourcesList();
 
     // 3. 向 Native 发起切流
     sendCmd('switchStream', JSON.stringify({ streamId: streamId }));
-    log('Node', `已切换至在线推流 <b>${streamId}</b>，正在拉取播放线路并起播...`);
+    const { currentStreamNum, totalStreams } = getMetrics();
+    log('Node', `已切换至第 <b>${currentStreamNum}/${totalStreams}</b> 路流 <b>${streamId}</b>，正在拉取播放线路并起播...`);
+}
+
+// ================= 上一路流 / 下一路流切换 =================
+
+function switchPrevStream() {
+    if (availableStreams.length <= 1) return;
+    const { streamIdx, totalStreams } = getMetrics();
+    const curr = streamIdx >= 0 ? streamIdx : 0;
+    const prevIdx = (curr - 1 + totalStreams) % totalStreams;
+    const targetStream = availableStreams[prevIdx];
+    if (targetStream) {
+        log('Node', `快捷切换至上一路推流: [${prevIdx + 1}/${totalStreams}] ➔ <b>${targetStream.streamid}</b>`);
+        selectStreamFromDrawer(targetStream.streamid);
+    }
+}
+
+function switchNextStream() {
+    if (availableStreams.length <= 1) return;
+    const { streamIdx, totalStreams } = getMetrics();
+    const curr = streamIdx >= 0 ? streamIdx : 0;
+    const nextIdx = (curr + 1) % totalStreams;
+    const targetStream = availableStreams[nextIdx];
+    if (targetStream) {
+        log('Node', `快捷切换至下一路推流: [${nextIdx + 1}/${totalStreams}] ➔ <b>${targetStream.streamid}</b>`);
+        selectStreamFromDrawer(targetStream.streamid);
+    }
 }
 
 // 重试获取当前流的播放线路
@@ -188,13 +230,14 @@ function retryFetchCurrentStream() {
     lastSubSourcesSignature = '';
 
     updateCurrentStreamHero();
+    updateConsoleQuickBar();
     renderSubSourcesList();
 
     sendCmd('retryStream', JSON.stringify({ streamId: currentActiveStreamId }));
     log('Node', `正在重新获取推流 <b>${currentActiveStreamId}</b> 的播放线路...`);
 }
 
-// ================= 线路手动切换与管理 =================
+// ================= 线路手动切换与上一条/下一条切换 =================
 
 // 手动切换流内子线路：留在当前页，目标行显示切换中...
 function onSwitchSubSource(idx) {
@@ -203,19 +246,29 @@ function onSwitchSubSource(idx) {
     pendingSwitchSourceIndex = idx;
     currentPlaybackState = 'preparing';
     updateSubSourcesVisualHighlight();
+    updateConsoleQuickBar();
 
     sendCmd('switchSubSource', JSON.stringify({
         streamId: currentActiveStreamId,
         index: idx,
         sourceIndex: idx
     }));
-    log('Line', `向原生发送切线指令 ➔ <b>线路 ${idx + 1}</b> (等待解码播放)`);
+    log('Line', `向原生发送切线指令 ➔ <b>线路 ${idx + 1}/${availableSubSources.length}</b> (等待解码播放)`);
+}
+
+// 快捷切上一条线路
+function switchPrevSubSource() {
+    if (availableSubSources.length <= 1 || isStreamLoading) return;
+    const prevIdx = (currentActiveSourceIndex - 1 + availableSubSources.length) % availableSubSources.length;
+    log('Line', `快捷切换至上一条线路: [${prevIdx + 1}/${availableSubSources.length}]`);
+    onSwitchSubSource(prevIdx);
 }
 
 // 快捷切下一条线路
 function switchNextSubSource() {
     if (availableSubSources.length <= 1 || isStreamLoading) return;
     const nextIdx = (currentActiveSourceIndex + 1) % availableSubSources.length;
+    log('Line', `快捷切换至下一条线路: [${nextIdx + 1}/${availableSubSources.length}]`);
     onSwitchSubSource(nextIdx);
 }
 
@@ -302,7 +355,7 @@ window.vzBridgeUpdateStreamList = function(data) {
         const sourcesNodeDomain = document.getElementById('sourcesNodeDomain');
         if (sourcesNodeDomain) sourcesNodeDomain.innerText = nodeDomain;
         
-        // 1. 更新当前流卡片
+        // 1. 更新当前流卡片与总指标
         updateCurrentStreamHero();
 
         // 2. 渲染线路列表
@@ -318,42 +371,72 @@ window.vzBridgeUpdateStreamList = function(data) {
             onStreamSearch(searchVal);
         }
 
-        log('Node', `已同步: <b>${availableStreams.length}</b> 条推流，当前线路 <b>${availableSubSources.length}</b> 条 [${currentPlaybackState}]`);
+        const { currentStreamNum, totalStreams, currentLineNum, totalLines } = getMetrics();
+        log('Node', `已同步: <b>${totalStreams}</b> 路推流 (当前第 ${currentStreamNum} 路)，线路 <b>${totalLines}</b> 条 (当前第 ${currentLineNum} 条) [${currentPlaybackState}]`);
     } catch(e) {
         console.error(e);
     }
 };
 
 function updateCurrentStreamHero() {
+    const { totalStreams, currentStreamNum, totalLines, currentLineNum } = getMetrics();
+    
     const heroStreamId = document.getElementById('heroStreamId');
-    const heroResTag = document.getElementById('heroResTag');
-    const heroFpsTag = document.getElementById('heroFpsTag');
-    const heroBitrateTag = document.getElementById('heroBitrateTag');
+    const heroStreamIndexBadge = document.getElementById('heroStreamIndexBadge');
+    const heroPrevStreamBtn = document.getElementById('heroPrevStreamBtn');
+    const heroNextStreamBtn = document.getElementById('heroNextStreamBtn');
+    const sourcesTotalStreamsBadge = document.getElementById('sourcesTotalStreamsBadge');
+    const heroStreamCountTag = document.getElementById('heroStreamCountTag');
+    const heroLineCountTag = document.getElementById('heroLineCountTag');
+
+    if (sourcesTotalStreamsBadge) {
+        sourcesTotalStreamsBadge.innerText = `共 ${totalStreams} 路推流`;
+    }
+
+    if (heroPrevStreamBtn) heroPrevStreamBtn.disabled = (totalStreams <= 1);
+    if (heroNextStreamBtn) heroNextStreamBtn.disabled = (totalStreams <= 1);
 
     if (!currentActiveStreamId) {
-        if (heroStreamId) heroStreamId.innerText = '暂无活跃流';
+        if (heroStreamId) heroStreamId.innerText = '暂无活跃推流';
+        if (heroStreamIndexBadge) heroStreamIndexBadge.innerText = '第 - / - 路';
+        if (heroStreamCountTag) heroStreamCountTag.innerText = `流: 0 / ${totalStreams}`;
+        if (heroLineCountTag) heroLineCountTag.innerText = `线路: 0 条`;
         return;
     }
 
     if (heroStreamId) heroStreamId.innerText = currentActiveStreamId;
+    if (heroStreamIndexBadge) heroStreamIndexBadge.innerText = `第 ${currentStreamNum} / ${totalStreams} 路`;
+    if (heroStreamCountTag) heroStreamCountTag.innerText = `流序号: ${currentStreamNum} / ${totalStreams}`;
+    if (heroLineCountTag) heroLineCountTag.innerText = `线路: ${currentLineNum > 0 ? (currentLineNum + '/' + totalLines) : (totalLines + ' 条')}`;
+
     const currentStreamInfo = availableStreams.find(s => s.streamid === currentActiveStreamId);
+    const heroResTag = document.getElementById('heroResTag');
+    const heroFpsTag = document.getElementById('heroFpsTag');
+    const heroBitrateTag = document.getElementById('heroBitrateTag');
     
     if (currentStreamInfo) {
         if (heroResTag) heroResTag.innerText = currentStreamInfo.resolution || '自适应';
-        if (heroFpsTag) heroFpsTag.innerText = currentStreamInfo.fps || 'V:--/A:--';
+        if (heroFpsTag) heroFpsTag.innerText = currentStreamInfo.fps ? `FPS: ${currentStreamInfo.fps}` : 'FPS: --';
         if (heroBitrateTag) heroBitrateTag.innerText = currentStreamInfo.bitrate || '-- Kbps';
     }
 }
 
 function renderSubSourcesList() {
+    const { totalLines, currentLineNum } = getMetrics();
     const container = document.getElementById('subSourcesListContainer');
-    const countNum = document.getElementById('linesCountNum');
+    const linesCountInfo = document.getElementById('linesCountInfo');
+    const prevBtn = document.getElementById('sourcesPrevLineBtn');
     const nextBtn = document.getElementById('sourcesNextLineBtn');
-    const ctrlNextBtn = document.getElementById('ctrlNextLineBtn');
 
-    if (countNum) countNum.innerText = availableSubSources.length;
-    if (nextBtn) nextBtn.disabled = isStreamLoading || availableSubSources.length <= 1;
-    if (ctrlNextBtn) ctrlNextBtn.disabled = isStreamLoading || availableSubSources.length <= 1;
+    if (linesCountInfo) {
+        if (totalLines > 0) {
+            linesCountInfo.innerText = `(当前第 ${currentLineNum} / ${totalLines} 条 · 共 ${totalLines} 条)`;
+        } else {
+            linesCountInfo.innerText = `(共 0 条)`;
+        }
+    }
+    if (prevBtn) prevBtn.disabled = isStreamLoading || (totalLines <= 1);
+    if (nextBtn) nextBtn.disabled = isStreamLoading || (totalLines <= 1);
 
     if (!container) return;
 
@@ -431,7 +514,7 @@ function renderSubSourcesList() {
         } else if (isActive) {
             actionBtnHtml = '<button class="line-action-btn btn-switching" disabled>⏳ 缓冲中...</button>';
         } else {
-            actionBtnHtml = `<button class="line-action-btn btn-switch" onclick="onSwitchSubSource(${idx})">切换</button>`;
+            actionBtnHtml = `<button class="line-action-btn btn-switch" onclick="onSwitchSubSource(${idx})">切换此线</button>`;
         }
 
         let domainText = '主线播放地址';
@@ -443,15 +526,15 @@ function renderSubSourcesList() {
         }
 
         const typeBadge = `<span class="line-badge badge-type">${(sub.type || 'HLS').toUpperCase()}</span>`;
-        const codecBadge = `<span class="line-badge badge-codec">${sub.codecText || 'H.264'}</span>`;
+        const codecBadge = `<span class="line-badge badge-codec">${sub.codecText || (sub.videoCodec === 4 ? 'H.265' : 'H.264')}</span>`;
         const tagBadge = sub.tag ? `<span class="line-badge badge-tag">${sub.tag}</span>` : '';
 
         html += `
         <div class="${cardClass}" id="lineCard_${idx}">
-            <div class="line-main-row">
+            <div class="line-main-row" onclick="onSwitchSubSource(${idx})">
                 <div class="line-info-group">
                     <span class="line-status-dot"></span>
-                    <span class="line-title-text">线路 ${idx + 1}</span>
+                    <span class="line-title-text">线路 ${idx + 1} / ${availableSubSources.length}</span>
                     ${typeBadge}
                     ${codecBadge}
                     ${tagBadge}
@@ -459,14 +542,16 @@ function renderSubSourcesList() {
                 ${actionBtnHtml}
             </div>
             <div class="line-sub-row">
-                <span class="line-domain-text">${domainText}</span>
+                <span class="line-domain-text">🔗 ${domainText}</span>
                 <button class="line-detail-toggle" onclick="toggleLineDetail(${idx})">
                     <span id="detailArrow_${idx}">${isOpen ? '收起 ▴' : '详情 ▸'}</span>
                 </button>
             </div>
             <div class="line-detail-box ${isOpen ? 'open' : ''}" id="lineDetail_${idx}">
                 <div class="line-full-url">${sub.url}</div>
-                <button class="line-copy-btn" onclick="copyLineUrl('${sub.url}', event)">📋 复制播放地址</button>
+                <div style="display:flex; justify-content: flex-end;">
+                    <button class="line-copy-btn" onclick="copyLineUrl('${sub.url}', event)">📋 复制完整播放 URL</button>
+                </div>
             </div>
         </div>`;
     });
@@ -474,8 +559,23 @@ function renderSubSourcesList() {
     container.innerHTML = html;
 }
 
-// 仅刷新线路高亮与操作按钮样式 (不破坏整页 DOM 与展开折叠状态)
+// 局部更新线路卡片的选中/切换状态，保护展开状态与滚动位置
 function updateSubSourcesVisualHighlight() {
+    const { totalLines, currentLineNum } = getMetrics();
+    const linesCountInfo = document.getElementById('linesCountInfo');
+    const prevBtn = document.getElementById('sourcesPrevLineBtn');
+    const nextBtn = document.getElementById('sourcesNextLineBtn');
+
+    if (linesCountInfo) {
+        if (totalLines > 0) {
+            linesCountInfo.innerText = `(当前第 ${currentLineNum} / ${totalLines} 条 · 共 ${totalLines} 条)`;
+        } else {
+            linesCountInfo.innerText = `(共 0 条)`;
+        }
+    }
+    if (prevBtn) prevBtn.disabled = isStreamLoading || (totalLines <= 1);
+    if (nextBtn) nextBtn.disabled = isStreamLoading || (totalLines <= 1);
+
     availableSubSources.forEach((sub, idx) => {
         const card = document.getElementById(`lineCard_${idx}`);
         if (!card) return;
@@ -484,13 +584,14 @@ function updateSubSourcesVisualHighlight() {
         const isSwitching = (pendingSwitchSourceIndex !== null && idx === pendingSwitchSourceIndex) ||
                             (isActive && currentPlaybackState === 'preparing');
 
-        card.className = 'line-item-card' + (isActive ? ' active' : '') + (isSwitching ? ' switching' : '');
-        
-        const mainRow = card.querySelector('.line-main-row');
-        if (mainRow) {
-            const oldBtn = mainRow.querySelector('.line-action-btn');
-            if (oldBtn) oldBtn.remove();
+        card.className = 'line-item-card';
+        if (isActive) card.classList.add('active');
+        if (isSwitching) card.classList.add('switching');
 
+        const mainRow = card.querySelector('.line-main-row');
+        const oldBtn = mainRow ? mainRow.querySelector('.line-action-btn') : null;
+        if (oldBtn) {
+            oldBtn.remove();
             let newBtnHtml = '';
             if (isSwitching) {
                 newBtnHtml = '<button class="line-action-btn btn-switching" disabled>⏳ 切换中...</button>';
@@ -499,7 +600,7 @@ function updateSubSourcesVisualHighlight() {
             } else if (isActive) {
                 newBtnHtml = '<button class="line-action-btn btn-switching" disabled>⏳ 缓冲中...</button>';
             } else {
-                newBtnHtml = `<button class="line-action-btn btn-switch" onclick="onSwitchSubSource(${idx})">切换</button>`;
+                newBtnHtml = `<button class="line-action-btn btn-switch" onclick="onSwitchSubSource(${idx})">切换此线</button>`;
             }
             mainRow.insertAdjacentHTML('beforeend', newBtnHtml);
         }
@@ -509,22 +610,37 @@ function updateSubSourcesVisualHighlight() {
 }
 
 function updateConsoleQuickBar() {
-    const ctrlStreamId = document.getElementById('ctrlStreamId');
-    const ctrlLineInfoText = document.getElementById('ctrlLineInfoText');
+    const { totalStreams, currentStreamNum, totalLines, currentLineNum } = getMetrics();
     
-    if (ctrlStreamId) ctrlStreamId.innerText = 'Stream: ' + (currentActiveStreamId || '-');
+    // 1. 更新推流指标与按钮禁用状态
+    const ctrlStreamMetric = document.getElementById('ctrlStreamMetric');
+    if (ctrlStreamMetric) {
+        ctrlStreamMetric.innerText = totalStreams > 0 ? `流: ${currentStreamNum}/${totalStreams}` : '流: -/-';
+    }
+    
+    const ctrlPrevStreamBtn = document.getElementById('ctrlPrevStreamBtn');
+    const ctrlNextStreamBtn = document.getElementById('ctrlNextStreamBtn');
+    if (ctrlPrevStreamBtn) ctrlPrevStreamBtn.disabled = (totalStreams <= 1);
+    if (ctrlNextStreamBtn) ctrlNextStreamBtn.disabled = (totalStreams <= 1);
 
+    // 2. 更新线路指标与按钮禁用状态
+    const ctrlPrevLineBtn = document.getElementById('ctrlPrevLineBtn');
+    const ctrlNextLineBtn = document.getElementById('ctrlNextLineBtn');
+    if (ctrlPrevLineBtn) ctrlPrevLineBtn.disabled = isStreamLoading || (totalLines <= 1);
+    if (ctrlNextLineBtn) ctrlNextLineBtn.disabled = isStreamLoading || (totalLines <= 1);
+
+    const ctrlLineInfoText = document.getElementById('ctrlLineInfoText');
     if (ctrlLineInfoText) {
         if (isStreamLoading) {
-            ctrlLineInfoText.innerText = `🔀 当前线路: 正在加载线路...`;
-        } else if (availableSubSources.length > 0 && availableSubSources[currentActiveSourceIndex]) {
+            ctrlLineInfoText.innerText = `🔀 正在加载线路 (流 ${currentStreamNum}/${totalStreams})...`;
+        } else if (totalLines > 0 && availableSubSources[currentActiveSourceIndex]) {
             const curSub = availableSubSources[currentActiveSourceIndex];
             const typeStr = (curSub.type || 'HLS').toUpperCase();
-            const codecStr = curSub.codecText || 'H.264';
-            const stateTag = (currentPlaybackState === 'playing' || isPlayingState) ? '● 播放中' : '⏳ 缓冲中';
-            ctrlLineInfoText.innerText = `🔀 线路: ${currentActiveSourceIndex + 1}/${availableSubSources.length} · ${typeStr} · ${codecStr} (${stateTag})`;
+            const codecStr = curSub.codecText || (curSub.videoCodec === 4 ? 'H.265' : 'H.264');
+            const stateTag = (currentPlaybackState === 'playing' || isPlayingState) ? '● 播放中' : (pendingSwitchSourceIndex !== null ? '⏳ 切换中' : '⏳ 缓冲中');
+            ctrlLineInfoText.innerText = `🔀 线路: ${currentLineNum}/${totalLines} · ${typeStr} · ${codecStr} (${stateTag})`;
         } else {
-            ctrlLineInfoText.innerText = `🔀 当前线路: 暂无可用线路`;
+            ctrlLineInfoText.innerText = `🔀 线路: 暂无可用线路 (流 ${currentStreamNum}/${totalStreams})`;
         }
     }
 }
@@ -619,15 +735,13 @@ function runAutoDemonstration() {
             toggleMute();
             await sleep(1000);
 
-            log('Auto', '步骤 4/5: 测试流内多线路/多流切换');
+            log('Auto', '步骤 4/5: 测试上一线/下一线/多流切换');
             if (availableSubSources.length > 1) {
-                const targetSubIdx = (currentActiveSourceIndex + 1) % availableSubSources.length;
-                log('Auto', `演练切换到当前流的 线路 ${targetSubIdx + 1}`);
-                onSwitchSubSource(targetSubIdx);
+                log('Auto', '演练切换到下一线路 ⏩');
+                switchNextSubSource();
             } else if (availableStreams.length > 1) {
-                const nextStream = availableStreams.find(s => s.streamid !== currentActiveStreamId) || availableStreams[0];
-                log('Auto', `演练切换到推流 ${nextStream.streamid}`);
-                selectStreamFromDrawer(nextStream.streamid);
+                log('Auto', '演练切换到下一路流 ⏭');
+                switchNextStream();
             } else {
                 log('Auto', '当前仅有单条流/线路，已验证播放内核');
             }
