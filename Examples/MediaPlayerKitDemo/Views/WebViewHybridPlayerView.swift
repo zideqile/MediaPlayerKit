@@ -595,7 +595,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
         ]
     ]
     
-    init(webView: WKWebView, vzPlayer: IH5Player?) {
+    init(webView: WKWebView? = nil, vzPlayer: IH5Player?) {
         self.webView = webView
         self.vzPlayer = vzPlayer
         super.init()
