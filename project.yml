@@ -49,3 +49,6 @@ targets:
         ENABLE_BITCODE: NO
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Examples/MediaPlayerKitDemo/Info.plist
+        INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        TARGETED_DEVICE_FAMILY: "1"
