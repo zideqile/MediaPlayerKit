@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IH5Player 节点混合控制台</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Toast 浮窗 -->
+    <div class="toast" id="toastBox">已复制到剪贴板</div>
+
+    <!-- 1. 内容区域容器 (置于上方，垂直方向最大化展开) -->
+    <div class="tab-content-container">
+
+        <!-- ================= TAB 1: 核心控制台 ================= -->
+        <div class="tab-pane active" id="tabControls">
+            
+            <!-- 实时事件吸顶迷你横幅 -->
+            <div class="mini-event-banner">
+                <div class="mini-event-text">
+                    <span>⚡️</span><span id="miniEventStatus">Native 状态: preparing (准备就绪)</span>
+                </div>
+                <span style="font-size: 10px; color: #94A3B8;" id="miniEventTime">00:00</span>
+            </div>
+
+            <!-- 节点、推流与当前线路快捷条 -->
+            <div class="node-chip">
+                <div class="node-chip-row1">
+                    <span class="node-name">📡 <span id="ctrlNodeName">节点: 未连接</span></span>
+                    <span style="font-family: ui-monospace, monospace; font-weight: 700; color: #38BDF8;" id="ctrlStreamId">Stream: -</span>
+                </div>
+                <div class="node-chip-row2">
+                    <span style="color: #CBD5E1;" id="ctrlLineInfoText">🔀 当前线路: 1 / 1 · HLS · H.264</span>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="btn btn-sm" style="background:#2563EB; color:#FFF;" onclick="switchTab('tabSources')">切线路 ›</button>
+                        <button class="btn btn-sm next-line-btn" id="ctrlNextLineBtn" onclick="switchNextSubSource()">下一线 ⏩</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 主播放/暂停大按钮 -->
+            <button class="main-play-btn playing" id="mainPlayBtn" onclick="togglePlayPause()">
+                <span id="mainPlayIcon">⏸</span><span id="mainPlayText">暂停播放 (Pause)</span>
+            </button>
+
+            <!-- 进度调节 -->
+            <div class="slider-box">
+                <div class="slider-row">
+                    <span style="min-width: 35px; color: #94A3B8;">进度</span>
+                    <input type="range" id="seekSlider" min="0" max="100" value="0" onchange="onSeekChange(this.value)">
+                    <span id="timeText" style="min-width: 90px; text-align: right; font-family: monospace; font-weight: 700; color: #38BDF8;">00:00 / 00:00</span>
+                </div>
+            </div>
+
+            <!-- 快退/快进/静音/刷新 -->
+            <div class="btn-grid-4">
+                <button class="btn" onclick="seekRelative(-10)">⏪ -10s</button>
+                <button class="btn" onclick="seekRelative(10)">⏩ +10s</button>
+                <button class="btn" id="muteBtn" onclick="toggleMute()">🔊 静音开</button>
+                <button class="btn" onclick="refreshProperties()">🔄 查属性</button>
+            </div>
+
+            <!-- 倍速快速切换 -->
+            <div class="btn-grid-4">
+                <button class="btn speed-btn active" id="spd10" onclick="setSpeed(1.0)">1.0x</button>
+                <button class="btn speed-btn" id="spd125" onclick="setSpeed(1.25)">1.25x</button>
+                <button class="btn speed-btn" id="spd15" onclick="setSpeed(1.5)">1.5x</button>
+                <button class="btn speed-btn" id="spd20" onclick="setSpeed(2.0)">2.0x</button>
+            </div>
+
+            <!-- 音量滑块 -->
+            <div class="slider-box">
+                <div class="slider-row">
+                    <span style="min-width: 35px; color: #94A3B8;">音量</span>
+                    <input type="range" id="volumeSlider" min="0" max="100" value="100" oninput="onVolumeChange(this.value)">
+                    <span id="volumeText" style="min-width: 35px; text-align: right; font-family: monospace; color: #38BDF8;">100%</span>
+                </div>
+            </div>
+
+            <!-- 属性概览指标 -->
+            <div class="stat-grid">
+                <div class="stat-box">
+                    <div class="stat-label">当前倍速 / 音量</div>
+                    <div class="stat-val" id="statSpeedVol">1.0x / 100%</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-label">视频分辨率 / 协议</div>
+                    <div class="stat-val" id="statResolution">自适应</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= TAB 2: 流与线路 (当前流置顶 + 线路直接可切 + 独立换流抽屉) ================= -->
+        <div class="tab-pane" id="tabSources">
+            
+            <!-- 节点头部 -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-shrink: 0;">
+                <div style="font-size: 11.5px; color: #94A3B8;">
+                    当前节点: <b style="color: #60A5FA;" id="sourcesNodeRemark">默认节点</b> (<span id="sourcesNodeDomain">-</span>)
+                </div>
+                <button class="btn btn-sm" onclick="refreshNodeStreams()">🔄 刷新节点</button>
+            </div>
+
+            <!-- 1. 当前流摘要置顶卡片 -->
+            <div class="current-stream-hero" id="currentStreamHero">
+                <div class="hero-top-row">
+                    <span class="hero-title-label">📡 当前在线推流</span>
+                    <button class="hero-switch-btn" onclick="openStreamDrawer()">更换流 ›</button>
+                </div>
+                <div class="hero-stream-id" id="heroStreamId">暂无活跃流</div>
+                <div class="hero-tags-row" id="heroTagsRow">
+                    <span class="hero-tag live">在线直播</span>
+                    <span class="hero-tag" id="heroResTag">自适应</span>
+                    <span class="hero-tag" id="heroFpsTag">V:--/A:--</span>
+                    <span class="hero-tag" id="heroBitrateTag">-- Kbps</span>
+                </div>
+            </div>
+
+            <!-- 2. 播放线路列表头部工具栏 -->
+            <div class="lines-header-bar">
+                <div class="lines-title">
+                    <span>🔀 播放线路</span>
+                    <span style="font-size: 11px; color: #94A3B8; font-weight: normal;">(<span id="linesCountNum">0</span> 条)</span>
+                </div>
+                <button class="next-line-btn" id="sourcesNextLineBtn" onclick="switchNextSubSource()">
+                    <span>下一线路 ⏩</span>
+                </button>
+            </div>
+
+            <!-- 3. 播放线路列表容器 (紧凑展示，完整 URL 折叠) -->
+            <div class="lines-list-box" id="subSourcesListContainer">
+                <div class="state-hint">⏳ 正在获取该流的可用播放线路...</div>
+            </div>
+
+        </div>
+
+        <!-- ================= TAB 3: 实时事件流日志 ================= -->
+        <div class="tab-pane" id="tabLogs">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-shrink: 0;">
+                <span style="font-size: 12px; color: #94A3B8;">实时记录 VZH5EventListener 广播事件：</span>
+                <button class="btn btn-sm" onclick="clearLogs()">清空日志</button>
+            </div>
+            <div class="log-box" id="logBox">
+                <div class="log-item"><span class="log-time">[Init]</span><span class="log-cmd">🚀 JSBridge 准备就绪，已建立事件与属性双向管道...</span></div>
+            </div>
+        </div>
+
+        <!-- ================= TAB 4: 演练与指南 ================= -->
+        <div class="tab-pane" id="tabGuide">
+            <div class="guide-box">
+                <div style="font-size: 13.5px; font-weight: 700; color: #60A5FA; margin-bottom: 6px;">💡 混合架构与多线路调度</div>
+                <div style="font-size: 12px; color: #CBD5E1; line-height: 1.55; margin-bottom: 10px;">
+                    上方视频由 <b>iOS 原生 Metal / AVPlayer</b> 硬件加速渲染；<br>
+                    下方由 <b>WKWebView</b> 承载 H5 控制台。通过 <code>StreamAPIService</code> 动态拉取当前节点的在线流与真实播放地址，支持 <b>多协议 (HLS/FLV)</b>、<b>多编码 (H.264/H.265)</b> 毫秒级无缝切线与容错轮询。
+                </div>
+                <div style="font-size: 12.5px; font-weight: 700; color: #FBBF24; margin-bottom: 4px;">🚀 懒人体验：一键自动全流程演练</div>
+                <div style="font-size: 11.5px; color: #94A3B8; margin-bottom: 8px;">
+                    点击下方按钮，将全自动按顺序执行：起播首选流 ➔ Seek 5s ➔ 1.5x 倍速 ➔ 静音测试 ➔ 多线路切换 ➔ 恢复 1.0x。
+                </div>
+                <button class="auto-btn" onclick="runAutoDemonstration()">
+                    <span id="autoBtnText">立即开始「一键全功能自动化演练」</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- ================= 独立更换流选择抽屉 (限制在下方 H5 内，不遮视频) ================= -->
+        <div class="stream-drawer-overlay" id="streamDrawerOverlay" onclick="closeStreamDrawer(event)">
+            <div class="stream-drawer-content" onclick="event.stopPropagation()">
+                <div class="drawer-header">
+                    <div class="drawer-title">
+                        <span>📡 选择在线推流</span>
+                        <span style="font-size: 11px; color: #94A3B8; font-weight: normal;">(<span id="drawerStreamCount">0</span> 条可用)</span>
+                    </div>
+                    <button class="drawer-close-btn" onclick="closeStreamDrawer()">✕</button>
+                </div>
+                <div class="drawer-search-box">
+                    <input type="text" class="drawer-search-input" id="streamSearchInput" placeholder="🔍 搜索 streamId 或分辨率..." oninput="onStreamSearch(this.value)">
+                </div>
+                <div class="drawer-stream-list" id="drawerStreamList">
+                    <div class="state-hint">正在加载节点推流列表...</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 2. 最下方 Tab 导航栏 (贴合大拇指操作区，单手轻松切换) -->
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('tabControls')">🎮 控制台</button>
+        <button class="tab-btn" onclick="switchTab('tabSources')">📺 流与线路</button>
+        <button class="tab-btn" onclick="switchTab('tabLogs')">📡 实时日志<span class="tab-badge" id="logCountBadge">0</span></button>
+        <button class="tab-btn" onclick="switchTab('tabGuide')">🚀 自动演练</button>
+    </div>
+
+    <script src="player.js"></script>
+</body>
+</html>
