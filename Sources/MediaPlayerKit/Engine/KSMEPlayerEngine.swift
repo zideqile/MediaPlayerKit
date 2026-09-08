@@ -108,7 +108,9 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         playerView.playerLayer?.player.isMuted = savedMuted
         
         if let subURL = savedSubtitleURL {
-            playerView.srtControl.addSubtitle(dataSouce: SubtitleURLDataSouce(url: subURL))
+            let info = URLSubtitleInfo(url: subURL)
+            playerView.srtControl.addSubtitle(info: info)
+            playerView.srtControl.selectedSubtitleInfo = info
         }
         
         if config.autoPlay {
@@ -176,7 +178,9 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     public func setSubtitleURL(_ url: URL?) {
         savedSubtitleURL = url
         if let subURL = url {
-            playerView.srtControl.addSubtitle(dataSouce: SubtitleURLDataSouce(url: subURL))
+            let info = URLSubtitleInfo(url: subURL)
+            playerView.srtControl.addSubtitle(info: info)
+            playerView.srtControl.selectedSubtitleInfo = info
         }
     }
     
