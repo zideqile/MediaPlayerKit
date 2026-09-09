@@ -11,12 +11,16 @@ public enum MessageType { case log, attachedLog, statLog }
 public protocol Appender: AnyObject {
     func append(level: LogLevel, tag: String, message: String, messageType: MessageType)
     func appendStatLog(level: LogLevel, tag: String, name: String, data: Double)
+    /// Return a fresh merger for each logger. The logger owns and destroys it.
+    /// Equivalent to Android's getLogMerger capability without shared ownership.
+    func makeLogMerger() -> LogMerger?
     func flush()
     func destroy()
     func onSourceChanged(srcUrl: String, srcType: String)
 }
 public extension Appender {
     func appendStatLog(level: LogLevel, tag: String, name: String, data: Double) {}
+    func makeLogMerger() -> LogMerger? { nil }
     func flush() {}
     func destroy() {}
     func onSourceChanged(srcUrl: String, srcType: String) {}

@@ -38,6 +38,20 @@ public final class LogConfig: NSObject, Codable {
 
 }
 
+/// 对标 Android RuntimeStateCollectConfig；本类型仅保存策略，不启动采集。
+@objc(RuntimeStateCollectConfig)
+public final class RuntimeStateCollectConfig: NSObject, Codable {
+    @objc public var collectIntervalSeconds: Int = 3
+    @objc public var stateCountLimit: Int = 10
+    public override init() { super.init() }
+    public required init(from decoder: Decoder) throws {
+        super.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        collectIntervalSeconds = try values.decodeIfPresent(Int.self, forKey: .collectIntervalSeconds) ?? collectIntervalSeconds
+        stateCountLimit = try values.decodeIfPresent(Int.self, forKey: .stateCountLimit) ?? stateCountLimit
+    }
+}
+
 /// 播放器运行时策略配置 (1:1 严格对标 Android vzplayer 的 VPlayerConfig.java)
 @objc(VPlayerConfig)
 public final class VPlayerConfig: NSObject, Codable {
@@ -59,6 +73,7 @@ public final class VPlayerConfig: NSObject, Codable {
     
     @objc public var logConfig: LogConfig = LogConfig()
     @objc public var logServerConfig: LogServerConfig = LogServerConfig()
+    @objc public var runtimeStateCollect = RuntimeStateCollectConfig()
     
     @objc public var appVZPlayerConfigJsonString: String = ""
     
@@ -66,7 +81,7 @@ public final class VPlayerConfig: NSObject, Codable {
         case loop, autoplay, muted, volume, speed
         case topicId, streamId, userId, userIdUuid
         case isLive, env, isHardwareDecode, headers
-        case logConfig, logServerConfig
+        case logConfig, logServerConfig, runtimeStateCollect
         case appVZPlayerConfigJsonString
     }
 
@@ -90,6 +105,7 @@ public final class VPlayerConfig: NSObject, Codable {
         headers = try values.decodeIfPresent([String: String].self, forKey: .headers) ?? headers
         logConfig = try values.decodeIfPresent(LogConfig.self, forKey: .logConfig) ?? logConfig
         logServerConfig = try values.decodeIfPresent(LogServerConfig.self, forKey: .logServerConfig) ?? logServerConfig
+        runtimeStateCollect = try values.decodeIfPresent(RuntimeStateCollectConfig.self, forKey: .runtimeStateCollect) ?? runtimeStateCollect
         appVZPlayerConfigJsonString = try values.decodeIfPresent(String.self, forKey: .appVZPlayerConfigJsonString) ?? appVZPlayerConfigJsonString
     }
 

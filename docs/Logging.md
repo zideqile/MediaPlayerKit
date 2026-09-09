@@ -38,6 +38,8 @@ playerLog.logSI("fps", 30)
 Logger.flushLog()
 ```
 
+`VPlayerConfig.runtimeStateCollect.stateCountLimit` 控制附加日志数量（默认 10，负值按 0 处理）；`collectIntervalSeconds` 默认 3，仅保存配置，不启动采集。
+
 `ESAppender` 使用 `appVZPlayerConfigJsonString` 的 forceUseNewESUploader（默认 true）、statLogIsAttachedToLog（默认 false）、statsMinUploadIntervalMs（默认 180000）。有鉴权回调且允许新协议时选新协议，否则选旧协议。`FileAppender` 使用 InitConfig.fileAppenderPath。
 
 ## 生命周期与边界
@@ -48,8 +50,10 @@ Logger.flushLog()
 - 自定义 Appender/transport 回调应快速返回，不要同步反调 Logger，避免跨串行队列等待。网络使用异步 URLSession。
 - flush 表示封装并排队，**不代表服务器已收到**。destroy 立即停止后续工作并丢弃排队记录，已提交请求可能完成；flush 后立即 destroy 不能保证送达。
 - 切源先封装旧源记录，再更新源信息。上传记录不受后续修改 VPlayerConfig 的影响。
-- 上传默认最多 1000 条缓冲普通日志、30 条附加日志、100 个统计名称及每项最近 30 个值；消息截断至约 8 KiB。队列最多 10 条待上传记录，另加 1 个在途请求。容量溢出计入 innerDrop（附加日志/统计滚动窗口正常淘汰除外）。
+- 上传默认最多 1000 条缓冲普通日志、默认 10 条附加日志、100 个统计名称；普通统计保留整个上传周期的样本，仅在等待普通日志一起上报时裁剪至最近 30 个值；消息截断至约 8 KiB。队列最多 10 条待上传记录，另加 1 个在途请求。容量溢出计入 innerDrop（附加日志/统计滚动窗口正常淘汰除外）。
 - 分块目标约 10 KB；上下文及单条大消息可能超过目标，不承诺硬上限。文件为追加模式，尚无轮转/磁盘配额。
+- 自定义 Appender 可实现 `makeLogMerger()`，为每个分组返回新合并器。Logger 负责 flush/destroy；Appender 不应缓存共享实例，以免一个分组关闭影响另一个分组。默认返回 nil，保持即时输出。该工厂接口提供 Android `getLogMerger()` 的扩展能力，并明确所有权。
+- `LogUploadPolicy.maxStatisticSamplesPerName` 默认为 nil，与 Android 普通统计保留规则一致；需要内存限制时可以显式设置，超出样本数计入 innerDrop。Android 等待分支的正常滚动裁剪不计入丢失。
 - 相似度沿用 Android 字符串编辑距离与数字相对差；字符串超过 2048 字符只做精确匹配，避免耗时过大。
 - 尚未移植 Android 的远程调试配置获取、ASM 自动位置注入、业务埋点常量和播放器统计采集。这里提供日志基础设施，采集接入后续单独处理。
 

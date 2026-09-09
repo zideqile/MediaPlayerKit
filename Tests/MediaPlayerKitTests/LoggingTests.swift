@@ -260,3 +260,92 @@ extension LoggingTests {
         task.stop(); uploader.complete(true)
     }
 }
+
+private final class MergeableAppender: Appender {
+    var messages: [String] = []
+    func makeLogMerger() -> LogMerger? { LogMerger(delayMs: 60000, appender: self) }
+    func append(level: LogLevel, tag: String, message: String, messageType: MessageType) { messages.append(message) }
+}
+
+extension LoggingTests {
+    func testRuntimeStateConfigurationDefaultsAndPartialDecoding() throws {
+        let config = try JSONDecoder().decode(VPlayerConfig.self, from: Data("{\"runtimeStateCollect\":{\"stateCountLimit\":2}}".utf8))
+        XCTAssertEqual(config.runtimeStateCollect.stateCountLimit, 2)
+        XCTAssertEqual(config.runtimeStateCollect.collectIntervalSeconds, 3)
+        XCTAssertEqual(VPlayerConfig.fromJson("{}").runtimeStateCollect.stateCountLimit, 10)
+        let restored = try JSONDecoder().decode(VPlayerConfig.self, from: JSONEncoder().encode(config))
+        XCTAssertEqual(restored.runtimeStateCollect.stateCountLimit, 2)
+    }
+
+    func testInitializeUsesConfiguredAttachedLogCapacity() throws {
+        let config = VPlayerConfig()
+        config.runtimeStateCollect.stateCountLimit = 2
+        let options = InitConfig(); options.appenders = ["ESAppender"]
+        let transport = MockLogTransport()
+        try Logger.initialize(config: config, initConfig: options, transport: transport)
+        Logger.logAI("first"); Logger.logAI("second"); Logger.logAI("third")
+        Logger.logI("trigger"); Logger.flushLog()
+        let body = try XCTUnwrap(transport.requests.first?.httpBody)
+        let records = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [[String: Any]])
+        let attached = try XCTUnwrap(records.first?["attachedLogs"] as? String)
+        XCTAssertFalse(attached.contains("first"))
+        XCTAssertTrue(attached.contains("second"))
+        XCTAssertTrue(attached.contains("third"))
+    }
+
+    func testStatisticsRetainEntireUploadPeriod() {
+        let uploader = RecordingUploader()
+        var policy = LogUploadPolicy(); policy.uploadIntervalSeconds = 600
+        let appender = ESUploadAppender(context: LogContext(config: VPlayerConfig()), policy: policy, uploader: uploader)
+        defer { appender.destroy() }
+        for value in 0..<50 { appender.appendStatLog(level: .info, tag: "test", name: "fps", data: Double(value)) }
+        appender.flushIfNeeded() // not expired: must retain all samples
+        XCTAssertTrue(uploader.records.isEmpty)
+        appender.append(level: .info, tag: "test", message: "trigger", messageType: .log)
+        appender.flushIfNeeded()
+        XCTAssertEqual((uploader.records.first?["statLogs"] as? [String: [Double]])?["fps"], (0..<50).map(Double.init))
+    }
+
+    func testAttachedStatisticsTrimOnlyWhenWaitingForOrdinaryLogs() {
+        let uploader = RecordingUploader()
+        var policy = LogUploadPolicy(); policy.uploadIntervalSeconds = 600
+        policy.statLogIsAttachedToLog = true
+        let appender = ESUploadAppender(context: LogContext(config: VPlayerConfig()), policy: policy, uploader: uploader)
+        defer { appender.destroy() }
+        for value in 0..<50 { appender.appendStatLog(level: .info, tag: "test", name: "fps", data: Double(value)) }
+        appender.flushIfNeeded()
+        XCTAssertTrue(uploader.records.isEmpty)
+        appender.appendStatLog(level: .info, tag: "test", name: "fps", data: 50)
+        appender.append(level: .info, tag: "test", message: "trigger", messageType: .log)
+        appender.flushIfNeeded()
+        XCTAssertEqual((uploader.records.first?["statLogs"] as? [String: [Double]])?["fps"], (20...50).map(Double.init))
+    }
+
+    func testOptionalStatisticCapCountsDroppedSamples() {
+        let uploader = RecordingUploader()
+        var policy = LogUploadPolicy(); policy.uploadIntervalSeconds = 600
+        policy.maxStatisticSamplesPerName = 2
+        let appender = ESUploadAppender(context: LogContext(config: VPlayerConfig()), policy: policy, uploader: uploader)
+        defer { appender.destroy() }
+        for value in 0..<5 { appender.appendStatLog(level: .info, tag: "test", name: "fps", data: Double(value)) }
+        appender.flush()
+        XCTAssertEqual((uploader.records.first?["statLogs"] as? [String: [Double]])?["fps"], [3, 4])
+        XCTAssertEqual(uploader.records.first?["innerDrop"] as? Int, 3)
+    }
+
+    func testCustomAppenderMergerOwnershipAcrossGroups() {
+        let appender = MergeableAppender()
+        let first = InternalLogger(logGroup: "first")
+        let second = InternalLogger(logGroup: "second")
+        first.addAppender(appender); second.addAppender(appender)
+        first.logMI(100, "frame {}", 1); first.logMI(100, "frame {}", 1)
+        second.logMI(100, "frame {}", 2)
+        XCTAssertTrue(appender.messages.isEmpty)
+        first.removeAppender(appender) // flush and destroy only first group's merger
+        XCTAssertEqual(appender.messages, ["frame 1 [x2]"])
+        second.logMI(100, "frame {}", 2)
+        second.flushLog(); second.flushLog()
+        XCTAssertEqual(appender.messages, ["frame 1 [x2]", "frame 2 [x2]"])
+        first.destroy(); second.destroy()
+    }
+}
