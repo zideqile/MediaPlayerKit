@@ -234,7 +234,12 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
                 case .failed:
                     self.state = .error
                     let err = item.error as NSError? ?? NSError(domain: "MediaPlayerKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "播放加载失败"])
-                    self.outputDelegate?.engine(self, didOccurError: err)
+                    var info = err.userInfo
+                    if let status = item.errorLog()?.events.last?.errorStatusCode, (400...599).contains(status) {
+                        info[PlaybackErrorClassifier.httpStatusKey] = status
+                    }
+                    let reported = NSError(domain: err.domain, code: err.code, userInfo: info)
+                    self.outputDelegate?.engine(self, didOccurError: reported)
                 default:
                     break
                 }

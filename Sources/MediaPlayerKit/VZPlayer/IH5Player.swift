@@ -2,10 +2,13 @@ import Foundation
 
 /// H5 事件与错误回调监听器 (1:1 严格对标 Android vzplayer 的 IH5Player.H5EventListener)
 @objc public protocol H5EventListener: AnyObject {
-    /// 标准状态事件通知 ("play", "playing", "pause", "ended", "waiting", "canplaythrough", "PlayerWARN")
+    /// 标准状态事件通知 ("play", "playing", "pause", "ended", "waiting", "canplaythrough", "recovering", "PlayerWARN")
     func onEvent(_ eventName: String)
     
-    /// 播放严重错误通知
+    @objc optional func onPlayAttemptFailed(_ failure: PlaybackAttemptFailure)
+    @objc optional func onRecoveryStarted(_ failure: PlaybackAttemptFailure)
+
+    /// 保留兼容接口；与 Android 一致，最终播放错误通过 onEvent("PlayerWARN") 通知。
     func onError(_ code: Int, errMsg: String)
     
     /// 播放进度定时心跳 (单位: 秒)
