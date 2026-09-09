@@ -2,21 +2,22 @@ import Foundation
 import CoreGraphics
 
 /// 对标 Android vzplayer 的 H5Player 门面实现 (实现 IH5Player 协议，持有并驱动内部 IPlayer)
-@objc public final class VZH5Player: NSObject, IH5Player, IPlayer, VZPlayerEventListener {
-    private let multiPlayer: VZMultiSourcePlayer
-    private var h5EventListeners: [VZH5EventListener] = []
+@objc(H5Player)
+public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
+    private let multiPlayer: MultiSourcePlayer
+    private var h5EventListeners: [H5EventListener] = []
     private var timeUpdateTimer: Timer?
     private var isPlayingState: Bool = false
     
-    @objc public init(playerView: MediaPlayerView, config: VZPlayerConfig = VZPlayerConfig()) {
-        self.multiPlayer = VZMultiSourcePlayer(playerView: playerView, config: config)
+    @objc public init(playerView: MediaPlayerView, config: VPlayerConfig = VPlayerConfig()) {
+        self.multiPlayer = MultiSourcePlayer(playerView: playerView, config: config)
         super.init()
         self.multiPlayer.AddEventListener(self)
     }
     
     // MARK: - IH5Player: 事件监听器注册 (1:1 对标 Android SetOnH5EventListener)
     
-    @objc public func SetOnH5EventListener(_ listener: VZH5EventListener?) {
+    @objc public func SetOnH5EventListener(_ listener: H5EventListener?) {
         executeOnMainThread {
             self.h5EventListeners.removeAll()
             if let l = listener {
@@ -56,13 +57,13 @@ import CoreGraphics
         }
     }
     
-    @objc public func setSources(_ sources: [VZPlayerSource]) {
+    @objc public func setSources(_ sources: [PlayerSource]) {
         executeOnMainThread {
             self.multiPlayer.setSources(sources)
         }
     }
     
-    @objc public func setConfig(_ config: VZPlayerConfig) {
+    @objc public func setConfig(_ config: VPlayerConfig) {
         executeOnMainThread {
             self.multiPlayer.setConfig(config)
         }
@@ -224,15 +225,15 @@ import CoreGraphics
     
     // MARK: - IPlayer: 原生强类型协议透传 (方便 Native 开发者直接使用)
     
-    @objc public func AddEventListener(_ listener: VZPlayerEventListener?) {
+    @objc public func AddEventListener(_ listener: PlayerEventListener?) {
         multiPlayer.AddEventListener(listener)
     }
     
-    @objc public func RemoveEventListener(_ listener: VZPlayerEventListener?) {
+    @objc public func RemoveEventListener(_ listener: PlayerEventListener?) {
         multiPlayer.RemoveEventListener(listener)
     }
     
-    @objc public func Play(_ sources: [VZPlayerSource]) -> Bool {
+    @objc public func Play(_ sources: [PlayerSource]) -> Bool {
         return executeOnMainThreadSync {
             return self.multiPlayer.Play(sources)
         }
@@ -301,7 +302,7 @@ import CoreGraphics
         executeOnMainThread { self.multiPlayer.SetSpeed(speed) }
     }
     
-    @objc public func GetBuffered() -> VZBufferRange {
+    @objc public func GetBuffered() -> BufferRange {
         return executeOnMainThreadSync { self.multiPlayer.GetBuffered() }
     }
     
@@ -311,7 +312,7 @@ import CoreGraphics
         }
     }
     
-    @objc public func getCurrentSource() -> VZPlayerSource? {
+    @objc public func getCurrentSource() -> PlayerSource? {
         return executeOnMainThreadSync { self.multiPlayer.getCurrentSource() }
     }
     
@@ -333,7 +334,7 @@ import CoreGraphics
         timeUpdateTimer = nil
     }
     
-    // MARK: - VZPlayerEventListener (监听内部 IPlayer 状态并转换为 W3C H5 标准事件)
+    // MARK: - PlayerEventListener (监听内部 IPlayer 状态并转换为 W3C H5 标准事件)
     
     public func onStateChanged(state: PlayerState) {
         executeOnMainThread {
@@ -389,7 +390,7 @@ import CoreGraphics
         }
     }
     
-    public func onSourceSwitched(source: VZPlayerSource) {
+    public func onSourceSwitched(source: PlayerSource) {
         executeOnMainThread {
             self.notifyH5Event("playing")
         }
@@ -441,3 +442,6 @@ import CoreGraphics
         return str
     }
 }
+
+/// 兼容别名
+public typealias VZH5Player = H5Player

@@ -1,7 +1,7 @@
 import Foundation
 
 /// H5 事件与错误回调监听器 (1:1 严格对标 Android vzplayer 的 IH5Player.H5EventListener)
-@objc public protocol VZH5EventListener: AnyObject {
+@objc public protocol H5EventListener: AnyObject {
     /// 标准状态事件通知 ("play", "playing", "pause", "ended", "waiting", "canplaythrough", "PlayerWARN")
     func onEvent(_ eventName: String)
     
@@ -12,10 +12,13 @@ import Foundation
     func onTimeUpdate(_ currentTime: Int64)
 }
 
+/// 兼容别名
+public typealias VZH5EventListener = H5EventListener
+
 /// 对外业务与 H5 / JSBridge 统一门面协议 (1:1 严格对标 Android vzplayer 的 IH5Player.java)
 @objc public protocol IH5Player: AnyObject {
     /// 注册外部 H5 事件监听器 (对标 Android SetOnH5EventListener)
-    @objc func SetOnH5EventListener(_ listener: VZH5EventListener?)
+    @objc func SetOnH5EventListener(_ listener: H5EventListener?)
     
     // MARK: - 基础播放控制 (对标 Android IH5Player.java)
     @objc func play()
@@ -24,10 +27,10 @@ import Foundation
     @objc func destroy()
     
     /// 设置多播放源列表 (支持优先级与自动容错轮询)
-    @objc func setSources(_ sources: [VZPlayerSource])
+    @objc func setSources(_ sources: [PlayerSource])
     
     /// 设置运行时策略配置
-    @objc func setConfig(_ config: VZPlayerConfig)
+    @objc func setConfig(_ config: PlayerConfig)
     
     /// 向播放器派发自定义事件 (如 NEXT_SOURCE, SWITCH_SOURCE)
     @objc func SendEvent(_ eventName: String, _ paramsJson: String)

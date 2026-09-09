@@ -61,7 +61,7 @@ public struct HybridWKWebViewRepresentable: NSViewRepresentable {
 #endif
 
 // MARK: - JSBridge 协调器与事件监听器 (全面支持节点在线流与流内多播放线路精准状态闭环)
-final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5EventListener {
+final class PlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, H5EventListener {
     weak var webView: WKWebView?
     weak var vzPlayer: IH5Player?
     private let apiService = StreamAPIService.shared
@@ -70,7 +70,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     var currentPlayingStreamId: String = ""
     
     // 当前流解析出的所有子播放线路
-    var currentStreamSources: [VZPlayerSource] = []
+    var currentStreamSources: [PlayerSource] = []
     
     // 当前正在播放的子源索引
     var currentSourceIndex: Int = 0
@@ -224,8 +224,8 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
             self.isStreamLoading = false
             
             if let container = container, !container.allSources.isEmpty {
-                let vzSources = container.allSources.enumerated().map { (index, item) -> VZPlayerSource in
-                    let source = VZPlayerSource(
+                let vzSources = container.allSources.enumerated().map { (index, item) -> PlayerSource in
+                    let source = PlayerSource(
                         url: item.src,
                         type: item.type.lowercased(),
                         tag: item.tag ?? "source_\(index)",
@@ -406,7 +406,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
 final class HybridPlayerViewModel: ObservableObject {
     let playerView = MediaPlayerView()
     @Published var vzPlayer: IH5Player?
-    @Published var coordinator: VZPlayerJSBridgeCoordinator?
+    @Published var coordinator: PlayerJSBridgeCoordinator?
     @Published var webView: WKWebView?
     
     func setup(apiService: StreamAPIService) {
@@ -421,7 +421,7 @@ final class HybridPlayerViewModel: ObservableObject {
         let config = WKWebViewConfiguration()
         config.userContentController = userController
         
-        let coord = VZPlayerJSBridgeCoordinator(webView: nil, vzPlayer: player)
+        let coord = PlayerJSBridgeCoordinator(webView: nil, vzPlayer: player)
         self.coordinator = coord
         
         // 注册 JSBridge 消息监听
@@ -476,9 +476,9 @@ public struct WebViewHybridPlayerView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // MARK: - 1. 顶部原生视频渲染窗口 (VZPlayerView)
+            // MARK: - 1. 顶部原生视频渲染窗口 (PlayerView)
             ZStack(alignment: .topLeading) {
-                VZPlayerViewRepresentable(playerView: viewModel.playerView)
+                PlayerViewRepresentable(playerView: viewModel.playerView)
                     .frame(height: 220)
                     .background(Color.black)
                 

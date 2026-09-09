@@ -71,9 +71,9 @@ public struct UniversalPlayerView: View {
                 .padding(.vertical, 6)
                 .background(Color.secondary.opacity(0.05))
                 
-                // MARK: - 2. 视频渲染窗口 (VZPlayerView)
+                // MARK: - 2. 视频渲染窗口 (PlayerView)
                 ZStack(alignment: .topTrailing) {
-                    VZPlayerViewRepresentable(playerView: viewModel.playerView)
+                    PlayerViewRepresentable(playerView: viewModel.playerView)
                         .frame(height: 220)
                         .background(Color.black)
                     
@@ -359,7 +359,7 @@ public struct UniversalPlayerView: View {
 final class UniversalPlayerViewModel: ObservableObject {
     let playerView = MediaPlayerView()
     @Published var vzPlayer: IH5Player?
-    @Published var coordinator: VZH5PlayerCoordinator?
+    @Published var coordinator: H5PlayerCoordinator?
     
     @Published var isPlaying = false
     @Published var isBuffering = false
@@ -380,7 +380,7 @@ final class UniversalPlayerViewModel: ObservableObject {
         guard vzPlayer == nil else { return }
         
         // 1. 初始化全局配置 (对标 export.Init)
-        let initConfig = VZInitConfig()
+        let initConfig = InitConfig()
         initConfig.userId = 10001
         initConfig.topicId = "topic_demo"
         initConfig.deviceInfo = "iOS MediaPlayerKit Demo"
@@ -390,7 +390,7 @@ final class UniversalPlayerViewModel: ObservableObject {
         let player = export.CreateVZPlayer(playerView)
         
         // 3. 绑定 H5 事件监听器 (对标 IH5Player.H5EventListener)
-        let coord = VZH5PlayerCoordinator(
+        let coord = H5PlayerCoordinator(
             onEvent: { [weak self] eventName in
                 guard let self = self else { return }
                 self.recentH5Events.append(eventName)
@@ -466,8 +466,8 @@ final class UniversalPlayerViewModel: ObservableObject {
             }
             
             // 构造多播放源数组 (支持 HLS/FLV 多协议容错)
-            let vzSources = container.allSources.enumerated().map { (index, item) -> VZPlayerSource in
-                let source = VZPlayerSource(
+            let vzSources = container.allSources.enumerated().map { (index, item) -> PlayerSource in
+                let source = PlayerSource(
                     url: item.src,
                     type: item.type.lowercased(),
                     tag: item.tag ?? "source_\(index)",
@@ -492,8 +492,8 @@ final class UniversalPlayerViewModel: ObservableObject {
         currentPlayingTitle = "自定义源"
         errorMessage = nil
         
-        let type = urlStr.lowercased().contains(".flv") ? VZPlayerSource.TYPE_FLV : VZPlayerSource.TYPE_HLS
-        let source = VZPlayerSource(url: urlStr, type: type, isLive: true)
+        let type = urlStr.lowercased().contains(".flv") ? PlayerSource.TYPE_FLV : PlayerSource.TYPE_HLS
+        let source = PlayerSource(url: urlStr, type: type, isLive: true)
         
         vzPlayer?.setSources([source])
         vzPlayer?.play()
@@ -508,8 +508,8 @@ final class UniversalPlayerViewModel: ObservableObject {
     }
 }
 
-// MARK: - H5 监听器代理协调器 (实现 VZH5EventListener)
-final class VZH5PlayerCoordinator: NSObject, VZH5EventListener {
+// MARK: - H5 监听器代理协调器 (实现 H5EventListener)
+final class H5PlayerCoordinator: NSObject, H5EventListener {
     private let onEventHandler: (String) -> Void
     private let onErrorHandler: (Int, String) -> Void
     private let onTimeUpdateHandler: (Int64) -> Void

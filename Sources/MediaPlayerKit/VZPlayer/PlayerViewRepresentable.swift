@@ -3,8 +3,8 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 
-/// 针对 VZPlayer (IH5Player / IPlayer) 的 SwiftUI 渲染视图封装
-public struct VZPlayerViewRepresentable: UIViewRepresentable {
+/// 针对播放器 (IH5Player / IPlayer) 的 SwiftUI 渲染视图封装
+public struct PlayerViewRepresentable: UIViewRepresentable {
     public let playerView: MediaPlayerView
 
     public init(playerView: MediaPlayerView) {
@@ -24,8 +24,8 @@ public struct VZPlayerViewRepresentable: UIViewRepresentable {
 #elseif canImport(AppKit)
 import AppKit
 
-/// 针对 VZPlayer (IH5Player / IPlayer) 的 SwiftUI 渲染视图封装 (macOS)
-public struct VZPlayerViewRepresentable: NSViewRepresentable {
+/// 针对播放器 (IH5Player / IPlayer) 的 SwiftUI 渲染视图封装 (macOS)
+public struct PlayerViewRepresentable: NSViewRepresentable {
     public let playerView: MediaPlayerView
 
     public init(playerView: MediaPlayerView) {
@@ -41,3 +41,6 @@ public struct VZPlayerViewRepresentable: NSViewRepresentable {
     }
 }
 #endif
+
+/// 兼容别名
+public typealias VZPlayerViewRepresentable = PlayerViewRepresentable
