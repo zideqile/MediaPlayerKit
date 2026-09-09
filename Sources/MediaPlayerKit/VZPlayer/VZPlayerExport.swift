@@ -19,13 +19,13 @@ public final class VZPlayerExport: NSObject {
         self.initConfig = initConfig
     }
     
-    /// 创建 VZPlayer 实例，返回 IH5Player 门面操作对象 (对标 export.CreateVZPlayer())
-    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IH5Player {
+    /// 创建 VZPlayer 实例，返回 IPlayer 统一操作对象 (对标 export.CreateVZPlayer())
+    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IPlayer {
         let player = VZH5Player(playerView: playerView, config: playerConfig)
         return player
     }
     
-    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IH5Player {
+    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IPlayer {
         return CreateVZPlayer(playerView)
     }
 }
@@ -45,11 +45,11 @@ public final class export: NSObject {
         VZPlayerExport.Init(initConfig: initConfig, configJson: configJson)
     }
     
-    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IH5Player {
+    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IPlayer {
         return VZPlayerExport.CreateVZPlayer(playerView)
     }
     
-    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IH5Player {
+    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IPlayer {
         return VZPlayerExport.CreateVZPlayer(playerView)
     }
 }

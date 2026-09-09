@@ -3,7 +3,7 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 
-/// 针对 VZPlayer (IH5Player) 的 SwiftUI 渲染视图封装
+/// 针对 VZPlayer (IPlayer) 的 SwiftUI 渲染视图封装
 public struct VZPlayerViewRepresentable: UIViewRepresentable {
     public let playerView: MediaPlayerView
 
@@ -24,7 +24,7 @@ public struct VZPlayerViewRepresentable: UIViewRepresentable {
 #elseif canImport(AppKit)
 import AppKit
 
-/// 针对 VZPlayer (IH5Player) 的 SwiftUI 渲染视图封装 (macOS)
+/// 针对 VZPlayer (IPlayer) 的 SwiftUI 渲染视图封装 (macOS)
 public struct VZPlayerViewRepresentable: NSViewRepresentable {
     public let playerView: MediaPlayerView
 
