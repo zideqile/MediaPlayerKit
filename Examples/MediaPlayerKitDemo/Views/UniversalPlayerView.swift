@@ -379,12 +379,8 @@ final class UniversalPlayerViewModel: ObservableObject {
     func setupVZPlayer() {
         guard vzPlayer == nil else { return }
         
-        // 1. 初始化全局配置 (对标 export.Init)
-        let initConfig = InitConfig()
-        initConfig.userId = 10001
-        initConfig.topicId = "topic_demo"
-        initConfig.deviceInfo = "iOS MediaPlayerKit Demo"
-        export.Init(initConfig, nil)
+        // 1. 初始化全局配置 (对标 export.Init，同步上报域名)
+        StreamAPIService.shared.configureLogServer(userId: 10001, topicId: "topic_demo", deviceInfo: "iOS MediaPlayerKit Demo")
         
         // 2. 创建 IH5Player 门面对象 (对标 export.CreateVZPlayer)
         let player = export.CreateVZPlayer(playerView)

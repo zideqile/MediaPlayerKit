@@ -412,7 +412,8 @@ final class HybridPlayerViewModel: ObservableObject {
     func setup(apiService: StreamAPIService) {
         guard vzPlayer == nil else { return }
         
-        // 1. 创建 IH5Player 实例
+        // 1. 初始化全局配置与创建 IH5Player 实例
+        StreamAPIService.shared.configureLogServer(userId: 10003, topicId: "topic_webview_hybrid", deviceInfo: "iOS MediaPlayerKit Demo")
         let player = export.CreateVZPlayer(playerView)
         self.vzPlayer = player
         

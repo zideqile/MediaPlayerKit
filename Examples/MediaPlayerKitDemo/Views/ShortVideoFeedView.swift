@@ -355,6 +355,7 @@ public struct ShortVideoFeedView: View {
     private func setupVZPlayer() {
         guard vzPlayer == nil else { return }
         
+        StreamAPIService.shared.configureLogServer(userId: 10002, topicId: "topic_short_video", deviceInfo: "iOS MediaPlayerKit Demo")
         let player = export.CreateVZPlayer(playerView)
         let coord = H5PlayerCoordinator(
             onEvent: { eventName in

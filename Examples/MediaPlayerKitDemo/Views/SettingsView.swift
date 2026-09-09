@@ -62,7 +62,52 @@ public struct SettingsView: View {
                 }
             }
             
-            // MARK: - 3. 新增节点录入
+            // MARK: - 3. 旧版日志上报配置
+            Section(header: Label("旧版日志上报服务器", systemImage: "chart.bar.doc.horizontal")) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("上报域名 (Log Server Domain):")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    TextField("可在 CI 中配置 VPLAYER_LOG_DOMAIN 自动注入", text: $apiService.logDomain)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(size: 13, design: .monospaced))
+                    
+                    Text("提示: 此配置对标旧版监控日志上报服务器。留空时不执行上报。可在 GitHub Actions 变量中设置 VPLAYER_LOG_DOMAIN 统一注入。")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                
+                HStack {
+                    Button(action: {
+                        apiService.logDomain = StreamAPIService.defaultLogDomain
+                        showToast("已恢复默认/CI注入配置")
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.counterclockwise")
+                            Text("恢复默认")
+                        }
+                        .font(.caption)
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        testLogServer()
+                    }) {
+                        HStack {
+                            Image(systemName: "network")
+                            Text("测试连通性")
+                        }
+                        .font(.caption)
+                    }
+                    .buttonStyle(BorderlessButtonStyle())
+                    .disabled(apiService.logDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            
+            // MARK: - 4. 新增节点录入
             Section(header: Label("添加新节点域名", systemImage: "plus.circle.fill")) {
                 VStack(spacing: 8) {
                     TextField("节点域名 (如 p1.vzan.com:8000)", text: $newDomainInput)
@@ -91,7 +136,7 @@ public struct SettingsView: View {
                 }
             }
             
-            // MARK: - 4. 已录入节点库列表
+            // MARK: - 5. 已录入节点库列表
             Section(header: HStack {
                 Label("已保存节点列表 (\(apiService.nodeItems.count))", systemImage: "list.bullet")
                 Spacer()
@@ -142,7 +187,7 @@ public struct SettingsView: View {
                 }
             }
             
-            // MARK: - 5. 调试与缓存操作
+            // MARK: - 6. 调试与缓存操作
             Section(header: Label("缓存与状态", systemImage: "wrench.and.screwdriver")) {
                 Button(action: {
                     apiService.fetchStreamList()
@@ -203,6 +248,13 @@ public struct SettingsView: View {
         toastMessage = message
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             toastMessage = nil
+        }
+    }
+    
+    private func testLogServer() {
+        showToast("正在测试连通性...")
+        apiService.testLogServerConnectivity { success, message in
+            showToast(message)
         }
     }
 }
