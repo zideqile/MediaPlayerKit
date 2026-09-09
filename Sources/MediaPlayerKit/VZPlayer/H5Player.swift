@@ -442,6 +442,3 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         return str
     }
 }
-
-/// 兼容别名
-public typealias VZH5Player = H5Player

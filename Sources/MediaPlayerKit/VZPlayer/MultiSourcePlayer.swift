@@ -11,9 +11,6 @@ public protocol MultiSourcePlayerDelegate: AnyObject {
     func multiSourcePlayer(_ player: MultiSourcePlayer, didWarnMessage msg: String)
 }
 
-/// 兼容别名
-public typealias VZMultiSourcePlayerDelegate = MultiSourcePlayerDelegate
-
 /// 多播放源管理器与两层容错调度器 (实现 IPlayer 协议，对标 Android vzplayer 的 MultiSourcePlayer & PlayerSelector)
 @objc(MultiSourcePlayer)
 public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {

@@ -1,6 +1,6 @@
 import Foundation
 
-/// 日志与上报服务器配置
+/// 日志与上报服务器配置 (1:1 对标 Android vzplayer 的 LogServerConfig.java)
 @objc(LogServerConfig)
 public final class LogServerConfig: NSObject, Codable {
     @objc public var domain: String = "lgtx-test.vzan.com"
@@ -9,18 +9,12 @@ public final class LogServerConfig: NSObject, Codable {
     @objc public var secure: Bool = true
 }
 
-/// 兼容别名
-public typealias VZLogServerConfig = LogServerConfig
-
-/// 日志级别与周期配置
+/// 日志级别与周期配置 (1:1 对标 Android vzplayer 的 LogConfig.java)
 @objc(LogConfig)
 public final class LogConfig: NSObject, Codable {
     @objc public var uploadIntervalSeconds: Int = 30
     @objc public var level: Int = 2 // 1: Verbose, 2: Info, 3: Warn, 4: Error
 }
-
-/// 兼容别名
-public typealias VZLogConfig = LogConfig
 
 /// 播放器运行时策略配置 (1:1 严格对标 Android vzplayer 的 VPlayerConfig.java)
 @objc(VPlayerConfig)
@@ -56,11 +50,7 @@ public final class VPlayerConfig: NSObject, Codable {
     }
 }
 
-/// 兼容别名
-public typealias VZPlayerConfig = VPlayerConfig
-public typealias PlayerConfig = VPlayerConfig
-
-/// 全局初始化配置 (对标 Android vzplayer 的 InitConfig)
+/// 全局初始化配置 (1:1 严格对标 Android vzplayer 的 InitConfig.java)
 @objc(InitConfig)
 public final class InitConfig: NSObject {
     @objc public var fileAppenderPath: String?
@@ -79,6 +69,4 @@ public final class InitConfig: NSObject {
     }
 }
 
-/// 兼容别名
-public typealias VZInitConfig = InitConfig
 

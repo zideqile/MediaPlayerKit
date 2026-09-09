@@ -12,9 +12,6 @@ import Foundation
     func onTimeUpdate(_ currentTime: Int64)
 }
 
-/// 兼容别名
-public typealias VZH5EventListener = H5EventListener
-
 /// 对外业务与 H5 / JSBridge 统一门面协议 (1:1 严格对标 Android vzplayer 的 IH5Player.java)
 @objc public protocol IH5Player: AnyObject {
     /// 注册外部 H5 事件监听器 (对标 Android SetOnH5EventListener)

@@ -174,6 +174,3 @@ extension PlayerBridge: WKScriptMessageHandler {
     }
 }
 #endif
-
-/// 兼容别名
-public typealias VZPlayerBridge = PlayerBridge
