@@ -24,7 +24,8 @@ public final class LogServerConfig: NSObject, Codable {
 @objc(LogConfig)
 public final class LogConfig: NSObject, Codable {
     @objc public var uploadIntervalSeconds: Int = 30
-    @objc public var level: Int = 2 // 1: Verbose, 2: Info, 3: Warn, 4: Error
+    @objc public var level: Int = 1 // Android ordinal: 0 Debug, 1 Info, 2 Warn, 3 Error, 4 Fatal
+    @objc public var categories: String = "all"
     public override init() { super.init() }
 
     public required init(from decoder: Decoder) throws {
@@ -32,6 +33,7 @@ public final class LogConfig: NSObject, Codable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         uploadIntervalSeconds = try values.decodeIfPresent(Int.self, forKey: .uploadIntervalSeconds) ?? uploadIntervalSeconds
         level = try values.decodeIfPresent(Int.self, forKey: .level) ?? level
+        categories = try values.decodeIfPresent(String.self, forKey: .categories) ?? categories
     }
 
 }
