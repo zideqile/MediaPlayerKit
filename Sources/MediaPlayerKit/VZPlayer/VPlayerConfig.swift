@@ -7,6 +7,17 @@ public final class LogServerConfig: NSObject, Codable {
     @objc public var port: Int = 443
     @objc public var path: String = "/live/zbmonitor"
     @objc public var secure: Bool = true
+    public override init() { super.init() }
+
+    public required init(from decoder: Decoder) throws {
+        super.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        domain = try values.decodeIfPresent(String.self, forKey: .domain) ?? domain
+        port = try values.decodeIfPresent(Int.self, forKey: .port) ?? port
+        path = try values.decodeIfPresent(String.self, forKey: .path) ?? path
+        secure = try values.decodeIfPresent(Bool.self, forKey: .secure) ?? secure
+    }
+
 }
 
 /// 日志级别与周期配置 (1:1 对标 Android vzplayer 的 LogConfig.java)
@@ -14,6 +25,15 @@ public final class LogServerConfig: NSObject, Codable {
 public final class LogConfig: NSObject, Codable {
     @objc public var uploadIntervalSeconds: Int = 30
     @objc public var level: Int = 2 // 1: Verbose, 2: Info, 3: Warn, 4: Error
+    public override init() { super.init() }
+
+    public required init(from decoder: Decoder) throws {
+        super.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        uploadIntervalSeconds = try values.decodeIfPresent(Int.self, forKey: .uploadIntervalSeconds) ?? uploadIntervalSeconds
+        level = try values.decodeIfPresent(Int.self, forKey: .level) ?? level
+    }
+
 }
 
 /// 播放器运行时策略配置 (1:1 严格对标 Android vzplayer 的 VPlayerConfig.java)
@@ -47,7 +67,30 @@ public final class VPlayerConfig: NSObject, Codable {
         case logConfig, logServerConfig
         case appVZPlayerConfigJsonString
     }
-    
+
+    public override init() { super.init() }
+
+    public required init(from decoder: Decoder) throws {
+        super.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        loop = try values.decodeIfPresent(Bool.self, forKey: .loop) ?? loop
+        autoplay = try values.decodeIfPresent(Bool.self, forKey: .autoplay) ?? autoplay
+        muted = try values.decodeIfPresent(Bool.self, forKey: .muted) ?? muted
+        volume = try values.decodeIfPresent(Float.self, forKey: .volume) ?? volume
+        speed = try values.decodeIfPresent(Float.self, forKey: .speed) ?? speed
+        topicId = try values.decodeIfPresent(String.self, forKey: .topicId) ?? topicId
+        streamId = try values.decodeIfPresent(String.self, forKey: .streamId) ?? streamId
+        userId = try values.decodeIfPresent(Int64.self, forKey: .userId) ?? userId
+        userIdUuid = try values.decodeIfPresent(String.self, forKey: .userIdUuid) ?? userIdUuid
+        isLive = try values.decodeIfPresent(Bool.self, forKey: .isLive) ?? isLive
+        env = try values.decodeIfPresent(String.self, forKey: .env) ?? env
+        isHardwareDecode = try values.decodeIfPresent(Bool.self, forKey: .isHardwareDecode) ?? isHardwareDecode
+        headers = try values.decodeIfPresent([String: String].self, forKey: .headers) ?? headers
+        logConfig = try values.decodeIfPresent(LogConfig.self, forKey: .logConfig) ?? logConfig
+        logServerConfig = try values.decodeIfPresent(LogServerConfig.self, forKey: .logServerConfig) ?? logServerConfig
+        appVZPlayerConfigJsonString = try values.decodeIfPresent(String.self, forKey: .appVZPlayerConfigJsonString) ?? appVZPlayerConfigJsonString
+    }
+
     public static func fromJson(_ jsonString: String?) -> VPlayerConfig {
         guard let jsonString = jsonString, !jsonString.isEmpty,
               let data = jsonString.data(using: .utf8),
@@ -76,5 +119,4 @@ public final class InitConfig: NSObject {
         super.init()
     }
 }
-
 

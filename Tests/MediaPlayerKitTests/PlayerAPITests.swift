@@ -145,3 +145,107 @@ final class PlayerAPITests: XCTestCase {
 }
 
 
+private final class H5EventRecorder: NSObject, H5EventListener {
+    var events: [String] = []
+    var errors = 0
+    var timeUpdates = 0
+    func onEvent(_ eventName: String) { events.append(eventName) }
+    func onError(_ code: Int, errMsg: String) { errors += 1 }
+    func onTimeUpdate(_ currentTime: Int64) { timeUpdates += 1 }
+}
+
+extension PlayerAPITests {
+    func testPartialConfigurationPreservesDefaults() throws {
+        let config = try JSONDecoder().decode(VPlayerConfig.self, from: Data("""
+        {"volume":0.5,"muted":true,"logConfig":{"level":3},"logServerConfig":{"domain":"example.com"}}
+        """.utf8))
+        XCTAssertEqual(config.volume, 0.5)
+        XCTAssertTrue(config.muted)
+        XCTAssertEqual(config.speed, 1)
+        XCTAssertEqual(config.logConfig.level, 3)
+        XCTAssertEqual(config.logConfig.uploadIntervalSeconds, 30)
+        XCTAssertEqual(config.logServerConfig.domain, "example.com")
+        XCTAssertEqual(config.logServerConfig.port, 443)
+        XCTAssertTrue(config.logServerConfig.secure)
+        XCTAssertEqual(VPlayerConfig.fromJson("{\"volume\":0.25}").volume, 0.25)
+    }
+
+    func testSourceJSONStringIncludesBothIndexContracts() throws {
+        let source = PlayerSource(url: "https://example.com/live.m3u8")
+        source.sourceIndex = 2
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(source.toJSONString().utf8)) as? [String: Any])
+        XCTAssertEqual(json["index"] as? Int, 2)
+        XCTAssertEqual(json["sourceIndex"] as? Int, 2)
+        XCTAssertEqual(json["src"] as? String, source.url)
+        XCTAssertEqual(json["url"] as? String, source.url)
+    }
+
+    func testH5EventsAcrossPauseEndAndReplay() {
+        let run = {
+            let player = H5Player(playerView: MediaPlayerView())
+            let recorder = H5EventRecorder()
+            player.SetOnH5EventListener(recorder)
+            defer { player.destroy() }
+            player.onStateChanged(state: .preparing)
+            player.onStateChanged(state: .playing)
+            player.onFirstFrameRendered()
+            player.onStateChanged(state: .playing)
+            XCTAssertEqual(recorder.events.filter { $0 == "playing" }.count, 1)
+            player.onStateChanged(state: .paused)
+            player.onFirstFrameRendered()
+            XCTAssertEqual(recorder.events.last, "pause")
+            player.onStateChanged(state: .completed)
+            player.onPlayToEnd()
+            XCTAssertEqual(recorder.events.filter { $0 == "ended" }.count, 1)
+            player.onStateChanged(state: .playing)
+            player.onPlayToEnd()
+            player.onStateChanged(state: .completed)
+            XCTAssertEqual(recorder.events.filter { $0 == "ended" }.count, 2)
+        }
+        if Thread.isMainThread { run() } else { DispatchQueue.main.sync(execute: run) }
+    }
+
+    func testEmptySourcesDoNotRestartHeartbeatAfterError() {
+        let run = {
+            let player = H5Player(playerView: MediaPlayerView())
+            let recorder = H5EventRecorder()
+            player.SetOnH5EventListener(recorder)
+            defer { player.destroy() }
+            player.play()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.65))
+            XCTAssertEqual(recorder.errors, 1)
+            XCTAssertEqual(recorder.timeUpdates, 0)
+        }
+        if Thread.isMainThread { run() } else { DispatchQueue.main.sync(execute: run) }
+    }
+
+    func testContinuousSourceSwitchingAndIndexSafety() {
+        let playerView = MediaPlayerView()
+        let player = MultiSourcePlayer(playerView: playerView)
+        let s1 = PlayerSource(url: "https://example.com/stream1.m3u8", type: "hls", tag: "line1")
+        let s2 = PlayerSource(url: "https://example.com/stream2.flv", type: "flv", tag: "line2")
+        let s3 = PlayerSource(url: "https://example.com/stream3.m3u8", type: "hls", tag: "line3")
+        
+        player.setSources([s1, s2, s3])
+        XCTAssertEqual(player.currentSourceIndex, 0)
+        XCTAssertEqual(player.getCurrentSource()?.tag, "line1")
+        
+        XCTAssertTrue(player.switchToSource(index: 1))
+        XCTAssertEqual(player.currentSourceIndex, 1)
+        XCTAssertEqual(player.getCurrentSource()?.tag, "line2")
+        
+        XCTAssertTrue(player.switchToSource(index: 2))
+        XCTAssertEqual(player.currentSourceIndex, 2)
+        XCTAssertEqual(player.getCurrentSource()?.tag, "line3")
+        
+        // Out of bounds checks
+        XCTAssertFalse(player.switchToSource(index: 3))
+        XCTAssertFalse(player.switchToSource(index: -1))
+        XCTAssertFalse(player.switchToNextSource())
+        
+        // Switch back to start
+        XCTAssertTrue(player.switchToSource(index: 0))
+        XCTAssertEqual(player.currentSourceIndex, 0)
+        player.Destroy()
+    }
+}
