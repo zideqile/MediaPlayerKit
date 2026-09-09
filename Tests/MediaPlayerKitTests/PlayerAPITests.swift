@@ -7,6 +7,7 @@ final class PlayerAPITests: XCTestCase {
         XCTAssertEqual(export.GetVersion(), "2")
         
         let initConfig = InitConfig()
+        initConfig.appenders = [] // Unit tests must not contact the log service.
         initConfig.userId = 12345
         initConfig.topicId = "topic_888"
         initConfig.deviceInfo = "iPhone 15 Pro, iOS 17.5"

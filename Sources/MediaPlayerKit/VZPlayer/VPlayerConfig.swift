@@ -122,6 +122,7 @@ public final class VPlayerConfig: NSObject, Codable {
 /// 全局初始化配置 (1:1 严格对标 Android vzplayer 的 InitConfig.java)
 @objc(InitConfig)
 public final class InitConfig: NSObject {
+    public var externalAppenders: [Appender] = []
     @objc public var fileAppenderPath: String?
     @objc public var appenders: [String] = ["ConsoleAppender", "ESAppender"]
     @objc public var isDebug: Bool = false

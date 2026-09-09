@@ -5,6 +5,7 @@ import Foundation
 public final class export: NSObject {
     private static var playerConfig = VPlayerConfig()
     private static var initConfig: InitConfig?
+    @objc public private(set) static var lastLoggingError: NSError?
     
     /// 获取当前 SDK 版本号 (1:1 对标 Android export.GetVersion())
     @objc public static func GetVersion() -> String {
@@ -13,10 +14,25 @@ public final class export: NSObject {
     
     /// 初始化播放器系统与全局配置 (1:1 对标 Android export.Init())
     @objc public static func Init(_ initConfig: InitConfig?, _ configJson: String?) {
-        if let config = VPlayerConfig.fromJson(configJson) as VPlayerConfig? {
-            self.playerConfig = config
+        let config = VPlayerConfig.fromJson(configJson)
+        let options = initConfig ?? InitConfig()
+        if initConfig != nil {
+            config.userId = options.userId
+            config.topicId = options.topicId
         }
-        self.initConfig = initConfig
+        config.userIdUuid = "\(config.userId)_\(UUID().uuidString)"
+        self.playerConfig = config
+        self.initConfig = options
+        lastLoggingError = nil
+        do {
+            try Logger.initialize(config: config, initConfig: options, version: GetVersion())
+            Logger.logI("Logger.init", "env:", config.env, "version:", GetVersion(), "userId:", config.userId)
+        } catch {
+            // A log sink failure must not prevent media playback or reuse stale credentials.
+            lastLoggingError = error as NSError
+            Logger.configure(level: .warn) { _ in [ConsoleAppender()] }
+            Logger.logE("Logger initialization failed:", error.localizedDescription)
+        }
     }
     
     @objc public static func Init(initConfig: InitConfig?, configJson: String?) {

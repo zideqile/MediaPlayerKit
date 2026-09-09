@@ -16,6 +16,8 @@ public protocol Appender: AnyObject {
     func makeLogMerger() -> LogMerger?
     func flush()
     func destroy()
+    /// Flush pending output and release owned resources without blocking the caller.
+    func finish()
     func onSourceChanged(srcUrl: String, srcType: String)
 }
 public extension Appender {
@@ -23,6 +25,7 @@ public extension Appender {
     func makeLogMerger() -> LogMerger? { nil }
     func flush() {}
     func destroy() {}
+    func finish() { flush(); destroy() }
     func onSourceChanged(srcUrl: String, srcType: String) {}
 }
 
