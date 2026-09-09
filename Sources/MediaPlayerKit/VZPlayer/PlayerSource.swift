@@ -102,6 +102,3 @@ public final class PlayerSource: NSObject, Codable {
     }
 }
 
-/// 兼容别名
-public typealias VZPlayerSource = PlayerSource
-

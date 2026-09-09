@@ -5,7 +5,6 @@ final class PlayerAPITests: XCTestCase {
     
     func testExportVersionAndInit() {
         XCTAssertEqual(export.GetVersion(), "2")
-        XCTAssertEqual(VZPlayerExport.GetVersion(), "2")
         
         let initConfig = InitConfig()
         initConfig.userId = 12345
@@ -22,7 +21,6 @@ final class PlayerAPITests: XCTestCase {
         """
         
         export.Init(initConfig, configJson)
-        VZPlayerExport.Init(initConfig: initConfig, configJson: configJson)
     }
     
     func testPlayerSourceModelAndJSON() {

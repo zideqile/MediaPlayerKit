@@ -27,10 +27,6 @@ public final class BufferRange: NSObject {
     }
 }
 
-/// 兼容别名
-@objc(VZBufferRange)
-public typealias VZBufferRange = BufferRange
-
 /// 内部 Native 播放器状态事件回调监听器 (1:1 严格对标 Android PlayerEventListener)
 @objc public protocol PlayerEventListener: AnyObject {
     func onStateChanged(state: PlayerState)
@@ -41,9 +37,6 @@ public typealias VZBufferRange = BufferRange
     func onSourceSwitched(source: PlayerSource)
     func onWarnMessage(msg: String)
 }
-
-/// 兼容别名
-public typealias VZPlayerEventListener = PlayerEventListener
 
 /// Native 内部核心强类型播放器抽象协议 (1:1 严格对标 Android vzplayer 的 IPlayer.java)
 @objc public protocol IPlayer: AnyObject {

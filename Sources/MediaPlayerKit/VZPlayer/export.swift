@@ -34,14 +34,3 @@ public final class export: NSObject {
     }
 }
 
-/// 兼容别名
-@objc(VZPlayerExport)
-public final class VZPlayerExport: NSObject {
-    @objc public static func GetVersion() -> String { export.GetVersion() }
-    @objc public static func Init(initConfig: InitConfig?, configJson: String?) { export.Init(initConfig, configJson) }
-    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IH5Player { export.CreateVZPlayer(playerView) }
-    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IH5Player { export.CreateVZPlayer(playerView) }
-}
-
-public typealias Export = export
-

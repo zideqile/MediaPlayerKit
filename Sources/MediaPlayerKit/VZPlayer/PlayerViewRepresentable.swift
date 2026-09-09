@@ -41,6 +41,3 @@ public struct PlayerViewRepresentable: NSViewRepresentable {
     }
 }
 #endif
-
-/// 兼容别名
-public typealias VZPlayerViewRepresentable = PlayerViewRepresentable
