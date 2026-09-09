@@ -28,7 +28,7 @@ final class PlayerAPITests: XCTestCase {
             url: "https://p2.vzan.com/live/123.m3u8",
             type: PlayerSource.TYPE_HLS,
             tag: "main_stream",
-            videoCodec: 1,
+            videoCodec: PlayerSource.CODEC_H264,
             sarNum: 16,
             sarDen: 9,
             orderno: 1,
@@ -40,7 +40,7 @@ final class PlayerAPITests: XCTestCase {
         let jsonStr = source.toJSONString()
         XCTAssertTrue(jsonStr.contains("123.m3u8"))
         XCTAssertTrue(jsonStr.contains("\"type\":\"hls\""))
-        XCTAssertTrue(jsonStr.contains("\"videoCodec\":1"))
+        XCTAssertTrue(jsonStr.contains("\"videoCodec\":2"))
         
         let dict = source.toDictionary()
         let restored = PlayerSource.fromDictionary(dict)
@@ -101,7 +101,7 @@ final class PlayerAPITests: XCTestCase {
     
     func testIPlayerAlignedAPIs() {
         let playerView = MediaPlayerView()
-        let player: IPlayer = export.CreateVZPlayer(playerView)
+        let player: IPlayer = export.CreateVZPlayer(playerView) as! IPlayer
         
         let s1 = PlayerSource(url: "https://example.com/live1.m3u8", type: "hls")
         let s2 = PlayerSource(url: "https://example.com/live2.flv", type: "flv")

@@ -5,7 +5,7 @@ import CoreGraphics
 @objc(H5Player)
 public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     private let multiPlayer: MultiSourcePlayer
-    private var h5EventListeners: [H5EventListener] = []
+    private weak var h5EventListener: H5EventListener?
     private var timeUpdateTimer: Timer?
     private var isPlayingState: Bool = false
     
@@ -19,10 +19,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     @objc public func SetOnH5EventListener(_ listener: H5EventListener?) {
         executeOnMainThread {
-            self.h5EventListeners.removeAll()
-            if let l = listener {
-                self.h5EventListeners.append(l)
-            }
+            self.h5EventListener = listener
         }
     }
     
@@ -53,7 +50,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         executeOnMainThread {
             self.stopTimeUpdateTimer()
             self.multiPlayer.Destroy()
-            self.h5EventListeners.removeAll()
+            self.h5EventListener = nil
         }
     }
     
@@ -323,9 +320,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         timeUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let pos = self.multiPlayer.GetCurrentTime()
-            for listener in self.h5EventListeners {
-                listener.onTimeUpdate(pos)
-            }
+            self.h5EventListener?.onTimeUpdate(pos)
         }
     }
     
@@ -356,10 +351,12 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
             case .buffering:
                 self.notifyH5Event("waiting")
             case .completed:
-                self.isPlayingState = false
-                self.notifyH5Event("ended")
+                if self.isPlayingState {
+                    self.isPlayingState = false
+                    self.notifyH5Event("ended")
+                }
                 self.stopTimeUpdateTimer()
-            case .failed:
+            case .error:
                 self.isPlayingState = false
                 self.stopTimeUpdateTimer()
             }
@@ -368,6 +365,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     public func onFirstFrameRendered() {
         executeOnMainThread {
+            self.isPlayingState = true
             self.notifyH5Event("playing")
         }
     }
@@ -378,22 +376,24 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     public func onError(code: Int, errMsg: String) {
         executeOnMainThread {
-            for listener in self.h5EventListeners {
-                listener.onError(code, errMsg: errMsg)
-            }
+            self.isPlayingState = false
+            self.stopTimeUpdateTimer()
+            self.h5EventListener?.onError(code, errMsg: errMsg)
         }
     }
     
     public func onPlayToEnd() {
         executeOnMainThread {
-            self.notifyH5Event("ended")
+            if self.isPlayingState {
+                self.isPlayingState = false
+                self.notifyH5Event("ended")
+            }
+            self.stopTimeUpdateTimer()
         }
     }
     
     public func onSourceSwitched(source: PlayerSource) {
-        executeOnMainThread {
-            self.notifyH5Event("playing")
-        }
+        // 切换源时不提前伪造 playing 事件，待底层首帧/播放就绪由状态机通知
     }
     
     public func onWarnMessage(msg: String) {
@@ -403,9 +403,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     }
     
     private func notifyH5Event(_ name: String) {
-        for listener in self.h5EventListeners {
-            listener.onEvent(name)
-        }
+        h5EventListener?.onEvent(name)
     }
     
     // MARK: - 辅助工具

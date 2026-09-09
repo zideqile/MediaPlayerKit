@@ -38,7 +38,15 @@ public final class VPlayerConfig: NSObject, Codable {
     @objc public var logConfig: LogConfig = LogConfig()
     @objc public var logServerConfig: LogServerConfig = LogServerConfig()
     
-    @objc public var appVPlayerConfigJsonString: String = ""
+    @objc public var appVZPlayerConfigJsonString: String = ""
+    
+    enum CodingKeys: String, CodingKey {
+        case loop, autoplay, muted, volume, speed
+        case topicId, streamId, userId, userIdUuid
+        case isLive, env, isHardwareDecode, headers
+        case logConfig, logServerConfig
+        case appVZPlayerConfigJsonString
+    }
     
     public static func fromJson(_ jsonString: String?) -> VPlayerConfig {
         guard let jsonString = jsonString, !jsonString.isEmpty,

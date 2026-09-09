@@ -11,14 +11,25 @@ public protocol MultiSourcePlayerDelegate: AnyObject {
     func multiSourcePlayer(_ player: MultiSourcePlayer, didWarnMessage msg: String)
 }
 
+private final class WeakPlayerEventListener {
+    weak var value: PlayerEventListener?
+    init(_ value: PlayerEventListener) {
+        self.value = value
+    }
+}
+
 /// 多播放源管理器与两层容错调度器 (实现 IPlayer 协议，对标 Android vzplayer 的 MultiSourcePlayer & PlayerSelector)
 @objc(MultiSourcePlayer)
 public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public weak var delegate: MultiSourcePlayerDelegate?
-    private var eventListeners: [PlayerEventListener] = []
+    private var eventListeners: [WeakPlayerEventListener] = []
     
     public private(set) var sources: [PlayerSource] = []
     public private(set) var currentSourceIndex: Int = 0
+    
+    public var currentSource: PlayerSource? {
+        return getCurrentSource()
+    }
     
     // 内核尝试顺序：0: AVPlayer (硬解), 1: KSMEPlayer (软解)
     private var engineOrder: [PlayerEngineType] = [.avPlayer, .mePlayer]
@@ -50,14 +61,24 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func AddEventListener(_ listener: PlayerEventListener?) {
         guard let l = listener else { return }
-        if !eventListeners.contains(where: { $0 === l }) {
-            eventListeners.append(l)
+        eventListeners.removeAll(where: { $0.value == nil })
+        if !eventListeners.contains(where: { $0.value === l }) {
+            eventListeners.append(WeakPlayerEventListener(l))
         }
     }
     
     public func RemoveEventListener(_ listener: PlayerEventListener?) {
         guard let l = listener else { return }
-        eventListeners.removeAll(where: { $0 === l })
+        eventListeners.removeAll(where: { $0.value == nil || $0.value === l })
+    }
+    
+    private func notifyListeners(_ action: (PlayerEventListener) -> Void) {
+        eventListeners.removeAll(where: { $0.value == nil })
+        for holder in eventListeners {
+            if let listener = holder.value {
+                action(listener)
+            }
+        }
     }
     
     // MARK: - IPlayer: 基础播放控制
@@ -72,7 +93,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         guard !sources.isEmpty else {
             let err = NSError(domain: "MultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "sources is empty"])
             delegate?.multiSourcePlayer(self, didOccurError: err)
-            for l in eventListeners { l.onError(code: -1, errMsg: "sources is empty") }
+            notifyListeners { $0.onError(code: -1, errMsg: "sources is empty") }
             return
         }
         if controller == nil || needsReloadSource {
@@ -269,7 +290,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         let urlStr = source.url.lowercased()
         let isFlv = type == "flv" || urlStr.contains(".flv")
         let isRtmp = type == "rtmp" || urlStr.hasPrefix("rtmp://")
-        let isH265 = source.videoCodec == 4 || source.tag.lowercased().contains("265") || urlStr.contains("265")
+        let isH265 = source.videoCodec == PlayerSource.CODEC_H265 || source.videoCodec == 4 || source.tag.lowercased().contains("265") || urlStr.contains("265")
         
         if isFlv || isRtmp {
             return [.mePlayer]
@@ -284,7 +305,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         guard !isDestroyed, let source = currentSource, let url = URL(string: source.url) else {
             let err = NSError(domain: "MultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid source URL"])
             delegate?.multiSourcePlayer(self, didOccurError: err)
-            for l in eventListeners { l.onError(code: -1, errMsg: "Invalid source URL") }
+            notifyListeners { $0.onError(code: -1, errMsg: "Invalid source URL") }
             return
         }
         
@@ -309,14 +330,14 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         self.controller = ctrl
         
         // 3. 附加视图并准备播放
-        playerView.attachRenderView(ctrl.playerView.renderView)
-        ctrl.prepare(with: url)
+        playerView.attachRenderView(ctrl.playerView)
+        ctrl.setMediaSource(url: url)
         ctrl.setVolume(savedVolume)
         ctrl.setMute(savedMuted)
         ctrl.setPlaybackRate(savedSpeed)
         
         if let s = currentSource {
-            for l in eventListeners { l.onSourceSwitched(source: s) }
+            notifyListeners { $0.onSourceSwitched(source: s) }
         }
     }
     
@@ -330,7 +351,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
             // 404 流不存在，跳过 Layer 1 内核重试，直接尝试 Layer 2 下一个地址
             let msg = "Stream not found (404), skip engine retry"
             delegate?.multiSourcePlayer(self, didWarnMessage: msg)
-            for l in eventListeners { l.onWarnMessage(msg: msg) }
+            notifyListeners { $0.onWarnMessage(msg: msg) }
             tryNextSource(lastError: error)
             return
         }
@@ -340,7 +361,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
             currentEngineIndex += 1
             let msg = "Retry with fallback engine: \(engineOrder[currentEngineIndex])"
             delegate?.multiSourcePlayer(self, didWarnMessage: msg)
-            for l in eventListeners { l.onWarnMessage(msg: msg) }
+            notifyListeners { $0.onWarnMessage(msg: msg) }
             startPlaybackWithCurrentSourceAndEngine()
         } else {
             // Layer 1 内核全部耗尽，尝试 Layer 2 地址切换
@@ -356,12 +377,12 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
             self.engineOrder = computeEngineOrder(for: nextSource)
             let msg = "Switch to nextSource [\(currentSourceIndex + 1)/\(sources.count)] (\(nextSource.tag))"
             delegate?.multiSourcePlayer(self, didWarnMessage: msg)
-            for l in eventListeners { l.onWarnMessage(msg: msg) }
+            notifyListeners { $0.onWarnMessage(msg: msg) }
             startPlaybackWithCurrentSourceAndEngine()
         } else {
             // 所有地址和内核全部耗尽，最终上报错误
             delegate?.multiSourcePlayer(self, didOccurError: lastError)
-            for l in eventListeners { l.onError(code: lastError.code, errMsg: lastError.localizedDescription) }
+            notifyListeners { $0.onError(code: lastError.code, errMsg: lastError.localizedDescription) }
         }
     }
     
@@ -380,7 +401,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         self.engineOrder = computeEngineOrder(for: targetSource)
         let msg = "Switch to source [\(currentSourceIndex + 1)/\(sources.count)] (\(targetSource.tag))"
         delegate?.multiSourcePlayer(self, didWarnMessage: msg)
-        for l in eventListeners { l.onWarnMessage(msg: msg) }
+        notifyListeners { $0.onWarnMessage(msg: msg) }
         startPlaybackWithCurrentSourceAndEngine()
         return true
     }
@@ -389,17 +410,17 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func player(_ player: MediaPlayerController, stateDidChange state: PlayerState) {
         delegate?.multiSourcePlayer(self, stateDidChange: state)
-        for l in eventListeners { l.onStateChanged(state: state) }
+        notifyListeners { $0.onStateChanged(state: state) }
     }
     
     public func playerDidRenderFirstFrame(_ player: MediaPlayerController) {
         delegate?.multiSourcePlayer(self, didRenderFirstFrame: ())
-        for l in eventListeners { l.onFirstFrameRendered() }
+        notifyListeners { $0.onFirstFrameRendered() }
     }
     
     public func player(_ player: MediaPlayerController, currentTime: TimeInterval, totalDuration: TimeInterval) {
         delegate?.multiSourcePlayer(self, currentTime: currentTime, totalDuration: totalDuration)
-        for l in eventListeners { l.onTimeUpdate(currentTime: Int64(currentTime), totalDuration: Int64(totalDuration)) }
+        notifyListeners { $0.onTimeUpdate(currentTime: Int64(currentTime), totalDuration: Int64(totalDuration)) }
     }
     
     public func player(_ player: MediaPlayerController, didOccurError error: NSError) {
@@ -408,6 +429,6 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func playerDidPlayToEndTime(_ player: MediaPlayerController) {
         delegate?.multiSourcePlayerDidPlayToEnd(self)
-        for l in eventListeners { l.onPlayToEnd() }
+        notifyListeners { $0.onPlayToEnd() }
     }
 }
