@@ -98,6 +98,51 @@ final class VZPlayerAPITests: XCTestCase {
         let updatedSourceJson = player.get_currentsource()
         XCTAssertTrue(updatedSourceJson.contains("new_live.m3u8"))
         
-        player.destroy()
+        player.Destroy()
+    }
+    
+    func testIPlayerAlignedAPIs() {
+        let playerView = MediaPlayerView()
+        let player: IPlayer = export.CreateVZPlayer(playerView)
+        
+        let s1 = VZPlayerSource(url: "https://example.com/live1.m3u8", type: "hls")
+        let s2 = VZPlayerSource(url: "https://example.com/live2.flv", type: "flv")
+        
+        // 1. Play with sources
+        let playResult = player.Play([s1, s2])
+        XCTAssertTrue(playResult)
+        
+        // 2. Volume & Mute
+        player.SetVolume(0.75)
+        XCTAssertEqual(player.GetVolume(), 0.75, accuracy: 0.01)
+        player.SetMuted(true)
+        XCTAssertTrue(player.IsMuted())
+        player.SetMuted(false)
+        XCTAssertFalse(player.IsMuted())
+        
+        // 3. Speed & Loop
+        player.SetSpeed(1.25)
+        XCTAssertEqual(player.GetSpeed(), 1.25, accuracy: 0.01)
+        player.SetLoop(true)
+        XCTAssertTrue(player.IsLoop())
+        player.SetLoop(false)
+        XCTAssertFalse(player.IsLoop())
+        
+        // 4. Seek & Time
+        player.Seek(120)
+        XCTAssertEqual(player.GetCurrentTime(), 0) // initial idle
+        XCTAssertEqual(player.GetDuration(), 0)
+        
+        // 5. Buffer & Source
+        let bufferRange = player.GetBuffered()
+        XCTAssertEqual(bufferRange.length, 1)
+        XCTAssertNotNil(player.getCurrentSource())
+        
+        // 6. Pause, Resume, Destroy
+        player.Pause()
+        XCTAssertTrue(player.IsPaused())
+        player.Resume()
+        player.Destroy()
     }
 }
+

@@ -169,9 +169,9 @@ public struct UniversalPlayerView: View {
                         
                         Button(action: {
                             if viewModel.isPlaying {
-                                viewModel.vzPlayer?.pause()
+                                viewModel.vzPlayer?.Pause()
                             } else {
-                                viewModel.vzPlayer?.play()
+                                viewModel.vzPlayer?.Play()
                             }
                         }) {
                             Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -190,7 +190,7 @@ public struct UniversalPlayerView: View {
                         
                         // 主动切下一个源 (SendEvent NEXT_SOURCE)
                         Button(action: {
-                            viewModel.vzPlayer?.sendEvent("NEXT_SOURCE", paramsJson: "{}")
+                            viewModel.vzPlayer?.SendEvent("NEXT_SOURCE", paramsJson: "{}")
                             viewModel.refreshH5State()
                         }) {
                             VStack(spacing: 1) {
@@ -358,7 +358,7 @@ public struct UniversalPlayerView: View {
 // MARK: - UniversalPlayerViewModel
 final class UniversalPlayerViewModel: ObservableObject {
     let playerView = MediaPlayerView()
-    @Published var vzPlayer: IH5Player?
+    @Published var vzPlayer: IPlayer?
     @Published var coordinator: VZH5PlayerCoordinator?
     
     @Published var isPlaying = false
@@ -386,10 +386,10 @@ final class UniversalPlayerViewModel: ObservableObject {
         initConfig.deviceInfo = "iOS MediaPlayerKit Demo"
         export.Init(initConfig, nil)
         
-        // 2. 创建 IH5Player 门面对象 (对标 export.CreateVZPlayer)
+        // 2. 创建 IPlayer 门面对象 (对标 export.CreateVZPlayer)
         let player = export.CreateVZPlayer(playerView)
         
-        // 3. 绑定 H5 事件监听器 (对标 IH5Player.H5EventListener)
+        // 3. 绑定 H5 事件监听器 (对标 IPlayer.H5EventListener)
         let coord = VZH5PlayerCoordinator(
             onEvent: { [weak self] eventName in
                 guard let self = self else { return }
@@ -422,14 +422,14 @@ final class UniversalPlayerViewModel: ObservableObject {
                 }
             }
         )
-        player.setOnH5EventListener(coord)
+        player.SetOnH5EventListener(coord)
         
         self.vzPlayer = player
         self.coordinator = coord
     }
     
     func teardown() {
-        vzPlayer?.destroy()
+        vzPlayer?.Destroy()
         vzPlayer = nil
         coordinator = nil
     }
@@ -480,9 +480,9 @@ final class UniversalPlayerViewModel: ObservableObject {
                 return source
             }
             
-            // 调用 IH5Player API
+            // 调用 IPlayer API
             self.vzPlayer?.setSources(vzSources)
-            self.vzPlayer?.play()
+            self.vzPlayer?.Play()
             self.refreshH5State()
         }
     }
@@ -496,7 +496,7 @@ final class UniversalPlayerViewModel: ObservableObject {
         let source = VZPlayerSource(url: urlStr, type: type, isLive: true)
         
         vzPlayer?.setSources([source])
-        vzPlayer?.play()
+        vzPlayer?.Play()
         refreshH5State()
     }
     

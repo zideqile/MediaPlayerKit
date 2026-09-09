@@ -88,9 +88,21 @@ function showToast(msg) {
     setTimeout(() => toast.classList.remove('show'), 1800);
 }
 
-// ================= JSBridge 通信 =================
+// ================= 统一跨平台 JSBridge 通信 (对标 Android vzPlayerBridge) =================
+if (!window.vzPlayerBridge) {
+    window.vzPlayerBridge = {};
+}
+
 function sendCmd(method, paramsJson = '{}') {
-    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.vzPlayerBridge) {
+    // 1. Android 原生 @JavascriptInterface 注入对象优先适配
+    if (window.AndroidBridge && typeof window.AndroidBridge[method] === 'function') {
+        window.AndroidBridge[method](paramsJson);
+        log('H5➔Android', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
+    } else if (window.vzPlayerNative && typeof window.vzPlayerNative[method] === 'function') {
+        window.vzPlayerNative[method](paramsJson);
+        log('H5➔Android', `执行 <b>${method}</b> ${paramsJson !== '{}' ? paramsJson : ''}`);
+    } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.vzPlayerBridge) {
+        // 2. iOS WKWebView 拦截
         window.webkit.messageHandlers.vzPlayerBridge.postMessage({
             method: method,
             paramsJson: paramsJson
@@ -878,6 +890,14 @@ window.vzBridgeUpdateProperties = function(props) {
     }
 };
 
+window.vzPlayerBridge.onEvent = window.vzBridgeReceiveEvent;
+window.vzPlayerBridge.triggerEvent = window.vzBridgeReceiveEvent;
+window.vzPlayerBridge.onTimeUpdate = window.vzBridgeReceiveTimeUpdate;
+window.vzPlayerBridge.triggerTimeUpdate = window.vzBridgeReceiveTimeUpdate;
+window.vzPlayerBridge.onError = window.vzBridgeReceiveError;
+window.vzPlayerBridge.triggerError = window.vzBridgeReceiveError;
+window.vzPlayerBridge.onPropertiesChanged = window.vzBridgeUpdateProperties;
+
 function formatTime(sec) {
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
@@ -890,3 +910,4 @@ document.addEventListener('DOMContentLoaded', () => {
     sendCmd('getProperties');
     sendCmd('refreshStreams');
 });
+
