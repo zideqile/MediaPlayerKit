@@ -50,6 +50,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     private var attemptHandled = false
     private var terminalFailure = false
     private var wantsToPlay = true
+    private let diagnostics = PlaybackDiagnostics()
     /// Cleared by a new explicit source list or source switch, retained across automatic recovery.
     public private(set) var failureHistory: [PlaybackAttemptFailure] = []
     
@@ -100,6 +101,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func Play() {
         guard !isDestroyed else { return }
         wantsToPlay = true
+        diagnostics.command("play player")
         guard !sources.isEmpty else {
             let err = NSError(domain: "MultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "sources is empty"])
             controller?.delegate = nil
@@ -121,12 +123,14 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func Pause() {
+        diagnostics.command("pause player")
         wantsToPlay = false
         controller?.config.autoPlay = false
         controller?.pause()
     }
     
     public func Resume() {
+        diagnostics.command("resume player")
         wantsToPlay = true
         controller?.config.autoPlay = true
         controller?.play()
@@ -139,11 +143,13 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         controller?.stop()
         controller = nil
         eventListeners.removeAll()
+        diagnostics.finish()
     }
     
     // MARK: - IPlayer: 进度与状态
     
     public func Seek(_ seconds: Int64) {
+        diagnostics.command("seek to \(seconds)")
         controller?.seek(to: TimeInterval(seconds))
     }
     
@@ -254,6 +260,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
             self.engineOrder = [.avPlayer, .mePlayer]
         }
         self.needsReloadSource = true
+        diagnostics.sources(sources)
     }
     
     public func setConfig(_ config: VPlayerConfig) {
@@ -336,6 +343,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         controller = nil
         playerView.detachRenderView()
         guard let source = currentSource else { return }
+        diagnostics.begin(source: source, engine: engineOrder[currentEngineIndex])
         guard let url = URL(string: source.url), let scheme = url.scheme, !scheme.isEmpty else {
             handleRetry(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorBadURL,
                 userInfo: [NSLocalizedDescriptionKey: "Invalid source URL"]))
@@ -381,6 +389,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
             sourceURL: currentSource?.url ?? "", engine: engineOrder[currentEngineIndex],
             category: category, error: error, action: action)
         failureHistory.append(failure)
+        diagnostics.failed(failure)
         notifyListeners { $0.onPlayAttemptFailed?(failure) }
         guard generation == token, !isDestroyed else { return }
         if action == .stop {
@@ -410,6 +419,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     private func finishFailure(_ error: NSError) {
         guard !terminalFailure, !isDestroyed else { return }
         terminalFailure = true
+        diagnostics.terminal(error)
         attemptHandled = true
         let token = generation
         delegate?.multiSourcePlayer(self, stateDidChange: .error)
@@ -437,6 +447,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         currentEngineIndex = 0
         let targetSource = sources[currentSourceIndex]
         self.engineOrder = computeEngineOrder(for: targetSource)
+        diagnostics.command("switch source to index \(index)")
         let msg = "Switch to source [\(currentSourceIndex + 1)/\(sources.count)] (\(targetSource.tag))"
         delegate?.multiSourcePlayer(self, didWarnMessage: msg)
         guard generation == token, !isDestroyed else { return false }
@@ -452,6 +463,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
         // An engine error is an attempt failure, not yet a terminal player error.
         guard state != .error else { return }
+        diagnostics.state(state)
         let token = generation
         delegate?.multiSourcePlayer(self, stateDidChange: state)
         guard generation == token, !isDestroyed else { return }
@@ -461,6 +473,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func playerDidRenderFirstFrame(_ player: MediaPlayerController) {
         guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
         let token = generation
+        diagnostics.firstFrame(size: player.naturalSize)
         delegate?.multiSourcePlayer(self, didRenderFirstFrame: ())
         guard generation == token, !isDestroyed else { return }
         notifyListeners { $0.onFirstFrameRendered() }
@@ -482,6 +495,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func playerDidPlayToEndTime(_ player: MediaPlayerController) {
         guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
         let token = generation
+        diagnostics.command("player is eof")
         delegate?.multiSourcePlayerDidPlayToEnd(self)
         guard generation == token, !isDestroyed else { return }
         notifyListeners { $0.onPlayToEnd() }

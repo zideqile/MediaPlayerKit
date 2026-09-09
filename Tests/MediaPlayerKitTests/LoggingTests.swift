@@ -349,3 +349,87 @@ extension LoggingTests {
         first.destroy(); second.destroy()
     }
 }
+
+private final class DiagnosticsRecorder: Appender {
+    var messages: [String] = []
+    var values: [String: [Double]] = [:]
+    var source = ""
+    var finishes = 0
+    func append(level: LogLevel, tag: String, message: String, messageType: MessageType) { messages.append(message) }
+    func appendStatLog(level: LogLevel, tag: String, name: String, data: Double) { values[name, default: []].append(data) }
+    func onSourceChanged(srcUrl: String, srcType: String) { source = srcUrl }
+    func finish() { finishes += 1 }
+}
+extension LoggingTests {
+    func testPlaybackDiagnosticsTimingsAndFailureFields() {
+        let recorder = DiagnosticsRecorder()
+        Logger.configure { _ in [recorder] }
+        var time: TimeInterval = 10
+        let diagnostics = PlaybackDiagnostics(group: "test-player", clock: { time })
+        let source = PlayerSource(url: "https://example.com/live.m3u8", videoCodec: PlayerSource.CODEC_H265)
+        diagnostics.sources([source])
+        diagnostics.begin(source: source, engine: .mePlayer)
+        time = 10.25
+        diagnostics.firstFrame(size: CGSize(width: 100, height: 100))
+        diagnostics.firstFrame(size: .zero)
+        XCTAssertEqual(recorder.values["first_frame_time"], [250])
+        XCTAssertEqual(recorder.values["source_hls_hevc"], [1])
+        time = 11; diagnostics.state(.buffering)
+        time = 11.5; diagnostics.state(.buffering) // duplicate must not reset the start
+        time = 12; diagnostics.state(.playing)
+        XCTAssertEqual(recorder.values["ios_stall_episode_ms"], [1000])
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+        diagnostics.failed(PlaybackAttemptFailure(sourceIndex: 0, sourceURL: source.url, engine: .mePlayer,
+            category: .timeout, error: error, action: .nextEngine))
+        XCTAssertEqual(recorder.values["player_time"], [2000])
+        XCTAssertEqual(recorder.values["ios_player_ksmeplayer_error_code"], [Double(NSURLErrorTimedOut)])
+        XCTAssertNil(recorder.values["player_type"])
+        diagnostics.finish(); diagnostics.finish()
+        XCTAssertEqual(recorder.finishes, 1)
+    }
+    func testPlayerGroupsKeepSourcesSeparate() {
+        let first = DiagnosticsRecorder(), second = DiagnosticsRecorder()
+        Logger.configure { $0 == "first" ? [first] : [second] }
+        let a = PlaybackDiagnostics(group: "first"), b = PlaybackDiagnostics(group: "second")
+        a.begin(source: PlayerSource(url: "https://a.example/live"), engine: .avPlayer)
+        b.begin(source: PlayerSource(url: "https://b.example/live"), engine: .mePlayer)
+        XCTAssertEqual(first.source, "https://a.example/live")
+        XCTAssertEqual(second.source, "https://b.example/live")
+        a.finish()
+        XCTAssertEqual(first.finishes, 1)
+        XCTAssertEqual(second.finishes, 0)
+        b.command("still playing")
+        XCTAssertTrue(second.messages.contains("still playing"))
+        b.finish()
+    }
+    func testUploadDrainWaitsForInflightRequest() {
+        let uploader = ControlledUploader()
+        let task = StatisticsUploadTask(uploader: uploader)
+        task.upload(["index": 0])
+        let finished = expectation(description: "drained")
+        task.finish(timeout: 2) { finished.fulfill() }
+        task.upload(["index": 1]) // no new records after close starts
+        uploader.complete(true)
+        wait(for: [finished], timeout: 3)
+        XCTAssertEqual(uploader.indices, [0])
+    }
+    func testUploadDrainHasDeadline() {
+        let uploader = ControlledUploader()
+        let task = StatisticsUploadTask(uploader: uploader)
+        task.upload(["index": 0])
+        let finished = expectation(description: "drain timed out")
+        task.finish(timeout: 0.05) { finished.fulfill() }
+        wait(for: [finished], timeout: 2)
+        uploader.complete(false)
+        task.stop()
+    }
+    func testExternalAppenderConfiguredThroughInitOptions() throws {
+        let recorder = DiagnosticsRecorder()
+        let options = InitConfig(); options.appenders = []; options.externalAppenders = [recorder]
+        try Logger.initialize(config: VPlayerConfig(), initConfig: options)
+        Logger.logI("custom sink")
+        XCTAssertEqual(recorder.messages, ["custom sink"])
+        Logger.destroy()
+        XCTAssertEqual(recorder.finishes, 0) // caller owns external outputs
+    }
+}

@@ -122,6 +122,16 @@ public final class ESUploadAppender: Appender {
             flushBuffered(force: true); sourceURL = srcUrl; sourceType = srcType
         }
     }
+    public func finish() {
+        executor.sync {
+            guard !closed else { return }
+            timer?.cancel(); timer = nil
+            flushBuffered(force: true)
+            closed = true
+            // Keep this appender alive until drained or the deadline expires.
+            uploadTask.finish { [self] in destroy() }
+        }
+    }
     public func destroy() {
         executor.sync { closed = true; timer?.cancel(); timer = nil; messages.removeAll(); attached.removeAll(); statistics.removeAll(); uploadTask.stop() }
     }

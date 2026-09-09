@@ -70,12 +70,13 @@ public final class InternalLogger {
     }
 }
 
-/// Inert until explicitly configured. No SDK lifecycle invokes this facade.
+/// Configured by export.Init or explicitly by the host application.
 public enum Logger {
     private static let executor = LogExecutor()
     private static var loggers: [String: InternalLogger] = [:]
     private static var external: [Appender] = []
     private static var owned: [Appender] = []
+    private static var ownedByGroup: [String: [Appender]] = [:]
     private static var factory: ((String) -> [Appender])?
     private static var minimumLevel: LogLevel = .info
     private static var currentSource: (url: String, type: String)?
@@ -107,7 +108,7 @@ public enum Logger {
             } else { uploader = try OldESUploader(server: config.logServerConfig, env: config.env, transport: transport) }
         } else { uploader = nil }
         let file: FileAppender?
-        if enabled.contains("FileAppender"), let path = initConfig.fileAppenderPath {
+        if let path = initConfig.fileAppenderPath, !path.isEmpty {
             file = try FileAppender(fileURL: URL(fileURLWithPath: path))
         } else { file = nil }
         configure(level: level) { group in
@@ -117,12 +118,15 @@ public enum Logger {
             if let uploader = uploader { result.append(ESUploadAppender(context: context, logGroup: group, policy: policy, uploader: uploader)) }
             return result
         }
+        for appender in initConfig.externalAppenders { addAppender(appender) }
     }
     public static func getLogger(_ group: String = "default") -> InternalLogger {
         executor.sync {
             if let logger = loggers[group] { return logger }
             let logger = InternalLogger(logGroup: group, level: minimumLevel)
-            for appender in factory?(group) ?? [] {
+            let groupAppenders = factory?(group) ?? []
+            ownedByGroup[group] = groupAppenders
+            for appender in groupAppenders {
                 logger.addAppender(appender)
                 if !owned.contains(where: { $0 === appender }) { owned.append(appender) }
             }
@@ -130,6 +134,22 @@ public enum Logger {
             if let source = currentSource { logger.onSourceChanged(srcUrl: source.url, srcType: source.type) }
             loggers[group] = logger
             return logger
+        }
+    }
+    /// Releases only this group's owned outputs; shared/external appenders remain alive.
+    public static func releaseLogger(_ group: String) {
+        executor.sync {
+            guard let logger = loggers.removeValue(forKey: group) else { return }
+            logger.flushLog()
+            logger.destroy()
+            let candidates = ownedByGroup.removeValue(forKey: group) ?? []
+            for appender in candidates {
+                let shared = ownedByGroup.values.contains { $0.contains { $0 === appender } }
+                if !shared, owned.contains(where: { $0 === appender }) {
+                    owned.removeAll { $0 === appender }
+                    appender.finish()
+                }
+            }
         }
     }
     public static func addAppender(_ appender: Appender) {
@@ -156,7 +176,7 @@ public enum Logger {
         executor.sync {
             for logger in loggers.values { logger.destroy() }
             for appender in owned { appender.destroy() }
-            loggers.removeAll(); owned.removeAll(); external.removeAll(); factory = nil
+            loggers.removeAll(); owned.removeAll(); ownedByGroup.removeAll(); external.removeAll(); factory = nil
             currentSource = nil
         }
     }

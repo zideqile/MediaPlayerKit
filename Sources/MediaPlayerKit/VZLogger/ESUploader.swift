@@ -165,6 +165,8 @@ public final class StatisticsUploadTask {
     private var busy = false
     private var closed = false
     private var retry = 0
+    private var draining = false
+    private var drainCompletion: (@Sendable () -> Void)?
     private var dropped = 0
     public var innerDrop: Int { executor.sync { dropped } }
     public init(uploader: ESUploader, capacity: Int = 10) {
@@ -172,7 +174,7 @@ public final class StatisticsUploadTask {
     }
     public func upload(_ record: [String: Any]) {
         executor.sync {
-            guard !closed else { return }
+            guard !closed, !draining else { return }
             if records.count >= capacity { records.removeFirst(); dropped += 1 }
             records.append(record)
             sendNext()
@@ -187,7 +189,7 @@ public final class StatisticsUploadTask {
             self.executor.queue.async {
                 guard !self.closed else { return }
                 if success {
-                    self.retry = 0; self.busy = false; self.sendNext()
+                    self.retry = 0; self.busy = false; self.sendNext(); self.completeDrainIfReady()
                 } else {
                     if self.records.count >= self.capacity { self.records.removeLast(); self.dropped += 1 }
                     self.records.insert(record, at: 0)
@@ -199,6 +201,29 @@ public final class StatisticsUploadTask {
             }
         }
     }
+    /// Wait asynchronously for queued records, with a bounded shutdown deadline.
+    public func finish(timeout: TimeInterval = 5, completion: @escaping @Sendable () -> Void) {
+        executor.sync {
+            guard !draining else { return }
+            draining = true
+            drainCompletion = completion
+            if closed { completeDrain(); return }
+            completeDrainIfReady()
+            executor.queue.asyncAfter(deadline: .now() + max(0, timeout)) { [weak self] in
+                self?.completeDrain()
+            }
+        }
+    }
+    private func completeDrainIfReady() {
+        if draining && !busy && records.isEmpty { completeDrain() }
+    }
+    private func completeDrain() {
+        guard let completion = drainCompletion else { return }
+        drainCompletion = nil
+        closed = true
+        records.removeAll()
+        DispatchQueue.global(qos: .utility).async(execute: completion)
+    }
     /// Stops retries and drops pending records. An already submitted request may finish.
-    public func stop() { executor.sync { closed = true; records.removeAll() } }
+    public func stop() { executor.sync { closed = true; records.removeAll(); completeDrain() } }
 }
