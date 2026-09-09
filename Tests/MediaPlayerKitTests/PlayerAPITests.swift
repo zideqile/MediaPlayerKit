@@ -128,7 +128,7 @@ final class PlayerAPITests: XCTestCase {
         
         // 4. Seek & Time
         player.Seek(120)
-        XCTAssertEqual(player.GetCurrentTime(), 0) // initial idle
+        XCTAssertEqual(player.GetCurrentTime(), 120)
         XCTAssertEqual(player.GetDuration(), 0)
         
         // 5. Buffer & Source
