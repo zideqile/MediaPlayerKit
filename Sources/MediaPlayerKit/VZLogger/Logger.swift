@@ -12,6 +12,7 @@ public final class InternalLogger {
         executor.sync {
             guard !closed, !appenders.contains(where: { $0 === appender }) else { return }
             appenders.append(appender)
+            if let merger = appender.makeLogMerger() { mergers[ObjectIdentifier(appender)] = merger }
         }
     }
     public func removeAppender(_ appender: Appender) {
@@ -38,11 +39,8 @@ public final class InternalLogger {
         executor.sync {
             guard !closed, level.rawValue >= self.level.rawValue else { return }
             for appender in appenders {
-                // Console/file output remains immediate, matching Android.
-                if let uploadAppender = appender as? ESUploadAppender {
-                    let key = ObjectIdentifier(appender)
-                    if mergers[key] == nil { mergers[key] = LogMerger(delayMs: uploadAppender.mergeDelayMs, appender: appender) }
-                    mergers[key]?.pushLog(level: level, tag: tag, messageType: messageType, similarity: similarity, format: format, args: args)
+                if let merger = mergers[ObjectIdentifier(appender)] {
+                    merger.pushLog(level: level, tag: tag, messageType: messageType, similarity: similarity, format: format, args: args)
                 } else {
                     appender.append(level: level, tag: tag, message: LogMerger.formatBraces(format, args), messageType: messageType)
                 }
@@ -97,6 +95,7 @@ public enum Logger {
         let level = LogLevel(rawValue: min(4, max(0, config.logConfig.level))) ?? .info
         var policy = LogUploadPolicy()
         policy.uploadIntervalSeconds = Double(config.logConfig.uploadIntervalSeconds)
+        policy.maxAttachedMessageCount = max(0, config.runtimeStateCollect.stateCountLimit)
         let app = config.appVZPlayerConfigJsonString.data(using: .utf8)
             .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
         policy.statLogIsAttachedToLog = app["statLogIsAttachedToLog"] as? Bool ?? false

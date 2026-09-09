@@ -2,11 +2,13 @@ import Foundation
 
 public struct LogUploadPolicy {
     public var uploadIntervalSeconds: TimeInterval = 30
-    public var maxAttachedMessageCount = 30
+    public var maxAttachedMessageCount = 10
     public var maxBufferedMessages = 1000
     public var maxMessageBytes = 8192
     public var maxChunkBytes = 10000
     public var maxStatisticNames = 100
+    /// nil preserves all samples until upload, as Android does. Optional memory cap.
+    public var maxStatisticSamplesPerName: Int? = nil
     public var statsMinUploadIntervalMs: TimeInterval = 180000
     public var statLogIsAttachedToLog = false
     public init() {}
@@ -35,7 +37,7 @@ public final class ESUploadAppender: Appender {
         let timer = DispatchSource.makeTimerSource(queue: executor.queue)
         let interval = policy.uploadIntervalSeconds.isFinite ? max(0.1, policy.uploadIntervalSeconds) : 30
         timer.schedule(deadline: .now() + interval, repeating: interval)
-        timer.setEventHandler { [weak self] in self?.flushBuffered(force: false) }
+        timer.setEventHandler { [weak self] in self?.flushIfNeeded() }
         self.timer = timer; timer.resume()
     }
     public func append(level: LogLevel, tag: String, message: String, messageType: MessageType) {
@@ -58,7 +60,14 @@ public final class ESUploadAppender: Appender {
             guard statistics[name] != nil || statistics.count < max(1, policy.maxStatisticNames) else { dropped += 1; return }
             if statisticsStarted == nil { statisticsStarted = Date() }
             statistics[name, default: []].append(data)
-            if statistics[name]!.count > 30 { statistics[name]!.removeFirst() }
+            if let limit = policy.maxStatisticSamplesPerName, var samples = statistics[name] {
+                let excess = samples.count - max(1, limit)
+                if excess > 0 {
+                    samples.removeFirst(excess)
+                    statistics[name] = samples
+                    dropped += excess
+                }
+            }
         }
     }
     private func record(_ chunk: [(LogLevel, String)]) -> [String: Any] {
@@ -81,7 +90,15 @@ public final class ESUploadAppender: Appender {
     private func flushBuffered(force: Bool) {
         guard !closed else { return }
         if messages.isEmpty && !force {
-            if policy.statLogIsAttachedToLog { return }
+            if policy.statLogIsAttachedToLog {
+                // Android only trims to 30 when statistics wait for ordinary logs.
+                for name in Array(statistics.keys) {
+                    if let samples = statistics[name] {
+                        statistics[name] = Array(samples.suffix(30))
+                    }
+                }
+                return
+            }
             if let started = statisticsStarted, Date().timeIntervalSince(started) * 1000 < policy.statsMinUploadIntervalMs { return }
         }
         while !messages.isEmpty || !statistics.isEmpty || (force && !attached.isEmpty) {
@@ -95,6 +112,9 @@ public final class ESUploadAppender: Appender {
             attached.removeAll(); statistics.removeAll(); statisticsStarted = nil
         }
     }
+    public func makeLogMerger() -> LogMerger? { LogMerger(delayMs: mergeDelayMs, appender: self) }
+    // Shared by the timer and deterministic policy tests.
+    func flushIfNeeded() { executor.sync { flushBuffered(force: false) } }
     public func flush() { executor.sync { flushBuffered(force: true) } }
     public func onSourceChanged(srcUrl: String, srcType: String) {
         executor.sync {
