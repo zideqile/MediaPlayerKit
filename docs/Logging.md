@@ -1,6 +1,6 @@
 # 日志模块对标说明
 
-实现位置：`Sources/MediaPlayerKit/Logging`。参考 Android `vzlogger/src/main/java/vzlogger`。
+实现位置：`Sources/MediaPlayerKit/VZLogger`。参考 Android `vzlogger/src/main/java/vzlogger`。
 本模块尚未接入 `export.Init`、播放器、引擎、H5 Bridge、QoS 或 Demo。必须由使用方显式启用。
 
 ## 对标范围
@@ -56,5 +56,5 @@ Logger.flushLog()
 ## 验证
 
 `Tests/MediaPlayerKitTests/LoggingTests.swift` 使用假 transport/uploader，不访问真实服务器。
-Linux 可通过独立临时 Swift Package 编译 Logging 文件，并仅在临时配置副本移除 `@objc` 属性运行测试；正式源码不做该转换。
+Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临时配置副本移除 `@objc` 属性运行测试；正式源码不做该转换。
 完整 Apple 平台编译与真实日志服务联调仍需 Xcode/设备环境。
