@@ -170,3 +170,45 @@ jobs:
         with:
           name: MediaPlayerKitDemo-iOS
           path: build/MediaPlayerKitDemo-iOS.ipa
+
+      # 5. 自动上传 IPA 到远程分发服务器 (通过 GitHub Actions 变量/密钥配置地址)
+      - name: Upload IPA to Remote Distribution Server
+        env:
+          IOS_APP_UPLOAD_URL: ${{ vars.IOS_APP_UPLOAD_URL }}
+          IPA_UPLOAD_URL: ${{ vars.IPA_UPLOAD_URL }}
+          UPLOAD_URL: ${{ vars.UPLOAD_URL }}
+          APP_UPLOAD_URL: ${{ vars.APP_UPLOAD_URL }}
+          SECRET_IOS_APP_UPLOAD_URL: ${{ secrets.IOS_APP_UPLOAD_URL }}
+          SECRET_IPA_UPLOAD_URL: ${{ secrets.IPA_UPLOAD_URL }}
+          SECRET_UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
+          SECRET_APP_UPLOAD_URL: ${{ secrets.APP_UPLOAD_URL }}
+        run: |
+          TARGET_URL="${IOS_APP_UPLOAD_URL:-${IPA_UPLOAD_URL:-${UPLOAD_URL:-${APP_UPLOAD_URL:-${SECRET_IOS_APP_UPLOAD_URL:-${SECRET_IPA_UPLOAD_URL:-${SECRET_UPLOAD_URL:-${SECRET_APP_UPLOAD_URL}}}}}}}}"
+          if [ -z "$TARGET_URL" ]; then
+            echo "⚠️ [警告] 未检测到远程分发上传地址变量！"
+            echo "请前往 GitHub 仓库 -> Settings -> Secrets and variables -> Actions"
+            echo "在 Variables 或 Secrets 中添加变量名: IOS_APP_UPLOAD_URL"
+            echo "由于未配置该变量，本次跳过自动上传步骤。"
+            exit 0
+          fi
+
+          if [ ! -f "build/MediaPlayerKitDemo-iOS.ipa" ]; then
+            echo "::error::未找到构建产物 build/MediaPlayerKitDemo-iOS.ipa，无法上传！"
+            exit 1
+          fi
+
+          echo "🚀 开始上传 MediaPlayerKitDemo-iOS.ipa 到分发服务器..."
+          HTTP_RESPONSE=$(curl -s --connect-timeout 30 --retry 3 --retry-delay 2 -w "\n%{http_code}" -X POST "$TARGET_URL" -F "file=@build/MediaPlayerKitDemo-iOS.ipa")
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+
+          echo "服务器响应内容: $RESPONSE_BODY"
+          echo "HTTP 响应状态码: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "🎉 IPA 文件上传成功！"
+          else
+            echo "::error::IPA 文件上传失败，HTTP 状态码: $HTTP_STATUS"
+            exit 1
+          fi
+
