@@ -1,204 +1,58 @@
 import Foundation
 import CoreGraphics
 
-/// 对标 Android vzplayer 的 IPlayer 核心实现 (1:1 严格对齐)
-@objc public final class VZH5Player: NSObject, IPlayer, VZMultiSourcePlayerDelegate {
+/// 对标 Android vzplayer 的 H5Player 门面实现 (实现 IH5Player 协议，持有并驱动内部 IPlayer)
+@objc public final class VZH5Player: NSObject, IH5Player, IPlayer, VZPlayerEventListener {
     private let multiPlayer: VZMultiSourcePlayer
-    private var eventListeners: [VZH5EventListener] = []
+    private var h5EventListeners: [VZH5EventListener] = []
     private var timeUpdateTimer: Timer?
     private var isPlayingState: Bool = false
     
     @objc public init(playerView: MediaPlayerView, config: VZPlayerConfig = VZPlayerConfig()) {
         self.multiPlayer = VZMultiSourcePlayer(playerView: playerView, config: config)
         super.init()
-        self.multiPlayer.delegate = self
+        self.multiPlayer.AddEventListener(self)
     }
     
-    // MARK: - 事件监听器注册 (1:1 对标 Android IPlayer)
-    
-    @objc public func AddEventListener(_ listener: VZH5EventListener?) {
-        executeOnMainThread {
-            guard let l = listener else { return }
-            if !self.eventListeners.contains(where: { $0 === l }) {
-                self.eventListeners.append(l)
-            }
-        }
-    }
-    
-    @objc public func RemoveEventListener(_ listener: VZH5EventListener?) {
-        executeOnMainThread {
-            guard let l = listener else { return }
-            self.eventListeners.removeAll(where: { $0 === l })
-        }
-    }
+    // MARK: - IH5Player: 事件监听器注册 (1:1 对标 Android SetOnH5EventListener)
     
     @objc public func SetOnH5EventListener(_ listener: VZH5EventListener?) {
         executeOnMainThread {
-            self.eventListeners.removeAll()
+            self.h5EventListeners.removeAll()
             if let l = listener {
-                self.eventListeners.append(l)
+                self.h5EventListeners.append(l)
             }
         }
     }
     
-    // MARK: - 基础播放控制 (1:1 对标 Android IPlayer.java)
+    // MARK: - IH5Player: 基础播放控制 (对标 Android IH5Player.java)
     
-    @objc public func Play(_ sources: [VZPlayerSource]) -> Bool {
-        return executeOnMainThreadSync {
-            self.multiPlayer.setSources(sources)
-            self.multiPlayer.play()
-            self.startTimeUpdateTimer()
-            return true
-        }
-    }
-    
-    @objc public func Play() {
+    @objc public func play() {
         executeOnMainThread {
-            self.multiPlayer.play()
+            self.multiPlayer.Play()
             self.startTimeUpdateTimer()
         }
     }
     
-    @objc public func Pause() {
+    @objc public func pause() {
         executeOnMainThread {
-            self.multiPlayer.pause()
+            self.multiPlayer.Pause()
             self.stopTimeUpdateTimer()
         }
     }
     
-    @objc public func Resume() {
+    @objc public func resume() {
         executeOnMainThread {
-            self.multiPlayer.resume()
+            self.multiPlayer.Resume()
             self.startTimeUpdateTimer()
         }
     }
     
-    @objc public func Destroy() {
+    @objc public func destroy() {
         executeOnMainThread {
             self.stopTimeUpdateTimer()
-            self.multiPlayer.destroy()
-            self.eventListeners.removeAll()
-        }
-    }
-    
-    // MARK: - 进度控制与状态读取 (1:1 对标 Android IPlayer.java)
-    
-    @objc public func Seek(_ seconds: Int64) {
-        executeOnMainThread {
-            self.multiPlayer.seek(to: TimeInterval(seconds))
-        }
-    }
-    
-    @objc public func GetCurrentTime() -> Int64 {
-        return executeOnMainThreadSync {
-            return Int64(self.multiPlayer.currentTime)
-        }
-    }
-    
-    @objc public func GetDuration() -> Int64 {
-        return executeOnMainThreadSync {
-            return Int64(self.multiPlayer.duration)
-        }
-    }
-    
-    @objc public func IsPaused() -> Bool {
-        return executeOnMainThreadSync {
-            return self.multiPlayer.isPaused
-        }
-    }
-    
-    // MARK: - 音量与静音 (1:1 对标 Android IPlayer.java)
-    
-    @objc public func GetVolume() -> Float {
-        return executeOnMainThreadSync {
-            return self.multiPlayer.getVolume()
-        }
-    }
-    
-    @objc public func SetVolume(_ volume: Float) {
-        executeOnMainThread {
-            self.multiPlayer.setVolume(volume)
-        }
-    }
-    
-    @objc public func IsMuted() -> Bool {
-        return executeOnMainThreadSync {
-            return self.multiPlayer.isMuted()
-        }
-    }
-    
-    @objc public func SetMuted(_ isMuted: Bool) {
-        executeOnMainThread {
-            self.multiPlayer.setMuted(isMuted)
-        }
-    }
-    
-    // MARK: - 画面尺寸与循环 (1:1 对标 Android IPlayer.java)
-    
-    @objc public func GetWidth() -> Int {
-        return executeOnMainThreadSync {
-            return Int(self.multiPlayer.naturalSize.width)
-        }
-    }
-    
-    @objc public func GetHeight() -> Int {
-        return executeOnMainThreadSync {
-            return Int(self.multiPlayer.naturalSize.height)
-        }
-    }
-    
-    @objc public func IsLoop() -> Bool {
-        return executeOnMainThreadSync {
-            return self.multiPlayer.isLoop()
-        }
-    }
-    
-    @objc public func SetLoop(_ loop: Bool) {
-        executeOnMainThread {
-            self.multiPlayer.setLoop(loop)
-        }
-    }
-    
-    // MARK: - 播放倍速与缓冲水位 (1:1 对标 Android IPlayer.java)
-    
-    @objc public func GetSpeed() -> Float {
-        return executeOnMainThreadSync {
-            return self.multiPlayer.getSpeed()
-        }
-    }
-    
-    @objc public func SetSpeed(_ speed: Float) {
-        executeOnMainThread {
-            self.multiPlayer.setSpeed(speed)
-        }
-    }
-    
-    @objc public func GetBuffered() -> VZBufferRange {
-        return executeOnMainThreadSync {
-            let start = Int(self.multiPlayer.currentTime)
-            let end = start + Int(self.multiPlayer.bufferedDuration)
-            return VZBufferRange(length: 1, start: start, end: end)
-        }
-    }
-    
-    // MARK: - 多源调度与自定义事件 (1:1 对标 Android IPlayer.java)
-    
-    @objc public func SendEvent(_ eventName: String, paramsJson: String) {
-        executeOnMainThread {
-            if eventName == "NEXT_SOURCE" {
-                _ = self.multiPlayer.switchToNextSource()
-            } else if eventName == "SWITCH_SOURCE" {
-                if let dict = self.parseJSON(paramsJson),
-                   let idx = dict["index"] as? Int ?? (dict["sourceIndex"] as? Int) {
-                    _ = self.multiPlayer.switchToSource(index: idx)
-                }
-            }
-        }
-    }
-    
-    @objc public func getCurrentSource() -> VZPlayerSource? {
-        return executeOnMainThreadSync {
-            return self.multiPlayer.currentSource
+            self.multiPlayer.Destroy()
+            self.h5EventListeners.removeAll()
         }
     }
     
@@ -214,66 +68,79 @@ import CoreGraphics
         }
     }
     
+    @objc public func SendEvent(_ eventName: String, _ paramsJson: String) {
+        executeOnMainThread {
+            if eventName == "NEXT_SOURCE" {
+                _ = self.multiPlayer.switchToNextSource()
+            } else if eventName == "SWITCH_SOURCE" {
+                if let dict = self.parseJSON(paramsJson),
+                   let idx = dict["index"] as? Int ?? (dict["sourceIndex"] as? Int) {
+                    _ = self.multiPlayer.switchToSource(index: idx)
+                }
+            }
+        }
+    }
+    
     @objc public func switchSource(index: Int) -> Bool {
         return executeOnMainThreadSync {
             return self.multiPlayer.switchToSource(index: index)
         }
     }
     
-    // MARK: - H5 风格属性 Getters / Setters (JSON 格式，对标 Android @JavascriptInterface)
+    // MARK: - IH5Player: H5 风格属性 Getters / Setters (JSON 格式，对标 Android @JavascriptInterface)
     
     @objc public func get_currentTime() -> String {
         return executeOnMainThreadSync {
-            let pos = self.GetCurrentTime()
+            let pos = self.multiPlayer.GetCurrentTime()
             return self.toJSON(["currentTime": pos])
         }
     }
     
-    @objc public func set_currentTime(_ currentTimeJson: String) -> Bool {
+    @objc public func set_currentTime(_ currentTime: String) -> Bool {
         return executeOnMainThreadSync {
-            guard let dict = self.parseJSON(currentTimeJson),
+            guard let dict = self.parseJSON(currentTime),
                   let time = dict["currentTime"] as? Double ?? (dict["currentTime"] as? Int).map(Double.init) else {
                 return false
             }
-            self.multiPlayer.seek(to: time)
+            self.multiPlayer.Seek(Int64(time))
             return true
         }
     }
     
     @objc public func get_duration() -> String {
         return executeOnMainThreadSync {
-            let dur = self.GetDuration()
+            let dur = self.multiPlayer.GetDuration()
             return self.toJSON(["duration": dur])
         }
     }
     
     @objc public func get_pause() -> String {
         return executeOnMainThreadSync {
-            return self.toJSON(["pause": self.IsPaused()])
+            return self.toJSON(["pause": self.multiPlayer.IsPaused()])
         }
     }
     
     @objc public func get_volume() -> String {
         return executeOnMainThreadSync {
-            let vol = Double(String(format: "%.2f", self.GetVolume())) ?? Double(self.GetVolume())
+            let vol = Double(String(format: "%.2f", self.multiPlayer.GetVolume())) ?? Double(self.multiPlayer.GetVolume())
             return self.toJSON(["volume": vol])
         }
     }
     
-    @objc public func set_volume(_ volumeJson: String) -> Bool {
+    @objc public func set_volume(_ volume: String) -> Bool {
         return executeOnMainThreadSync {
-            guard let dict = self.parseJSON(volumeJson),
+            guard let dict = self.parseJSON(volume),
                   let vol = dict["volume"] as? Double ?? (dict["volume"] as? Float).map(Double.init) else {
                 return false
             }
-            self.SetVolume(Float(vol))
+            self.multiPlayer.SetVolume(Float(vol))
             return true
         }
     }
     
     @objc public func get_muted() -> String {
         return executeOnMainThreadSync {
-            return self.toJSON(["muted": self.IsMuted()])
+            return self.toJSON(["muted": self.multiPlayer.IsMuted()])
         }
     }
     
@@ -283,26 +150,26 @@ import CoreGraphics
                   let muted = dict["muted"] as? Bool else {
                 return false
             }
-            self.SetMuted(muted)
+            self.multiPlayer.SetMuted(muted)
             return true
         }
     }
     
     @objc public func get_videoWidth() -> String {
         return executeOnMainThreadSync {
-            return self.toJSON(["videoWidth": self.GetWidth()])
+            return self.toJSON(["videoWidth": self.multiPlayer.GetWidth()])
         }
     }
     
     @objc public func get_videoHeight() -> String {
         return executeOnMainThreadSync {
-            return self.toJSON(["videoHeight": self.GetHeight()])
+            return self.toJSON(["videoHeight": self.multiPlayer.GetHeight()])
         }
     }
     
     @objc public func get_loop() -> String {
         return executeOnMainThreadSync {
-            return self.toJSON(["loop": self.IsLoop()])
+            return self.toJSON(["loop": self.multiPlayer.IsLoop()])
         }
     }
     
@@ -312,14 +179,14 @@ import CoreGraphics
                   let loop = dict["loop"] as? Bool else {
                 return false
             }
-            self.SetLoop(loop)
+            self.multiPlayer.SetLoop(loop)
             return true
         }
     }
     
     @objc public func get_speed() -> String {
         return executeOnMainThreadSync {
-            let speed = Double(String(format: "%.2f", self.GetSpeed())) ?? Double(self.GetSpeed())
+            let speed = Double(String(format: "%.2f", self.multiPlayer.GetSpeed())) ?? Double(self.multiPlayer.GetSpeed())
             return self.toJSON(["speed": speed])
         }
     }
@@ -330,14 +197,14 @@ import CoreGraphics
                   let speed = dict["speed"] as? Double ?? (dict["speed"] as? Float).map(Double.init) else {
                 return false
             }
-            self.SetSpeed(Float(speed))
+            self.multiPlayer.SetSpeed(Float(speed))
             return true
         }
     }
     
     @objc public func get_buffered() -> String {
         return executeOnMainThreadSync {
-            let range = self.GetBuffered()
+            let range = self.multiPlayer.GetBuffered()
             return self.toJSON([
                 "length": range.length,
                 "start": range.start,
@@ -348,11 +215,104 @@ import CoreGraphics
     
     @objc public func get_currentsource() -> String {
         return executeOnMainThreadSync {
-            guard let source = self.getCurrentSource() else {
+            guard let source = self.multiPlayer.getCurrentSource() else {
                 return "{}"
             }
             return source.toJSONString()
         }
+    }
+    
+    // MARK: - IPlayer: 原生强类型协议透传 (方便 Native 开发者直接使用)
+    
+    @objc public func AddEventListener(_ listener: VZPlayerEventListener?) {
+        multiPlayer.AddEventListener(listener)
+    }
+    
+    @objc public func RemoveEventListener(_ listener: VZPlayerEventListener?) {
+        multiPlayer.RemoveEventListener(listener)
+    }
+    
+    @objc public func Play(_ sources: [VZPlayerSource]) -> Bool {
+        return executeOnMainThreadSync {
+            return self.multiPlayer.Play(sources)
+        }
+    }
+    
+    @objc public func Play() { play() }
+    @objc public func Pause() { pause() }
+    @objc public func Resume() { resume() }
+    @objc public func Destroy() { destroy() }
+    
+    @objc public func Seek(_ seconds: Int64) {
+        executeOnMainThread {
+            self.multiPlayer.Seek(seconds)
+        }
+    }
+    
+    @objc public func GetCurrentTime() -> Int64 {
+        return executeOnMainThreadSync { self.multiPlayer.GetCurrentTime() }
+    }
+    
+    @objc public func GetDuration() -> Int64 {
+        return executeOnMainThreadSync { self.multiPlayer.GetDuration() }
+    }
+    
+    @objc public func IsPaused() -> Bool {
+        return executeOnMainThreadSync { self.multiPlayer.IsPaused() }
+    }
+    
+    @objc public func GetVolume() -> Float {
+        return executeOnMainThreadSync { self.multiPlayer.GetVolume() }
+    }
+    
+    @objc public func SetVolume(_ volume: Float) {
+        executeOnMainThread { self.multiPlayer.SetVolume(volume) }
+    }
+    
+    @objc public func IsMuted() -> Bool {
+        return executeOnMainThreadSync { self.multiPlayer.IsMuted() }
+    }
+    
+    @objc public func SetMuted(_ isMuted: Bool) {
+        executeOnMainThread { self.multiPlayer.SetMuted(isMuted) }
+    }
+    
+    @objc public func GetWidth() -> Int {
+        return executeOnMainThreadSync { self.multiPlayer.GetWidth() }
+    }
+    
+    @objc public func GetHeight() -> Int {
+        return executeOnMainThreadSync { self.multiPlayer.GetHeight() }
+    }
+    
+    @objc public func IsLoop() -> Bool {
+        return executeOnMainThreadSync { self.multiPlayer.IsLoop() }
+    }
+    
+    @objc public func SetLoop(_ loop: Bool) {
+        executeOnMainThread { self.multiPlayer.SetLoop(loop) }
+    }
+    
+    @objc public func GetSpeed() -> Float {
+        return executeOnMainThreadSync { self.multiPlayer.GetSpeed() }
+    }
+    
+    @objc public func SetSpeed(_ speed: Float) {
+        executeOnMainThread { self.multiPlayer.SetSpeed(speed) }
+    }
+    
+    @objc public func GetBuffered() -> VZBufferRange {
+        return executeOnMainThreadSync { self.multiPlayer.GetBuffered() }
+    }
+    
+    @objc public func SendEvent(_ eventName: String, params: [String: Any]?) {
+        executeOnMainThread {
+            self.multiPlayer.SendEvent(eventName, params: params)
+        }
+    }
+    
+    @objc public func getCurrentSource() -> VZPlayerSource? {
+        return executeOnMainThreadSync { self.multiPlayer.getCurrentSource() }
     }
     
     // MARK: - 内部定时器与事件心跳
@@ -361,8 +321,8 @@ import CoreGraphics
         stopTimeUpdateTimer()
         timeUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            let pos = self.GetCurrentTime()
-            for listener in self.eventListeners {
+            let pos = self.multiPlayer.GetCurrentTime()
+            for listener in self.h5EventListeners {
                 listener.onTimeUpdate(pos)
             }
         }
@@ -373,30 +333,30 @@ import CoreGraphics
         timeUpdateTimer = nil
     }
     
-    // MARK: - VZMultiSourcePlayerDelegate 代理回调
+    // MARK: - VZPlayerEventListener (监听内部 IPlayer 状态并转换为 W3C H5 标准事件)
     
-    public func multiSourcePlayer(_ player: VZMultiSourcePlayer, stateDidChange state: PlayerState) {
+    public func onStateChanged(state: PlayerState) {
         executeOnMainThread {
             switch state {
             case .idle, .stopped:
                 break
             case .preparing:
-                self.notifyEvent("play")
+                self.notifyH5Event("play")
             case .readyToPlay:
-                self.notifyEvent("canplaythrough")
+                self.notifyH5Event("canplaythrough")
             case .playing:
                 self.isPlayingState = true
-                self.notifyEvent("playing")
+                self.notifyH5Event("playing")
                 self.startTimeUpdateTimer()
             case .paused:
                 self.isPlayingState = false
-                self.notifyEvent("pause")
+                self.notifyH5Event("pause")
                 self.stopTimeUpdateTimer()
             case .buffering:
-                self.notifyEvent("waiting")
+                self.notifyH5Event("waiting")
             case .completed:
                 self.isPlayingState = false
-                self.notifyEvent("ended")
+                self.notifyH5Event("ended")
                 self.stopTimeUpdateTimer()
             case .failed:
                 self.isPlayingState = false
@@ -405,44 +365,44 @@ import CoreGraphics
         }
     }
     
-    public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didRenderFirstFrame: Void) {
+    public func onFirstFrameRendered() {
         executeOnMainThread {
-            self.notifyEvent("playing")
+            self.notifyH5Event("playing")
         }
     }
     
-    public func multiSourcePlayer(_ player: VZMultiSourcePlayer, currentTime: TimeInterval, totalDuration: TimeInterval) {
+    public func onTimeUpdate(currentTime: Int64, totalDuration: Int64) {
         // 心跳由定时器统一驱动
     }
     
-    public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didOccurError error: NSError) {
+    public func onError(code: Int, errMsg: String) {
         executeOnMainThread {
-            for listener in self.eventListeners {
-                listener.onError(error.code, errMsg: error.localizedDescription)
+            for listener in self.h5EventListeners {
+                listener.onError(code, errMsg: errMsg)
             }
         }
     }
     
-    public func multiSourcePlayerDidPlayToEnd(_ player: VZMultiSourcePlayer) {
+    public func onPlayToEnd() {
         executeOnMainThread {
-            self.notifyEvent("ended")
+            self.notifyH5Event("ended")
         }
     }
     
-    public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didSwitchToSource source: VZPlayerSource) {
+    public func onSourceSwitched(source: VZPlayerSource) {
         executeOnMainThread {
-            self.notifyEvent("playing")
+            self.notifyH5Event("playing")
         }
     }
     
-    public func multiSourcePlayer(_ player: VZMultiSourcePlayer, didWarnMessage msg: String) {
+    public func onWarnMessage(msg: String) {
         executeOnMainThread {
-            self.notifyEvent("PlayerWARN")
+            self.notifyH5Event("PlayerWARN")
         }
     }
     
-    private func notifyEvent(_ name: String) {
-        for listener in self.eventListeners {
+    private func notifyH5Event(_ name: String) {
+        for listener in self.h5EventListeners {
             listener.onEvent(name)
         }
     }

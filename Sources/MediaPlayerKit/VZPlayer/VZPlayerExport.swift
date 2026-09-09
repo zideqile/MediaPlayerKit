@@ -1,6 +1,6 @@
 import Foundation
 
-/// 播放器全局导出与入口类 (对标 Android vzplayer 的 xyz.doikki.vzplayer.export)
+/// 播放器全局导出与入口类 (1:1 严格对标 Android vzplayer 的 xyz.doikki.vzplayer.export)
 @objc(VZPlayerExport)
 public final class VZPlayerExport: NSObject {
     private static var playerConfig = VZPlayerConfig()
@@ -19,13 +19,13 @@ public final class VZPlayerExport: NSObject {
         self.initConfig = initConfig
     }
     
-    /// 创建 VZPlayer 实例，返回 IPlayer 统一操作对象 (对标 export.CreateVZPlayer())
-    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IPlayer {
+    /// 创建 VZPlayer 实例，返回 IH5Player 统一门面操作对象 (对标 Android export.CreateVZPlayer())
+    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IH5Player {
         let player = VZH5Player(playerView: playerView, config: playerConfig)
         return player
     }
     
-    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IPlayer {
+    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IH5Player {
         return CreateVZPlayer(playerView)
     }
 }
@@ -45,11 +45,11 @@ public final class export: NSObject {
         VZPlayerExport.Init(initConfig: initConfig, configJson: configJson)
     }
     
-    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IPlayer {
+    @objc public static func CreateVZPlayer(_ playerView: MediaPlayerView) -> IH5Player {
         return VZPlayerExport.CreateVZPlayer(playerView)
     }
     
-    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IPlayer {
+    @objc public static func CreateVZPlayer(playerView: MediaPlayerView) -> IH5Player {
         return VZPlayerExport.CreateVZPlayer(playerView)
     }
 }

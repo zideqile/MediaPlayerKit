@@ -63,7 +63,7 @@ public struct HybridWKWebViewRepresentable: NSViewRepresentable {
 // MARK: - JSBridge 协调器与事件监听器 (全面支持节点在线流与流内多播放线路精准状态闭环)
 final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5EventListener {
     weak var webView: WKWebView?
-    weak var vzPlayer: IPlayer?
+    weak var vzPlayer: IH5Player?
     private let apiService = StreamAPIService.shared
     
     // 当前正在播放的流 ID
@@ -87,7 +87,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
     // 异步防竞争请求 Token
     private var activeFetchRequestId: UUID?
     
-    init(webView: WKWebView? = nil, vzPlayer: IPlayer?) {
+    init(webView: WKWebView? = nil, vzPlayer: IH5Player?) {
         self.webView = webView
         self.vzPlayer = vzPlayer
         super.init()
@@ -112,9 +112,9 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                 self.syncNodeStreamsToH5()
                 self.syncPropertiesToH5()
             case "play", "Play":
-                player.Play()
+                player.play()
             case "pause", "Pause":
-                player.Pause()
+                player.pause()
             case "setCurrentTime":
                 _ = player.set_currentTime(paramsJson)
             case "setSpeed":
@@ -164,7 +164,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                 // 切换到下一条线路
                 guard !self.currentStreamSources.isEmpty else { return }
                 self.currentPlaybackState = "preparing"
-                player.SendEvent("NEXT_SOURCE", paramsJson: "{}")
+                player.SendEvent("NEXT_SOURCE", "{}")
                 self.syncNodeStreamsToH5()
                 self.syncPropertiesToH5()
 
@@ -241,7 +241,7 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
                 self.currentSourceIndex = 0
                 self.streamFetchError = nil
                 player.setSources(vzSources)
-                player.Play()
+                player.play()
             } else {
                 self.currentStreamSources = []
                 self.currentSourceIndex = 0
@@ -405,14 +405,14 @@ final class VZPlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, VZH5E
 // MARK: - H5 混合播放持久化 ViewModel (彻底解决渲染视图与播放器生命周期脱节)
 final class HybridPlayerViewModel: ObservableObject {
     let playerView = MediaPlayerView()
-    @Published var vzPlayer: IPlayer?
+    @Published var vzPlayer: IH5Player?
     @Published var coordinator: VZPlayerJSBridgeCoordinator?
     @Published var webView: WKWebView?
     
     func setup(apiService: StreamAPIService) {
         guard vzPlayer == nil else { return }
         
-        // 1. 创建 IPlayer 实例
+        // 1. 创建 IH5Player 实例
         let player = export.CreateVZPlayer(playerView)
         self.vzPlayer = player
         

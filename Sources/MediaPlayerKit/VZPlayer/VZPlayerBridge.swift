@@ -3,22 +3,22 @@ import Foundation
 import WebKit
 #endif
 
-/// 标准化 WKWebView ➔ IPlayer 跨平台通信桥接协调器 (1:1 对标 Android vzPlayerBridge)
+/// 标准化 WKWebView ➔ IH5Player 跨平台通信桥接协调器 (1:1 对标 Android vzPlayerBridge)
 public final class VZPlayerBridge: NSObject, VZH5EventListener {
-    public weak var player: IPlayer?
+    public weak var player: IH5Player?
     #if canImport(WebKit)
     public weak var webView: WKWebView?
     #endif
     
     #if canImport(WebKit)
-    public init(player: IPlayer?, webView: WKWebView? = nil) {
+    public init(player: IH5Player?, webView: WKWebView? = nil) {
         self.player = player
         self.webView = webView
         super.init()
         self.player?.SetOnH5EventListener(self)
     }
     #else
-    public init(player: IPlayer?) {
+    public init(player: IH5Player?) {
         self.player = player
         super.init()
         self.player?.SetOnH5EventListener(self)
@@ -76,7 +76,7 @@ public final class VZPlayerBridge: NSObject, VZH5EventListener {
         #endif
     }
     
-    // MARK: - 处理来自 JS 的指令分发
+    // MARK: - 处理来自 JS 的指令分发 (对标 Android @JavascriptInterface)
     
     @discardableResult
     public func handleScriptMessage(method: String, paramsJson: String = "{}") -> String? {
@@ -84,22 +84,16 @@ public final class VZPlayerBridge: NSObject, VZH5EventListener {
         
         switch method {
         case "play", "Play":
-            player.Play()
+            player.play()
             return nil
         case "pause", "Pause":
-            player.Pause()
+            player.pause()
             return nil
         case "resume", "Resume":
-            player.Resume()
+            player.resume()
             return nil
         case "destroy", "Destroy":
-            player.Destroy()
-            return nil
-        case "seek", "Seek":
-            if let dict = parseJSON(paramsJson),
-               let sec = dict["seconds"] as? Int64 ?? (dict["currentTime"] as? Int64) ?? (dict["currentTime"] as? Int).map(Int64.init) {
-                player.Seek(sec)
-            }
+            player.destroy()
             return nil
         case "setCurrentTime", "set_currentTime":
             _ = player.set_currentTime(paramsJson)
@@ -143,7 +137,7 @@ public final class VZPlayerBridge: NSObject, VZH5EventListener {
                 let innerParams = dict["params"] as? [String: Any] ?? [:]
                 let innerJson = (try? JSONSerialization.data(withJSONObject: innerParams))
                     .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-                player.SendEvent(eventName, paramsJson: innerJson)
+                player.SendEvent(eventName, innerJson)
             }
             return nil
         case "switchSource":
