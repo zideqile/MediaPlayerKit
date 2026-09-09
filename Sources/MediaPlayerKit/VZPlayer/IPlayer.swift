@@ -1,8 +1,8 @@
 import Foundation
 
 /// 强类型缓冲区间数据模型 (1:1 严格对标 Android vzplayer 的 BufferRange)
-@objc(VZBufferRange)
-public final class VZBufferRange: NSObject {
+@objc(BufferRange)
+public final class BufferRange: NSObject {
     @objc public var length: Int = 1
     @objc public var start: Int = 0
     @objc public var end: Int = 0
@@ -27,29 +27,32 @@ public final class VZBufferRange: NSObject {
     }
 }
 
-/// 兼容 Android 原生双端无缝类名 BufferRange
-@objc(BufferRange)
-public typealias BufferRange = VZBufferRange
+/// 兼容别名
+@objc(VZBufferRange)
+public typealias VZBufferRange = BufferRange
 
-/// 内部 Native 播放器状态事件回调监听器 (1:1 严格对标 Android VZPlayerEventListener)
-@objc public protocol VZPlayerEventListener: AnyObject {
+/// 内部 Native 播放器状态事件回调监听器 (1:1 严格对标 Android PlayerEventListener)
+@objc public protocol PlayerEventListener: AnyObject {
     func onStateChanged(state: PlayerState)
     func onFirstFrameRendered()
     func onTimeUpdate(currentTime: Int64, totalDuration: Int64)
     func onError(code: Int, errMsg: String)
     func onPlayToEnd()
-    func onSourceSwitched(source: VZPlayerSource)
+    func onSourceSwitched(source: PlayerSource)
     func onWarnMessage(msg: String)
 }
+
+/// 兼容别名
+public typealias VZPlayerEventListener = PlayerEventListener
 
 /// Native 内部核心强类型播放器抽象协议 (1:1 严格对标 Android vzplayer 的 IPlayer.java)
 @objc public protocol IPlayer: AnyObject {
     // MARK: - 事件监听器注册 (对齐 Android IPlayer)
-    @objc func AddEventListener(_ listener: VZPlayerEventListener?)
-    @objc func RemoveEventListener(_ listener: VZPlayerEventListener?)
+    @objc func AddEventListener(_ listener: PlayerEventListener?)
+    @objc func RemoveEventListener(_ listener: PlayerEventListener?)
     
     // MARK: - 基础播放生命周期控制 (1:1 对标 Android IPlayer.java)
-    @objc func Play(_ sources: [VZPlayerSource]) -> Bool
+    @objc func Play(_ sources: [PlayerSource]) -> Bool
     @objc func Play()
     @objc func Pause()
     @objc func Resume()
@@ -83,9 +86,9 @@ public typealias BufferRange = VZBufferRange
     // MARK: - 播放倍速与缓冲水位 (1:1 对标 Android IPlayer.java)
     @objc func GetSpeed() -> Float
     @objc func SetSpeed(_ speed: Float)
-    @objc func GetBuffered() -> VZBufferRange
+    @objc func GetBuffered() -> BufferRange
     
     // MARK: - 多源与事件派发 (1:1 对标 Android IPlayer.java)
     @objc func SendEvent(_ eventName: String, params: [String: Any]?)
-    @objc func getCurrentSource() -> VZPlayerSource?
+    @objc func getCurrentSource() -> PlayerSource?
 }

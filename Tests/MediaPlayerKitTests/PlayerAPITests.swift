@@ -1,13 +1,13 @@
 import XCTest
 @testable import MediaPlayerKit
 
-final class VZPlayerAPITests: XCTestCase {
+final class PlayerAPITests: XCTestCase {
     
     func testExportVersionAndInit() {
-        XCTAssertEqual(VZPlayerExport.GetVersion(), "2")
         XCTAssertEqual(export.GetVersion(), "2")
+        XCTAssertEqual(VZPlayerExport.GetVersion(), "2")
         
-        let initConfig = VZInitConfig()
+        let initConfig = InitConfig()
         initConfig.userId = 12345
         initConfig.topicId = "topic_888"
         initConfig.deviceInfo = "iPhone 15 Pro, iOS 17.5"
@@ -21,14 +21,14 @@ final class VZPlayerAPITests: XCTestCase {
         }
         """
         
-        VZPlayerExport.Init(initConfig: initConfig, configJson: configJson)
         export.Init(initConfig, configJson)
+        VZPlayerExport.Init(initConfig: initConfig, configJson: configJson)
     }
     
     func testPlayerSourceModelAndJSON() {
-        let source = VZPlayerSource(
+        let source = PlayerSource(
             url: "https://p2.vzan.com/live/123.m3u8",
-            type: VZPlayerSource.TYPE_HLS,
+            type: PlayerSource.TYPE_HLS,
             tag: "main_stream",
             videoCodec: 1,
             sarNum: 16,
@@ -45,7 +45,7 @@ final class VZPlayerAPITests: XCTestCase {
         XCTAssertTrue(jsonStr.contains("\"videoCodec\":1"))
         
         let dict = source.toDictionary()
-        let restored = VZPlayerSource.fromDictionary(dict)
+        let restored = PlayerSource.fromDictionary(dict)
         XCTAssertEqual(restored.url, source.url)
         XCTAssertEqual(restored.type, source.type)
         XCTAssertEqual(restored.videoCodec, source.videoCodec)
@@ -80,8 +80,8 @@ final class VZPlayerAPITests: XCTestCase {
         XCTAssertTrue(player.set_currentTime("{\"currentTime\": 45}"))
         
         // 6. Sources
-        let s1 = VZPlayerSource(url: "https://example.com/live1.m3u8", type: "hls")
-        let s2 = VZPlayerSource(url: "https://example.com/live2.flv", type: "flv")
+        let s1 = PlayerSource(url: "https://example.com/live1.m3u8", type: "hls")
+        let s2 = PlayerSource(url: "https://example.com/live2.flv", type: "flv")
         player.setSources([s1, s2])
         
         let currentSourceJson = player.get_currentsource()
@@ -93,20 +93,20 @@ final class VZPlayerAPITests: XCTestCase {
         XCTAssertFalse(player.get_pause().isEmpty)
         
         // 8. Dynamic Source Switch
-        let newSource = VZPlayerSource(url: "https://example.com/new_live.m3u8", type: "hls")
+        let newSource = PlayerSource(url: "https://example.com/new_live.m3u8", type: "hls")
         player.setSources([newSource])
         let updatedSourceJson = player.get_currentsource()
         XCTAssertTrue(updatedSourceJson.contains("new_live.m3u8"))
         
-        player.Destroy()
+        player.destroy()
     }
     
     func testIPlayerAlignedAPIs() {
         let playerView = MediaPlayerView()
         let player: IPlayer = export.CreateVZPlayer(playerView)
         
-        let s1 = VZPlayerSource(url: "https://example.com/live1.m3u8", type: "hls")
-        let s2 = VZPlayerSource(url: "https://example.com/live2.flv", type: "flv")
+        let s1 = PlayerSource(url: "https://example.com/live1.m3u8", type: "hls")
+        let s2 = PlayerSource(url: "https://example.com/live2.flv", type: "flv")
         
         // 1. Play with sources
         let playResult = player.Play([s1, s2])
@@ -145,4 +145,5 @@ final class VZPlayerAPITests: XCTestCase {
         player.Destroy()
     }
 }
+
 

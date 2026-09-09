@@ -1,21 +1,30 @@
 import Foundation
 
 /// 日志与上报服务器配置
-@objc public final class VZLogServerConfig: NSObject, Codable {
+@objc(LogServerConfig)
+public final class LogServerConfig: NSObject, Codable {
     @objc public var domain: String = "lgtx-test.vzan.com"
     @objc public var port: Int = 443
     @objc public var path: String = "/live/zbmonitor"
     @objc public var secure: Bool = true
 }
 
+/// 兼容别名
+public typealias VZLogServerConfig = LogServerConfig
+
 /// 日志级别与周期配置
-@objc public final class VZLogConfig: NSObject, Codable {
+@objc(LogConfig)
+public final class LogConfig: NSObject, Codable {
     @objc public var uploadIntervalSeconds: Int = 30
     @objc public var level: Int = 2 // 1: Verbose, 2: Info, 3: Warn, 4: Error
 }
 
-/// 播放器运行时策略配置 (对标 Android vzplayer 的 VPlayerConfig)
-@objc public final class VZPlayerConfig: NSObject, Codable {
+/// 兼容别名
+public typealias VZLogConfig = LogConfig
+
+/// 播放器运行时策略配置 (1:1 严格对标 Android vzplayer 的 VPlayerConfig.java)
+@objc(VPlayerConfig)
+public final class VPlayerConfig: NSObject, Codable {
     @objc public var loop: Bool = false
     @objc public var autoplay: Bool = true
     @objc public var muted: Bool = false
@@ -32,23 +41,28 @@ import Foundation
     @objc public var isHardwareDecode: Bool = true
     @objc public var headers: [String: String] = [:]
     
-    @objc public var logConfig: VZLogConfig = VZLogConfig()
-    @objc public var logServerConfig: VZLogServerConfig = VZLogServerConfig()
+    @objc public var logConfig: LogConfig = LogConfig()
+    @objc public var logServerConfig: LogServerConfig = LogServerConfig()
     
-    @objc public var appVZPlayerConfigJsonString: String = ""
+    @objc public var appVPlayerConfigJsonString: String = ""
     
-    public static func fromJson(_ jsonString: String?) -> VZPlayerConfig {
+    public static func fromJson(_ jsonString: String?) -> VPlayerConfig {
         guard let jsonString = jsonString, !jsonString.isEmpty,
               let data = jsonString.data(using: .utf8),
-              let config = try? JSONDecoder().decode(VZPlayerConfig.self, from: data) else {
-            return VZPlayerConfig()
+              let config = try? JSONDecoder().decode(VPlayerConfig.self, from: data) else {
+            return VPlayerConfig()
         }
         return config
     }
 }
 
+/// 兼容别名
+public typealias VZPlayerConfig = VPlayerConfig
+public typealias PlayerConfig = VPlayerConfig
+
 /// 全局初始化配置 (对标 Android vzplayer 的 InitConfig)
-@objc public final class VZInitConfig: NSObject {
+@objc(InitConfig)
+public final class InitConfig: NSObject {
     @objc public var fileAppenderPath: String?
     @objc public var appenders: [String] = ["ConsoleAppender", "ESAppender"]
     @objc public var isDebug: Bool = false
@@ -64,3 +78,7 @@ import Foundation
         super.init()
     }
 }
+
+/// 兼容别名
+public typealias VZInitConfig = InitConfig
+

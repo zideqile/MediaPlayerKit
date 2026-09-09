@@ -1,7 +1,8 @@
 import Foundation
 
 /// 播放源数据模型 (对标 Android vzplayer 的 PlayerSource)
-@objc public final class VZPlayerSource: NSObject, Codable {
+@objc(PlayerSource)
+public final class PlayerSource: NSObject, Codable {
     @objc public static let TYPE_HLS = "hls"
     @objc public static let TYPE_FLV = "flv"
     @objc public static let TYPE_RTMP = "rtmp"
@@ -9,7 +10,7 @@ import Foundation
     
     @objc public var sourceIndex: Int = 0
     @objc public var url: String = ""
-    @objc public var type: String = VZPlayerSource.TYPE_HLS
+    @objc public var type: String = PlayerSource.TYPE_HLS
     @objc public var tag: String = ""
     @objc public var videoCodec: Int = 1 // 1: H.264, 2: H.265
     @objc public var sarNum: Int = 1
@@ -37,7 +38,7 @@ import Foundation
     
     @objc public init(
         url: String,
-        type: String = VZPlayerSource.TYPE_HLS,
+        type: String = PlayerSource.TYPE_HLS,
         tag: String = "",
         videoCodec: Int = 1,
         sarNum: Int = 1,
@@ -85,8 +86,8 @@ import Foundation
         return str
     }
     
-    public static func fromDictionary(_ dict: [String: Any]) -> VZPlayerSource {
-        let source = VZPlayerSource()
+    public static func fromDictionary(_ dict: [String: Any]) -> PlayerSource {
+        let source = PlayerSource()
         source.sourceIndex = dict["index"] as? Int ?? 0
         source.url = dict["src"] as? String ?? dict["url"] as? String ?? ""
         source.type = dict["type"] as? String ?? TYPE_HLS
@@ -100,3 +101,7 @@ import Foundation
         return source
     }
 }
+
+/// 兼容别名
+public typealias VZPlayerSource = PlayerSource
+

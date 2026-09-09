@@ -3,8 +3,9 @@ import Foundation
 import WebKit
 #endif
 
-/// 标准化 WKWebView ➔ IH5Player 跨平台通信桥接协调器 (1:1 对标 Android vzPlayerBridge)
-public final class VZPlayerBridge: NSObject, VZH5EventListener {
+/// 标准化 WKWebView ➔ IH5Player 跨平台通信桥接协调器 (1:1 对标 Android vzPlayerBridge / PlayerBridge)
+@objc(PlayerBridge)
+public final class PlayerBridge: NSObject, H5EventListener {
     public weak var player: IH5Player?
     #if canImport(WebKit)
     public weak var webView: WKWebView?
@@ -25,7 +26,7 @@ public final class VZPlayerBridge: NSObject, VZH5EventListener {
     }
     #endif
     
-    // MARK: - VZH5EventListener 原生向 H5 派发事件回调
+    // MARK: - H5EventListener 原生向 H5 派发事件回调
     
     public func onEvent(_ eventName: String) {
         #if canImport(WebKit)
@@ -161,7 +162,7 @@ public final class VZPlayerBridge: NSObject, VZH5EventListener {
 }
 
 #if canImport(WebKit)
-extension VZPlayerBridge: WKScriptMessageHandler {
+extension PlayerBridge: WKScriptMessageHandler {
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "vzPlayerBridge",
               let dict = message.body as? [String: Any],
@@ -173,3 +174,6 @@ extension VZPlayerBridge: WKScriptMessageHandler {
     }
 }
 #endif
+
+/// 兼容别名
+public typealias VZPlayerBridge = PlayerBridge

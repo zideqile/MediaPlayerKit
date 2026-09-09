@@ -17,7 +17,7 @@ public struct ShortVideoFeedView: View {
     // MARK: - VZPlayer (IH5Player) 核心实例与渲染视图
     private let playerView = MediaPlayerView()
     @State private var vzPlayer: IH5Player?
-    @State private var coordinator: VZH5PlayerCoordinator?
+    @State private var coordinator: H5PlayerCoordinator?
     
     @State private var isPlaying: Bool = false
     @State private var isBuffering: Bool = false
@@ -54,11 +54,11 @@ public struct ShortVideoFeedView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // MARK: - 1. 上半部分：自适应视频播放器 (VZPlayerView, 上下滑动手势切流)
+            // MARK: - 1. 上半部分：自适应视频播放器 (PlayerView, 上下滑动手势切流)
             ZStack {
                 Color.black
                 
-                VZPlayerViewRepresentable(playerView: playerView)
+                PlayerViewRepresentable(playerView: playerView)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
                     .onTapGesture {
@@ -356,7 +356,7 @@ public struct ShortVideoFeedView: View {
         guard vzPlayer == nil else { return }
         
         let player = export.CreateVZPlayer(playerView)
-        let coord = VZH5PlayerCoordinator(
+        let coord = H5PlayerCoordinator(
             onEvent: { eventName in
                 lastH5Event = eventName
                 if eventName == "play" || eventName == "playing" {
@@ -459,7 +459,7 @@ public struct ShortVideoFeedView: View {
             return
         }
         
-        let vzSource = VZPlayerSource(
+        let vzSource = PlayerSource(
             url: sourceItem.src,
             type: sourceItem.type.lowercased(),
             tag: sourceItem.tag ?? "source_\(currentSourceIndex)",

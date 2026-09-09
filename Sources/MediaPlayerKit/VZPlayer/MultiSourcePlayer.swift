@@ -1,22 +1,26 @@
 import Foundation
 import CoreGraphics
 
-public protocol VZMultiSourcePlayerDelegate: AnyObject {
-    func multiSourcePlayer(_ player: VZMultiSourcePlayer, stateDidChange state: PlayerState)
-    func multiSourcePlayer(_ player: VZMultiSourcePlayer, didRenderFirstFrame: Void)
-    func multiSourcePlayer(_ player: VZMultiSourcePlayer, currentTime: TimeInterval, totalDuration: TimeInterval)
-    func multiSourcePlayer(_ player: VZMultiSourcePlayer, didOccurError error: NSError)
-    func multiSourcePlayerDidPlayToEnd(_ player: VZMultiSourcePlayer)
-    func multiSourcePlayer(_ player: VZMultiSourcePlayer, didSwitchToSource source: VZPlayerSource)
-    func multiSourcePlayer(_ player: VZMultiSourcePlayer, didWarnMessage msg: String)
+public protocol MultiSourcePlayerDelegate: AnyObject {
+    func multiSourcePlayer(_ player: MultiSourcePlayer, stateDidChange state: PlayerState)
+    func multiSourcePlayer(_ player: MultiSourcePlayer, didRenderFirstFrame: Void)
+    func multiSourcePlayer(_ player: MultiSourcePlayer, currentTime: TimeInterval, totalDuration: TimeInterval)
+    func multiSourcePlayer(_ player: MultiSourcePlayer, didOccurError error: NSError)
+    func multiSourcePlayerDidPlayToEnd(_ player: MultiSourcePlayer)
+    func multiSourcePlayer(_ player: MultiSourcePlayer, didSwitchToSource source: PlayerSource)
+    func multiSourcePlayer(_ player: MultiSourcePlayer, didWarnMessage msg: String)
 }
 
-/// 多播放源管理器与两层容错调度器 (实现 IPlayer 协议，对标 vzplayer 的 MultiSourcePlayer & PlayerSelector)
-public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
-    public weak var delegate: VZMultiSourcePlayerDelegate?
-    private var eventListeners: [VZPlayerEventListener] = []
+/// 兼容别名
+public typealias VZMultiSourcePlayerDelegate = MultiSourcePlayerDelegate
+
+/// 多播放源管理器与两层容错调度器 (实现 IPlayer 协议，对标 Android vzplayer 的 MultiSourcePlayer & PlayerSelector)
+@objc(MultiSourcePlayer)
+public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
+    public weak var delegate: MultiSourcePlayerDelegate?
+    private var eventListeners: [PlayerEventListener] = []
     
-    public private(set) var sources: [VZPlayerSource] = []
+    public private(set) var sources: [PlayerSource] = []
     public private(set) var currentSourceIndex: Int = 0
     
     // 内核尝试顺序：0: AVPlayer (硬解), 1: KSMEPlayer (软解)
@@ -25,7 +29,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     private var controller: MediaPlayerController?
     private let playerView: MediaPlayerView
-    private var playerConfig: VZPlayerConfig
+    private var playerConfig: VPlayerConfig
     
     // 保存用户状态
     private var savedVolume: Float = 1.0
@@ -35,7 +39,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     private var isDestroyed: Bool = false
     private var needsReloadSource: Bool = false
     
-    public init(playerView: MediaPlayerView, config: VZPlayerConfig = VZPlayerConfig()) {
+    public init(playerView: MediaPlayerView, config: VPlayerConfig = VPlayerConfig()) {
         self.playerView = playerView
         self.playerConfig = config
         self.savedVolume = config.volume
@@ -47,21 +51,21 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     // MARK: - IPlayer: 事件监听器
     
-    public func AddEventListener(_ listener: VZPlayerEventListener?) {
+    public func AddEventListener(_ listener: PlayerEventListener?) {
         guard let l = listener else { return }
         if !eventListeners.contains(where: { $0 === l }) {
             eventListeners.append(l)
         }
     }
     
-    public func RemoveEventListener(_ listener: VZPlayerEventListener?) {
+    public func RemoveEventListener(_ listener: PlayerEventListener?) {
         guard let l = listener else { return }
         eventListeners.removeAll(where: { $0 === l })
     }
     
     // MARK: - IPlayer: 基础播放控制
     
-    public func Play(_ sources: [VZPlayerSource]) -> Bool {
+    public func Play(_ sources: [PlayerSource]) -> Bool {
         self.setSources(sources)
         self.Play()
         return true
@@ -69,7 +73,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func Play() {
         guard !sources.isEmpty else {
-            let err = NSError(domain: "VZMultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "sources is empty"])
+            let err = NSError(domain: "MultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "sources is empty"])
             delegate?.multiSourcePlayer(self, didOccurError: err)
             for l in eventListeners { l.onError(code: -1, errMsg: "sources is empty") }
             return
@@ -170,10 +174,10 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         controller?.setPlaybackRate(speed)
     }
     
-    public func GetBuffered() -> VZBufferRange {
+    public func GetBuffered() -> BufferRange {
         let start = Int(controller?.currentPosition ?? 0)
         let end = start + Int(controller?.bufferedDuration ?? 0)
-        return VZBufferRange(length: 1, start: start, end: end)
+        return BufferRange(length: 1, start: start, end: end)
     }
     
     // MARK: - IPlayer: 事件与源
@@ -188,7 +192,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         }
     }
     
-    public func getCurrentSource() -> VZPlayerSource? {
+    public func getCurrentSource() -> PlayerSource? {
         guard currentSourceIndex >= 0 && currentSourceIndex < sources.count else {
             return nil
         }
@@ -197,7 +201,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     // MARK: - 播放源列表与策略配置
     
-    public func setSources(_ sources: [VZPlayerSource]) {
+    public func setSources(_ sources: [PlayerSource]) {
         for (idx, s) in sources.enumerated() {
             s.sourceIndex = idx
         }
@@ -212,7 +216,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         self.needsReloadSource = true
     }
     
-    public func setConfig(_ config: VZPlayerConfig) {
+    public func setConfig(_ config: VPlayerConfig) {
         self.playerConfig = config
         self.savedVolume = config.volume
         self.savedMuted = config.muted
@@ -263,7 +267,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     // MARK: - 内部容错调度
     
-    private func computeEngineOrder(for source: VZPlayerSource) -> [PlayerEngineType] {
+    private func computeEngineOrder(for source: PlayerSource) -> [PlayerEngineType] {
         let type = source.type.lowercased()
         let urlStr = source.url.lowercased()
         let isFlv = type == "flv" || urlStr.contains(".flv")
@@ -281,7 +285,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     private func startPlaybackWithCurrentSourceAndEngine() {
         guard !isDestroyed, let source = currentSource, let url = URL(string: source.url) else {
-            let err = NSError(domain: "VZMultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid source URL"])
+            let err = NSError(domain: "MultiSourcePlayer", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid source URL"])
             delegate?.multiSourcePlayer(self, didOccurError: err)
             for l in eventListeners { l.onError(code: -1, errMsg: "Invalid source URL") }
             return
@@ -296,7 +300,7 @@ public final class VZMultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         playerView.detachRenderView()
         
         // 2. 创建新控制器并配置
-        let config = PlayerConfig()
+        let config = MediaPlayerKit.PlayerConfig()
         config.preferredEngine = engineType
         config.enableHardwareDecode = (engineType == .avPlayer) ? playerConfig.isHardwareDecode : false
         config.isLoop = savedLoop
