@@ -32,6 +32,10 @@ public final class BufferRange: NSObject {
     func onStateChanged(state: PlayerState)
     func onFirstFrameRendered()
     func onTimeUpdate(currentTime: Int64, totalDuration: Int64)
+    /// One attempt failed; recovery may still follow. Optional for existing clients.
+    @objc optional func onPlayAttemptFailed(_ failure: PlaybackAttemptFailure)
+    @objc optional func onRecoveryStarted(_ failure: PlaybackAttemptFailure)
+    /// Final failure only, after the recovery policy stops.
     func onError(code: Int, errMsg: String)
     func onPlayToEnd()
     func onSourceSwitched(source: PlayerSource)

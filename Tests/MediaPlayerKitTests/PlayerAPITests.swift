@@ -213,7 +213,8 @@ extension PlayerAPITests {
             defer { player.destroy() }
             player.play()
             RunLoop.main.run(until: Date().addingTimeInterval(0.65))
-            XCTAssertEqual(recorder.errors, 1)
+            XCTAssertEqual(recorder.errors, 0)
+            XCTAssertEqual(recorder.events.filter { $0 == "PlayerWARN" }.count, 1)
             XCTAssertEqual(recorder.timeUpdates, 0)
         }
         if Thread.isMainThread { run() } else { DispatchQueue.main.sync(execute: run) }

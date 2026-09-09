@@ -9,6 +9,9 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     private var timeUpdateTimer: Timer?
     private var isPlayingState: Bool = false
     private var hasEmittedEnded = false
+    @objc public var failureHistory: [PlaybackAttemptFailure] {
+        executeOnMainThreadSync { self.multiPlayer.failureHistory }
+    }
     
     @objc public init(playerView: MediaPlayerView, config: VPlayerConfig = VPlayerConfig()) {
         self.multiPlayer = MultiSourcePlayer(playerView: playerView, config: config)
@@ -375,11 +378,25 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         // 心跳由定时器统一驱动
     }
     
+    public func onPlayAttemptFailed(_ failure: PlaybackAttemptFailure) {
+        executeOnMainThread { self.h5EventListener?.onPlayAttemptFailed?(failure) }
+    }
+
+    public func onRecoveryStarted(_ failure: PlaybackAttemptFailure) {
+        executeOnMainThread {
+            self.isPlayingState = false
+            self.stopTimeUpdateTimer()
+            self.h5EventListener?.onRecoveryStarted?(failure)
+            self.notifyH5Event("recovering")
+        }
+    }
+
     public func onError(code: Int, errMsg: String) {
         executeOnMainThread {
             self.isPlayingState = false
             self.stopTimeUpdateTimer()
-            self.h5EventListener?.onError(code, errMsg: errMsg)
+            // Android H5Player maps the terminal native error to PlayerWARN.
+            self.notifyH5Event("PlayerWARN")
         }
     }
     
@@ -394,9 +411,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     }
     
     public func onWarnMessage(msg: String) {
-        executeOnMainThread {
-            self.notifyH5Event("PlayerWARN")
-        }
+        // Intermediate diagnostics remain available to native listeners.
+        // H5 recovery is signalled by onRecoveryStarted, never by PlayerWARN.
     }
     
     private func emitEndedIfNeeded() {
