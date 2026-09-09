@@ -1,6 +1,6 @@
 import Foundation
 
-/// 缓冲区间数据模型 (1:1 对标 Android vzplayer 的 BufferRange)
+/// 强类型缓冲区间数据模型 (1:1 严格对标 Android vzplayer 的 BufferRange)
 @objc(VZBufferRange)
 public final class VZBufferRange: NSObject {
     @objc public var length: Int = 1
@@ -31,24 +31,22 @@ public final class VZBufferRange: NSObject {
 @objc(BufferRange)
 public typealias BufferRange = VZBufferRange
 
-/// H5 事件与错误回调监听器 (1:1 对标 Android vzplayer 的 IH5Player.H5EventListener / VZPlayerEventListener)
-@objc public protocol VZH5EventListener: AnyObject {
-    /// 标准状态事件通知 ("play", "playing", "pause", "ended", "waiting", "canplaythrough", "PlayerWARN")
-    func onEvent(_ eventName: String)
-    
-    /// 播放严重错误通知
-    func onError(_ code: Int, errMsg: String)
-    
-    /// 播放进度定时心跳 (单位: 秒)
-    func onTimeUpdate(_ currentTime: Int64)
+/// 内部 Native 播放器状态事件回调监听器 (1:1 严格对标 Android VZPlayerEventListener)
+@objc public protocol VZPlayerEventListener: AnyObject {
+    func onStateChanged(state: PlayerState)
+    func onFirstFrameRendered()
+    func onTimeUpdate(currentTime: Int64, totalDuration: Int64)
+    func onError(code: Int, errMsg: String)
+    func onPlayToEnd()
+    func onSourceSwitched(source: VZPlayerSource)
+    func onWarnMessage(msg: String)
 }
 
-/// 统一播放器操作接口 (1:1 完全对标 Android vzplayer 的 IPlayer.java)
+/// Native 内部核心强类型播放器抽象协议 (1:1 严格对标 Android vzplayer 的 IPlayer.java)
 @objc public protocol IPlayer: AnyObject {
     // MARK: - 事件监听器注册 (对齐 Android IPlayer)
-    @objc func AddEventListener(_ listener: VZH5EventListener?)
-    @objc func RemoveEventListener(_ listener: VZH5EventListener?)
-    @objc func SetOnH5EventListener(_ listener: VZH5EventListener?)
+    @objc func AddEventListener(_ listener: VZPlayerEventListener?)
+    @objc func RemoveEventListener(_ listener: VZPlayerEventListener?)
     
     // MARK: - 基础播放生命周期控制 (1:1 对标 Android IPlayer.java)
     @objc func Play(_ sources: [VZPlayerSource]) -> Bool
@@ -57,7 +55,7 @@ public typealias BufferRange = VZBufferRange
     @objc func Resume()
     @objc func Destroy()
     
-    // MARK: - 进度控制与状态读取 (1:1 对标 Android IPlayer.java)
+    // MARK: - 进度控制与状态读取 (强类型秒数 Int64)
     /// 跳转播放进度 (单位: 秒)
     @objc func Seek(_ seconds: Int64)
     
@@ -87,31 +85,7 @@ public typealias BufferRange = VZBufferRange
     @objc func SetSpeed(_ speed: Float)
     @objc func GetBuffered() -> VZBufferRange
     
-    // MARK: - 多源调度与自定义事件 (1:1 对标 Android IPlayer.java)
-    @objc func SendEvent(_ eventName: String, paramsJson: String)
+    // MARK: - 多源与事件派发 (1:1 对标 Android IPlayer.java)
+    @objc func SendEvent(_ eventName: String, params: [String: Any]?)
     @objc func getCurrentSource() -> VZPlayerSource?
-    @objc func setSources(_ sources: [VZPlayerSource])
-    @objc func setConfig(_ config: VZPlayerConfig)
-    @objc func switchSource(index: Int) -> Bool
-    
-    // MARK: - H5 桥接专用属性访问 (JSON 格式入参出参，对标 Android @JavascriptInterface)
-    @objc func get_currentTime() -> String
-    @objc func set_currentTime(_ currentTimeJson: String) -> Bool
-    @objc func get_duration() -> String
-    @objc func get_pause() -> String
-    @objc func get_volume() -> String
-    @objc func set_volume(_ volumeJson: String) -> Bool
-    @objc func get_muted() -> String
-    @objc func set_muted(_ parametersJson: String) -> Bool
-    @objc func get_videoWidth() -> String
-    @objc func get_videoHeight() -> String
-    @objc func get_loop() -> String
-    @objc func set_loop(_ parametersJson: String) -> Bool
-    @objc func get_speed() -> String
-    @objc func set_speed(_ parametersJson: String) -> Bool
-    @objc func get_buffered() -> String
-    @objc func get_currentsource() -> String
 }
-
-/// 兼容历史别名
-public typealias IH5Player = IPlayer

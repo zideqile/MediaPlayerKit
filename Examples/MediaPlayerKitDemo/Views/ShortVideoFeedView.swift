@@ -14,9 +14,9 @@ public struct ShortVideoFeedView: View {
     @State private var currentStreamIndex: Int = 0
     @State private var currentSourceIndex: Int = 0
     
-    // MARK: - VZPlayer (IPlayer) 核心实例与渲染视图
+    // MARK: - VZPlayer (IH5Player) 核心实例与渲染视图
     private let playerView = MediaPlayerView()
-    @State private var vzPlayer: IPlayer?
+    @State private var vzPlayer: IH5Player?
     @State private var coordinator: VZH5PlayerCoordinator?
     
     @State private var isPlaying: Bool = false
@@ -344,7 +344,7 @@ public struct ShortVideoFeedView: View {
             }
         }
         .onDisappear {
-            vzPlayer?.Destroy()
+            vzPlayer?.destroy()
             vzPlayer = nil
             coordinator = nil
         }
@@ -471,17 +471,17 @@ public struct ShortVideoFeedView: View {
         
         self.errorMessage = nil
         vzPlayer?.setSources([vzSource])
-        vzPlayer?.Play()
+        vzPlayer?.play()
         self.isPlaying = true
     }
     
     private func togglePlayPause() {
         guard let player = vzPlayer else { return }
         if isPlaying {
-            player.Pause()
+            player.pause()
             isPlaying = false
         } else {
-            player.Play()
+            player.play()
             isPlaying = true
         }
     }
