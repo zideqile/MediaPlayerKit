@@ -16,6 +16,7 @@ jobs:
       P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
       BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
       KEYCHAIN_PASSWORD: mpk123456
+      VPLAYER_LOG_DOMAIN: ${{ vars.VPLAYER_LOG_DOMAIN || vars.LOG_SERVER_DOMAIN || vars.LOG_DOMAIN || secrets.VPLAYER_LOG_DOMAIN || secrets.LOG_SERVER_DOMAIN }}
 
     steps:
       - name: Checkout repository
@@ -93,6 +94,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$APP_DIR/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$APP_DIR/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoadsInWebContent bool true" "$APP_DIR/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoadsInWebContent bool true" "$APP_DIR/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$APP_DIR/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$APP_DIR/Info.plist"
+          
+          # 注入旧版日志上报服务器域名 (如果配置了 GitHub Actions 变量或密钥)
+          if [ -n "$VPLAYER_LOG_DOMAIN" ]; then
+            echo "📡 注入日志上报域名至 Info.plist..."
+            /usr/libexec/PlistBuddy -c "Set :VPlayerLogDomain string $VPLAYER_LOG_DOMAIN" "$APP_DIR/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :VPlayerLogDomain string $VPLAYER_LOG_DOMAIN" "$APP_DIR/Info.plist"
+          fi
+          
           plutil -p "$APP_DIR/Info.plist" || true
 
           # 2. 提取证书与描述文件执行正式代码签名

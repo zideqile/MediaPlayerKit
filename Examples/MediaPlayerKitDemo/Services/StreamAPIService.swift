@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import MediaPlayerKit
 
 extension String {
     /// 对 Query 参数进行标准 URI Percent-Encoding
@@ -18,6 +19,23 @@ public final class StreamAPIService: ObservableObject {
     private let kSignKey = "StreamAPIService_Sign_V3"
     private let kNodeItemsKey = "StreamAPIService_NodeItems_V3"
     private let kActiveNodeDomainKey = "StreamAPIService_ActiveNodeDomain_V3"
+    private let kLogDomainKey = "StreamAPIService_LogDomain_V3"
+    
+    /// 从 Info.plist (CI 构建时注入) 读取默认日志上报域名，未注入时默认为空
+    public static var defaultLogDomain: String {
+        if let injected = Bundle.main.object(forInfoDictionaryKey: "VPlayerLogDomain") as? String,
+           !injected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return injected.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ""
+    }
+    
+    @Published public var logDomain: String {
+        didSet {
+            UserDefaults.standard.set(logDomain, forKey: kLogDomainKey)
+            configureLogServer()
+        }
+    }
     
     @Published public var apiDomain: String {
         didSet {
@@ -82,6 +100,11 @@ public final class StreamAPIService: ObservableObject {
         } else {
             self.activeNodeDomain = ""
         }
+        
+        let savedLogDomain = UserDefaults.standard.string(forKey: kLogDomainKey)
+        self.logDomain = savedLogDomain ?? Self.defaultLogDomain
+        
+        configureLogServer()
     }
     
     public var hasCompleteConfig: Bool {
@@ -301,6 +324,69 @@ public final class StreamAPIService: ObservableObject {
                 } catch {
                     self.sourcesError = "解析播放地址失败: \(error.localizedDescription)"
                     completion?(nil)
+                }
+            }
+        }.resume()
+    }
+    
+    // MARK: - 日志上报配置与连通性测试
+    public func configureLogServer(userId: Int64 = 10001, topicId: String = "topic_demo", deviceInfo: String = "iOS MediaPlayerKit Demo") {
+        let domain = logDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+        let initConfig = InitConfig()
+        initConfig.isDebug = true
+        initConfig.isDebugMode = true
+        initConfig.userId = userId
+        initConfig.topicId = topicId
+        initConfig.deviceInfo = deviceInfo
+        initConfig.appenders = ["ConsoleAppender", "ESAppender"]
+        
+        var configJson: String? = nil
+        if !domain.isEmpty {
+            let cleanDomain = domain.replacingOccurrences(of: "https://", with: "")
+                                   .replacingOccurrences(of: "http://", with: "")
+                                   .trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+            let payload: [String: Any] = [
+                "logServerConfig": [
+                    "domain": cleanDomain,
+                    "port": 443,
+                    "path": "/live/zbmonitor",
+                    "secure": true
+                ],
+                "env": "dev"
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload),
+               let jsonString = String(data: data, encoding: .utf8) {
+                configJson = jsonString
+            }
+        }
+        
+        export.Init(initConfig, configJson)
+    }
+    
+    public func testLogServerConnectivity(completion: @escaping (Bool, String) -> Void) {
+        let raw = logDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else {
+            completion(false, "日志上报域名未配置")
+            return
+        }
+        let clean = raw.replacingOccurrences(of: "https://", with: "")
+                       .replacingOccurrences(of: "http://", with: "")
+                       .trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard let url = URL(string: "https://\(clean)/live/zbmonitor") else {
+            completion(false, "无效的域名格式")
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5.0
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            DispatchQueue.main.async {
+                if let http = response as? HTTPURLResponse {
+                    completion(true, "连接成功 (HTTP \(http.statusCode))")
+                } else if let err = error {
+                    completion(false, "连接失败: \(err.localizedDescription)")
+                } else {
+                    completion(false, "未知网络响应")
                 }
             }
         }.resume()
