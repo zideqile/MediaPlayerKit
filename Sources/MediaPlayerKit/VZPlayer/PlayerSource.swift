@@ -80,11 +80,8 @@ public final class PlayerSource: NSObject, Codable {
     }
     
     public func toJSONString() -> String {
-        let encoder = JSONEncoder()
-        if #available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *) {
-            encoder.outputFormatting = [.withoutEscapingSlashes]
-        }
-        guard let data = try? encoder.encode(self),
+        // H5 的旧字段与 Android 标准字段使用同一份输出。
+        guard let data = try? JSONSerialization.data(withJSONObject: toDictionary()),
               let str = String(data: data, encoding: .utf8) else {
             return "{}"
         }

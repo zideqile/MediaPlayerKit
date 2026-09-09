@@ -117,8 +117,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func Destroy() {
         isDestroyed = true
-        controller?.stop()
         controller?.delegate = nil
+        controller?.stop()
         controller = nil
         eventListeners.removeAll()
     }
@@ -194,7 +194,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func GetBuffered() -> BufferRange {
         let start = Int(controller?.currentPosition ?? 0)
-        let end = start + Int(controller?.bufferedDuration ?? 0)
+        // 两个引擎均返回媒体时间轴上的缓冲终点，而非剩余缓冲时长。
+        let end = max(start, Int(controller?.bufferedDuration ?? 0))
         return BufferRange(length: 1, start: start, end: end)
     }
     
@@ -313,8 +314,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         let engineType = engineOrder[currentEngineIndex]
         
         // 1. 释放旧的控制器
-        controller?.stop()
         controller?.delegate = nil
+        controller?.stop()
         playerView.detachRenderView()
         
         // 2. 创建新控制器并配置
@@ -409,25 +410,30 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     // MARK: - MediaPlayerDelegate 代理桥接
     
     public func player(_ player: MediaPlayerController, stateDidChange state: PlayerState) {
+        guard player === controller, !isDestroyed else { return }
         delegate?.multiSourcePlayer(self, stateDidChange: state)
         notifyListeners { $0.onStateChanged(state: state) }
     }
     
     public func playerDidRenderFirstFrame(_ player: MediaPlayerController) {
+        guard player === controller, !isDestroyed else { return }
         delegate?.multiSourcePlayer(self, didRenderFirstFrame: ())
         notifyListeners { $0.onFirstFrameRendered() }
     }
     
     public func player(_ player: MediaPlayerController, currentTime: TimeInterval, totalDuration: TimeInterval) {
+        guard player === controller, !isDestroyed else { return }
         delegate?.multiSourcePlayer(self, currentTime: currentTime, totalDuration: totalDuration)
         notifyListeners { $0.onTimeUpdate(currentTime: Int64(currentTime), totalDuration: Int64(totalDuration)) }
     }
     
     public func player(_ player: MediaPlayerController, didOccurError error: NSError) {
+        guard player === controller, !isDestroyed else { return }
         handleRetry(error: error)
     }
     
     public func playerDidPlayToEndTime(_ player: MediaPlayerController) {
+        guard player === controller, !isDestroyed else { return }
         delegate?.multiSourcePlayerDidPlayToEnd(self)
         notifyListeners { $0.onPlayToEnd() }
     }

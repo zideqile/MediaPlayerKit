@@ -214,6 +214,7 @@ import CoreGraphics
         if state == .buffering {
             apmTracker?.markBufferingStart()
         } else if state == .playing {
+            apmTracker?.markPlayStart()
             apmTracker?.markBufferingEnd()
         }
         delegate?.player(self, stateDidChange: state)
