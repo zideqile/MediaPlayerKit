@@ -4,7 +4,7 @@ import XCTest
 final class PlayerAPITests: XCTestCase {
     
     func testExportVersionAndInit() {
-        XCTAssertEqual(export.GetVersion(), "2")
+        XCTAssertEqual(export.GetVersion(), SDKVersion.version)
         
         let initConfig = InitConfig()
         initConfig.appenders = [] // Unit tests must not contact the log service.

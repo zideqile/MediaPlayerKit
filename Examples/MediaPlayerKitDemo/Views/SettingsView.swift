@@ -1,4 +1,5 @@
 import SwiftUI
+import MediaPlayerKit
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -15,6 +16,13 @@ public struct SettingsView: View {
 
     public var body: some View {
         Form {
+            Section(header: Text("版本信息")) {
+                Text("Demo：\(DemoVersion.version)（\(DemoVersion.buildNumber)）")
+                Text("SDK：\(SDKVersion.version)（\(SDKVersion.buildNumber)）")
+                Text("SDK 源码：\(SDKVersion.commit)")
+                Text("Demo 源码：\(DemoVersion.commit)")
+                if DemoVersion.isDevelopment { Text("本地开发构建").foregroundColor(.secondary) }
+            }
             // MARK: - 1. 当前生效节点选择 (下拉列表)
             Section(header: Label("当前工作节点", systemImage: "antenna.radiowaves.left.and.right")) {
                 if apiService.nodeItems.isEmpty {

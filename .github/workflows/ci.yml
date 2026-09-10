@@ -22,6 +22,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate and generate version metadata
+        env:
+          VERSION_BUILD_NUMBER: ${{ github.run_number }}
+          VERSION_COMMIT: ${{ github.sha }}
+          VERSION_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          python3 scripts/generate_versions.py --check
+          args=(--build-number "$VERSION_BUILD_NUMBER" --commit "$VERSION_COMMIT" --manifest build/version-manifest.json)
+          if [ -n "$VERSION_TAG" ]; then
+            args+=(--release-tag "$VERSION_TAG")
+          fi
+          python3 scripts/generate_versions.py "${args[@]}"
+
       - name: Show Environment & Xcode Version
         run: |
           xcodebuild -version
@@ -176,8 +189,10 @@ jobs:
       - name: Upload iOS Demo App (.ipa)
         uses: actions/upload-artifact@v4
         with:
-          name: MediaPlayerKitDemo-iOS
-          path: build/MediaPlayerKitDemo-iOS.ipa
+          name: MediaPlayerKitDemo-iOS-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            build/MediaPlayerKitDemo-iOS.ipa
+            build/version-manifest.json
 
       # 5. 自动上传 IPA 到远程分发服务器 (通过 GitHub Actions 变量/密钥配置地址)
       - name: Upload IPA to Remote Distribution Server
