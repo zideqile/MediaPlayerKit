@@ -36,4 +36,11 @@ class DependencyCollectionTests(unittest.TestCase):
         p=self.out/'DerivedData-device/Build/Products/Release-iphoneos/KSPlayer_KSPlayer.bundle';p.rmdir()
         with patch.object(deps,'dependencies',return_value=[]):
             with self.assertRaisesRegex(ValueError,'resource bundle'):deps.collect(self.out)
+    def test_copies_archive_uninstalled_products_layout(self):
+        p=self.out/'DerivedData-device/Build/Products/Release-iphoneos/KSPlayer_KSPlayer.bundle';p.rmdir()
+        archive_bundle = self.out/'DerivedData-device/Build/Intermediates.noindex/ArchiveIntermediates/MediaPlayerKit/IntermediateBuildFilesPath/UninstalledProducts/iphoneos/KSPlayer_KSPlayer.bundle'
+        archive_bundle.mkdir(parents=True)
+        with patch.object(deps,'dependencies',return_value=[]):
+            deps.collect(self.out)
+        self.assertTrue((self.out/'SDK/Resources/device/KSPlayer_KSPlayer.bundle').is_dir())
 if __name__=='__main__':unittest.main()
