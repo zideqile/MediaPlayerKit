@@ -34,9 +34,9 @@ public final class PlayerBridge: NSObject, H5EventListener {
             guard let webView = self?.webView else { return }
             let js = """
             if (window.vzPlayerBridge && typeof window.vzPlayerBridge.onEvent === 'function') {
-                window.vzPlayerBridge.onEvent('\(eventName)');
+                window.vzPlayerBridge.onEvent(\(Self.jsString(eventName)));
             } else if (window.vzPlayerBridge && typeof window.vzPlayerBridge.triggerEvent === 'function') {
-                window.vzPlayerBridge.triggerEvent('\(eventName)');
+                window.vzPlayerBridge.triggerEvent(\(Self.jsString(eventName)));
             }
             """
             webView.evaluateJavaScript(js, completionHandler: nil)
@@ -48,12 +48,11 @@ public final class PlayerBridge: NSObject, H5EventListener {
         #if canImport(WebKit)
         DispatchQueue.main.async { [weak self] in
             guard let webView = self?.webView else { return }
-            let escapedMsg = errMsg.replacingOccurrences(of: "'", with: "\\'")
             let js = """
             if (window.vzPlayerBridge && typeof window.vzPlayerBridge.onError === 'function') {
-                window.vzPlayerBridge.onError(\(code), '\(escapedMsg)');
+                window.vzPlayerBridge.onError(\(code), \(Self.jsString(errMsg)));
             } else if (window.vzPlayerBridge && typeof window.vzPlayerBridge.triggerError === 'function') {
-                window.vzPlayerBridge.triggerError(\(code), '\(escapedMsg)');
+                window.vzPlayerBridge.triggerError(\(code), \(Self.jsString(errMsg)));
             }
             """
             webView.evaluateJavaScript(js, completionHandler: nil)
@@ -97,8 +96,7 @@ public final class PlayerBridge: NSObject, H5EventListener {
             player.destroy()
             return nil
         case "setCurrentTime", "set_currentTime":
-            _ = player.set_currentTime(paramsJson)
-            return nil
+            return player.set_currentTime(paramsJson) ? "true" : "false"
         case "getCurrentTime", "get_currentTime":
             return player.get_currentTime()
         case "getDuration", "get_duration":
@@ -108,13 +106,11 @@ public final class PlayerBridge: NSObject, H5EventListener {
         case "getVolume", "get_volume":
             return player.get_volume()
         case "setVolume", "set_volume":
-            _ = player.set_volume(paramsJson)
-            return nil
+            return player.set_volume(paramsJson) ? "true" : "false"
         case "getMuted", "get_muted":
             return player.get_muted()
         case "setMuted", "set_muted":
-            _ = player.set_muted(paramsJson)
-            return nil
+            return player.set_muted(paramsJson) ? "true" : "false"
         case "getVideoWidth", "get_videoWidth":
             return player.get_videoWidth()
         case "getVideoHeight", "get_videoHeight":
@@ -122,29 +118,30 @@ public final class PlayerBridge: NSObject, H5EventListener {
         case "getLoop", "get_loop":
             return player.get_loop()
         case "setLoop", "set_loop":
-            _ = player.set_loop(paramsJson)
-            return nil
+            return player.set_loop(paramsJson) ? "true" : "false"
         case "getSpeed", "get_speed":
             return player.get_speed()
         case "setSpeed", "set_speed":
-            _ = player.set_speed(paramsJson)
-            return nil
+            return player.set_speed(paramsJson) ? "true" : "false"
         case "getBuffered", "get_buffered":
             return player.get_buffered()
         case "getCurrentSource", "get_currentsource":
             return player.get_currentsource()
         case "sendEvent", "SendEvent":
-            if let dict = parseJSON(paramsJson), let eventName = dict["eventName"] as? String {
-                let innerParams = dict["params"] as? [String: Any] ?? [:]
-                let innerJson = (try? JSONSerialization.data(withJSONObject: innerParams))
-                    .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-                player.SendEvent(eventName, innerJson)
+            guard let dict = parseJSON(paramsJson), let eventName = dict["eventName"] as? String,
+                  eventName == "NEXT_SOURCE" || eventName == "SWITCH_SOURCE",
+                  dict["params"] == nil || dict["params"] is [String: Any] else { return "false" }
+            let innerParams = dict["params"] as? [String: Any] ?? [:]
+            if eventName == "SWITCH_SOURCE" {
+                guard let index = innerParams["index"] as? Int ?? innerParams["sourceIndex"] as? Int else { return "false" }
+                return player.switchSource(index: index) ? "true" : "false"
             }
-            return nil
+            player.SendEvent(eventName, "{}")
+            return "true"
         case "switchSource":
             if let dict = parseJSON(paramsJson),
                let idx = dict["index"] as? Int ?? (dict["sourceIndex"] as? Int) {
-                _ = player.switchSource(index: idx)
+                return player.switchSource(index: idx) ? "true" : "false"
             }
             return nil
         default:
@@ -152,6 +149,40 @@ public final class PlayerBridge: NSObject, H5EventListener {
         }
     }
     
+    /// Result acknowledgement means the command was handled, not that playback has completed.
+    public func handleRequest(method: String, paramsJson: String = "{}", requestId: String) -> [String: Any] {
+        let supported: Set<String> = ["play", "Play", "pause", "Pause", "resume", "Resume", "destroy", "Destroy",
+            "setCurrentTime", "set_currentTime", "getCurrentTime", "get_currentTime", "getDuration", "get_duration",
+            "getPause", "get_pause", "getVolume", "get_volume", "setVolume", "set_volume", "getMuted", "get_muted",
+            "setMuted", "set_muted", "getVideoWidth", "get_videoWidth", "getVideoHeight", "get_videoHeight",
+            "getLoop", "get_loop", "setLoop", "set_loop", "getSpeed", "get_speed", "setSpeed", "set_speed",
+            "getBuffered", "get_buffered", "getCurrentSource", "get_currentsource", "switchSource", "sendEvent", "SendEvent"]
+        guard supported.contains(method) else {
+            return ["requestId": requestId, "ok": false, "error": "unsupported_method"]
+        }
+        guard player != nil else { return ["requestId": requestId, "ok": false, "error": "player_unavailable"] }
+        let raw = handleScriptMessage(method: method, paramsJson: paramsJson)
+        if raw == "false" || (method == "switchSource" && raw == nil) {
+            return ["requestId": requestId, "ok": false, "error": "invalid_parameters_or_rejected"]
+        }
+        let value: Any = raw.flatMap { $0.data(using: .utf8) }.flatMap {
+            try? JSONSerialization.jsonObject(with: $0, options: .fragmentsAllowed)
+        } ?? NSNull()
+        return ["requestId": requestId, "ok": true, "result": value]
+    }
+
+    #if canImport(WebKit)
+    public static func reply(_ response: [String: Any], to webView: WKWebView?) {
+        guard let data = try? JSONSerialization.data(withJSONObject: response),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.vzPlayerBridge?.onResponse?.(\(json));", completionHandler: nil)
+    }
+    #endif
+
+    private static func jsString(_ value: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+    }
     private func parseJSON(_ json: String) -> [String: Any]? {
         guard let data = json.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -170,7 +201,11 @@ extension PlayerBridge: WKScriptMessageHandler {
             return
         }
         let paramsJson = dict["paramsJson"] as? String ?? "{}"
-        handleScriptMessage(method: method, paramsJson: paramsJson)
+        if let requestId = dict["requestId"] as? String {
+            Self.reply(handleRequest(method: method, paramsJson: paramsJson, requestId: requestId), to: webView)
+        } else {
+            handleScriptMessage(method: method, paramsJson: paramsJson)
+        }
     }
 }
 #endif
