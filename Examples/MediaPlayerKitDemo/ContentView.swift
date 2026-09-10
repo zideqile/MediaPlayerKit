@@ -50,7 +50,7 @@ public struct ContentView: View {
                 }
                 .tag(AppTab.player.rawValue)
 
-            WebViewHybridPlayerView()
+            H5DemoContainerView()
                 .tabItem {
                     Image(systemName: AppTab.hybrid.iconName)
                     Text(AppTab.hybrid.title)
