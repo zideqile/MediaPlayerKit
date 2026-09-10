@@ -16,6 +16,8 @@ def inspect(root):
         imports = set()
         for source in interfaces:
             imports.update(re.findall(r'\bimport\s+(?:class\s+|struct\s+)?([A-Za-z_]\w*)', source.read_text()))
+        exposed = imports.intersection({'KSPlayer', 'FFmpegKit', 'DisplayCriteria'})
+        if exposed: raise ValueError('SDK exposes source dependency modules: '+', '.join(sorted(exposed)))
         slices.append({'identifier': item['LibraryIdentifier'], 'platform': item.get('SupportedPlatform'),
                        'variant': item.get('SupportedPlatformVariant', 'device'),
                        'architectures': item.get('SupportedArchitectures', []), 'imports': sorted(imports)})

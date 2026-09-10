@@ -5,11 +5,12 @@ import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
-import KSPlayer
+@_implementationOnly import KSPlayer
 
 /// 基于 FFmpeg + VideoToolbox + Metal 的 KSPlayer 多媒体管线引擎
 /// 全面支持 RTMP、HTTP-FLV、HLS、RTSP、MKV、MP4、DASH 全协议全格式解码
 public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
+    private lazy var controllerDelegate = KSMEControllerDelegate(owner: self)
     public weak var outputDelegate: PlayerEngineOutputDelegate?
     
     public var renderView: PlatformView {
@@ -82,7 +83,7 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         KSOptions.secondPlayerType = KSMEPlayer.self
         KSOptions.canBackgroundPlay = true
         KSOptions.isAutoPlay = true
-        playerView.delegate = self
+        playerView.delegate = controllerDelegate
     }
     
     public func prepare(with url: URL, config: PlayerConfig) {
@@ -202,8 +203,8 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     }
 }
 
-extension KSMEPlayerEngine: PlayerControllerDelegate {
-    public func playerController(state: KSPlayerState) {
+fileprivate extension KSMEPlayerEngine {
+    func playerController(state: KSPlayerState) {
         DispatchQueue.main.async {
             let mapped: PlayerState
             switch state {
@@ -227,7 +228,7 @@ extension KSMEPlayerEngine: PlayerControllerDelegate {
         }
     }
     
-    public func playerController(currentTime: TimeInterval, totalTime: TimeInterval) {
+    func playerController(currentTime: TimeInterval, totalTime: TimeInterval) {
         DispatchQueue.main.async {
             self.currentPosition = currentTime
             self.duration = totalTime
@@ -240,7 +241,7 @@ extension KSMEPlayerEngine: PlayerControllerDelegate {
         }
     }
     
-    public func playerController(finish error: Error?) {
+    func playerController(finish error: Error?) {
         if let err = error as NSError? {
             DispatchQueue.main.async {
                 self.state = .error
@@ -249,8 +250,23 @@ extension KSMEPlayerEngine: PlayerControllerDelegate {
         }
     }
     
-    public func playerController(maskShow: Bool) {}
-    public func playerController(action: PlayerButtonType) {}
-    public func playerController(bufferedCount: Int, consumeTime: TimeInterval) {}
-    public func playerController(seek: TimeInterval) {}
+    func playerController(maskShow: Bool) {}
+    func playerController(action: PlayerButtonType) {}
+    func playerController(bufferedCount: Int, consumeTime: TimeInterval) {}
+    func playerController(seek: TimeInterval) {}
+}
+
+/// Third-party delegate types stay behind the SDK binary boundary.
+private final class KSMEControllerDelegate: PlayerControllerDelegate {
+    weak var owner: KSMEPlayerEngine?
+    init(owner: KSMEPlayerEngine) { self.owner = owner }
+    func playerController(state: KSPlayerState) { owner?.playerController(state: state) }
+    func playerController(currentTime: TimeInterval, totalTime: TimeInterval) {
+        owner?.playerController(currentTime: currentTime, totalTime: totalTime)
+    }
+    func playerController(finish error: Error?) { owner?.playerController(finish: error) }
+    func playerController(maskShow: Bool) {}
+    func playerController(action: PlayerButtonType) {}
+    func playerController(bufferedCount: Int, consumeTime: TimeInterval) {}
+    func playerController(seek: TimeInterval) {}
 }

@@ -18,7 +18,7 @@ class AuditTests(unittest.TestCase):
             framework = self.root/ident/'MediaPlayerKit.framework'
             framework.mkdir(parents=True)
             (framework/'MediaPlayerKit').write_bytes(b'fixture-not-a-real-binary')
-            (framework/'api.swiftinterface').write_text('import Foundation\nimport KSPlayer\n')
+            (framework/'api.swiftinterface').write_text('import Foundation\n')
             (framework/'vzplayer-bridge.js').write_text('// fixture')
             lib = dict(LibraryIdentifier=ident, LibraryPath='MediaPlayerKit.framework', SupportedPlatform='ios', SupportedArchitectures=['arm64'])
             if variant: lib['SupportedPlatformVariant'] = variant
@@ -27,7 +27,10 @@ class AuditTests(unittest.TestCase):
     def test_reports_imports_without_claiming_runtime_validation(self):
         result = audit.inspect(self.root)
         self.assertIn('NOT_RUNTIME_VERIFIED', result['status'])
-        self.assertIn('KSPlayer', result['slices'][0]['imports'])
+        self.assertIn('Foundation', result['slices'][0]['imports'])
+    def test_exposed_source_dependency_fails(self):
+        next(self.root.rglob('*.swiftinterface')).write_text('import KSPlayer\n')
+        with self.assertRaisesRegex(ValueError, 'source dependency'): audit.inspect(self.root)
     def test_missing_bridge_resource_fails(self):
         next(self.root.rglob('vzplayer-bridge.js')).unlink()
         with self.assertRaisesRegex(ValueError, 'JS bridge'): audit.inspect(self.root)

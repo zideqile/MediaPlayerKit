@@ -15,18 +15,24 @@ if [ -e "$OUT" ]; then
   exit 1
 fi
 mkdir -p "$OUT/SDK" "$OUT/Audit" "$OUT/Licenses"
-python3 scripts/generate_versions.py --build --build-number "$1" --manifest "$OUT/version-manifest.json"
+if [ "${MPK_VERSION_MANIFEST:-}" != "" ]; then
+  cp "$MPK_VERSION_MANIFEST" "$OUT/version-manifest.json"
+else
+  python3 scripts/generate_versions.py --build --build-number "$1" --manifest "$OUT/version-manifest.json"
+fi
 # Prevent local Xcode build phase from changing the shared build timestamp between slices.
 export CI=true
-xcodegen generate
-mkdir -p MediaPlayerKitDemo.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
-cp Package.resolved MediaPlayerKitDemo.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-xcodebuild -resolvePackageDependencies -project MediaPlayerKitDemo.xcodeproj -scheme MediaPlayerKit \
+python3 scripts/generate_demo_project.py --mode sdk
+xcodegen generate --spec project.generated.yml
+mkdir -p MediaPlayerKitSDK.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+cp Package.resolved MediaPlayerKitSDK.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+xcodebuild -resolvePackageDependencies -project MediaPlayerKitSDK.xcodeproj -scheme MediaPlayerKit \
   -clonedSourcePackagesDirPath "$OUT/SourcePackages" -onlyUsePackageVersionsFromResolvedFile
 for platform in device simulator; do
   if [ "$platform" = device ]; then destination='generic/platform=iOS'; else destination='generic/platform=iOS Simulator'; fi
-  xcodebuild archive -project MediaPlayerKitDemo.xcodeproj -scheme MediaPlayerKit \
+  xcodebuild archive -project MediaPlayerKitSDK.xcodeproj -scheme MediaPlayerKit \
     -configuration Release -destination "$destination" -archivePath "$OUT/$platform.xcarchive" \
+    -derivedDataPath "$OUT/DerivedData-$platform" \
     -clonedSourcePackagesDirPath "$OUT/SourcePackages" -onlyUsePackageVersionsFromResolvedFile \
     SKIP_INSTALL=NO BUILD_LIBRARY_FOR_DISTRIBUTION=YES CODE_SIGNING_ALLOWED=NO \
     | tee "$OUT/Audit/$platform-build.log"
@@ -37,10 +43,11 @@ xcodebuild -create-xcframework \
   -framework "$OUT/device.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
   -framework "$OUT/simulator.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
   -output "$OUT/SDK/MediaPlayerKit.xcframework"
+python3 scripts/collect_binary_dependencies.py "$OUT"
 python3 scripts/inspect_xcframework.py "$OUT/SDK/MediaPlayerKit.xcframework" > "$OUT/Audit/dependency-audit.json"
 cp -R delivery/Docs delivery/Sample "$OUT/"
 cp delivery/README.md Package.resolved "$OUT/"
-cp docs/Logging.md docs/Versioning.md "$OUT/Docs/"
+cp docs/Logging.md docs/Versioning.md docs/DemoBuild.md "$OUT/Docs/"
 python3 - <<'PY'
 from pathlib import Path
 import shutil, hashlib
@@ -52,6 +59,13 @@ for checkout in (out/'SourcePackages/checkouts').iterdir():
     for p in checkout.iterdir():
         if p.is_file() and p.name.lower().startswith(('license', 'copying', 'notice')):
             shutil.copy(p, out/'Licenses'/f'{checkout.name}-{p.name}')
+import yaml
+sample = yaml.safe_load((out/'Sample/project.yml').read_text())
+target = sample['targets']['BinarySDKSample']
+target['dependencies'] = [{'framework': '../SDK/'+p.name, 'embed': True} for p in sorted((out/'SDK').glob('*.xcframework'))]
+for resource in sorted((out/'SDK/Resources/device').glob('*.bundle')):
+    target['sources'].append({'path': '../SDK/Resources/device/'+resource.name, 'type': 'file', 'buildPhase': 'resources'})
+(out/'Sample/project.yml').write_text(yaml.safe_dump(sample,sort_keys=False))
 paths = [p for folder in ['SDK','Docs','Sample','Licenses'] for p in (out/folder).rglob('*') if p.is_file()]
 paths += [out/'version-manifest.json', out/'Package.resolved']
 (out/'SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(out)}\n' for p in sorted(paths)))

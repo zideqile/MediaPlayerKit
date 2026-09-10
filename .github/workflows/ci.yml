@@ -19,6 +19,12 @@ jobs:
       VPLAYER_LOG_DOMAIN: ${{ vars.VPLAYER_LOG_DOMAIN || vars.LOG_SERVER_DOMAIN || vars.LOG_DOMAIN || secrets.VPLAYER_LOG_DOMAIN || secrets.LOG_SERVER_DOMAIN }}
 
     steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tooling dependencies
+        run: python3 -m pip install PyYAML==6.0.2
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -51,27 +57,32 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-spm-
 
-      - name: Resolve Swift Package Dependencies
-        run: swift package resolve
+      - name: Validate build scripts
+        run: python3 -m unittest discover -s Tests/Scripts -v
 
-      - name: SPM Build & Test (macOS Host)
+      - name: Build SDK XCFramework before Demo
+        env:
+          MPK_VERSION_MANIFEST: build/version-manifest.json
+          SDK_BUILD_NUMBER: ${{ github.run_number }}
+        run: bash scripts/build_binary_delivery.sh "$SDK_BUILD_NUMBER"
+
+      - name: Generate Demo dependency configuration
+        env:
+          MPK_DEMO_MODE: ${{ vars.MPK_DEMO_MODE }}
         run: |
-          swift build -c release -v
-          swift test -v
+          args=()
+          if [ -n "$MPK_DEMO_MODE" ]; then args+=(--mode "$MPK_DEMO_MODE"); fi
+          DEMO_PROJECT=$(python3 scripts/generate_demo_project.py "${args[@]}" --platform device)
+          xcodegen generate --spec project.generated.yml
+          echo "DEMO_PROJECT=$DEMO_PROJECT" >> "$GITHUB_ENV"
 
       # 1. 生成原生 iOS 工程并用 Xcode 归档编译真实 iOS 应用包
       - name: Build & Sign iOS Demo App
         run: |
-          echo "🔨 生成标准 Xcode iOS 工程..."
-          xcodegen generate
-          
-          # 修正 Xcode 15/16 项目兼容性 objectVersion
-          sed -i '' 's/objectVersion = 77;/objectVersion = 56;/g' MediaPlayerKitDemo.xcodeproj/project.pbxproj
-          sed -i '' 's/compatibilityVersion = "Xcode 16.0";/compatibilityVersion = "Xcode 14.0";/g' MediaPlayerKitDemo.xcodeproj/project.pbxproj
-          
           echo "📱 使用 Xcode 归档编译 iOS arm64 原生应用..."
           xcodebuild archive \
-            -project MediaPlayerKitDemo.xcodeproj \
+            -project "$DEMO_PROJECT" \
+            -derivedDataPath build/DemoConsumerDerivedData \
             -scheme MediaPlayerKitDemo \
             -destination "generic/platform=iOS" \
             -archivePath build/MediaPlayerKitDemo-iOS.xcarchive \
@@ -185,6 +196,9 @@ jobs:
           echo "IPA 打包完成，文件大小:"
           ls -lh ../MediaPlayerKitDemo-iOS.ipa
 
+      - name: Source unit test regression (not the packaged Demo)
+        run: swift test -v
+
       # 4. 上传构建产物到 GitHub Actions Artifacts
       - name: Upload iOS Demo App (.ipa)
         uses: actions/upload-artifact@v4
@@ -193,6 +207,8 @@ jobs:
           path: |
             build/MediaPlayerKitDemo-iOS.ipa
             build/version-manifest.json
+            build/binary-delivery/SDK
+            build/binary-delivery/Audit/dependency-audit.json
 
       # 5. 自动上传 IPA 到远程分发服务器 (通过 GitHub Actions 变量/密钥配置地址)
       - name: Upload IPA to Remote Distribution Server
