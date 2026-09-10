@@ -39,9 +39,11 @@ def collect(out):
         destination=sdk/'Resources'/platform
         destination.mkdir(parents=True,exist_ok=True)
         for bundle in (out/('DerivedData-'+platform)).rglob('*.bundle'):
-            if not any(part=='Release-'+suffix for part in bundle.parts): continue
+            if not any(part in (suffix, 'Release-'+suffix) for part in bundle.parts): continue
+            resolved = bundle.resolve()
+            if not resolved.exists() or not resolved.is_dir(): continue
             target=destination/bundle.name
-            if not target.exists(): shutil.copytree(bundle.resolve(),target,symlinks=True)
+            if not target.exists(): shutil.copytree(resolved,target,symlinks=True)
         if not any('KSPlayer' in p.name for p in destination.glob('*.bundle')):
             raise ValueError(f'Missing KSPlayer resource bundle for {platform}')
 
