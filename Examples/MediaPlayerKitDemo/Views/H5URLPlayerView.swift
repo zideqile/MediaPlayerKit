@@ -1,6 +1,9 @@
 import SwiftUI
 import WebKit
 import MediaPlayerKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// App-specific URL submission; all standard controls/events use the SDK bridge.
 private final class H5URLMessageHandler: NSObject, WKScriptMessageHandler {
@@ -122,13 +125,37 @@ struct H5DemoContainerView: View {
     @State private var page = 0
     var body: some View {
         VStack(spacing: 0) {
-            Picker("H5 示例", selection: $page) {
-                Text("节点选流").tag(0)
-                Text("输入地址").tag(1)
+            // MARK: - 顶部安全区避让与模式切换栏
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "globe.americas.fill")
+                        .foregroundColor(.blue)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("H5 混合播放")
+                        .font(.system(size: 14, weight: .bold))
+                    Spacer()
+                    Text(page == 0 ? "预置流节点调度" : "自定义 URL 输入")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                
+                Picker("H5 示例", selection: $page) {
+                    Text("节点选流").tag(0)
+                    Text("输入地址").tag(1)
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
             }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding(.horizontal)
-            .padding(.vertical, 6)
+            #if canImport(UIKit)
+            .background(Color(UIColor.secondarySystemBackground).edgesIgnoringSafeArea(.top))
+            #else
+            .background(Color.gray.opacity(0.1))
+            #endif
+            .overlay(Divider(), alignment: .bottom)
+
             if page == 0 { WebViewHybridPlayerView() }
             else { H5URLPlayerView() }
         }
