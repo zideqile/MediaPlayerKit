@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import CoreFoundation
 
 /// 对标 Android vzplayer 的 H5Player 门面实现 (实现 IH5Player 协议，持有并驱动内部 IPlayer)
 @objc(H5Player)
@@ -75,7 +76,11 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
             } else if eventName == "SWITCH_SOURCE" {
                 if let dict = self.parseJSON(paramsJson),
                    let idx = dict["index"] as? Int ?? (dict["sourceIndex"] as? Int) {
-                    _ = self.multiPlayer.switchToSource(index: idx)
+                    if !self.multiPlayer.switchToSource(index: idx) {
+                        self.multiPlayer.logH5Error("SWITCH_SOURCE: rejected index")
+                    }
+                } else {
+                    self.multiPlayer.logH5Error("SWITCH_SOURCE: invalid parameters")
                 }
             }
         }
@@ -99,7 +104,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func set_currentTime(_ currentTime: String) -> Bool {
         return executeOnMainThreadSync {
             guard let dict = self.parseJSON(currentTime),
-                  let time = dict["currentTime"] as? Double ?? (dict["currentTime"] as? Int).map(Double.init) else {
+                  let time = self.number(dict["currentTime"]), time >= 0, time < Double(Int64.max) else {
+                self.multiPlayer.logH5Error("set_currentTime: invalid parameters")
                 return false
             }
             self.multiPlayer.Seek(Int64(time))
@@ -130,7 +136,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func set_volume(_ volume: String) -> Bool {
         return executeOnMainThreadSync {
             guard let dict = self.parseJSON(volume),
-                  let vol = dict["volume"] as? Double ?? (dict["volume"] as? Float).map(Double.init) else {
+                  let vol = self.number(dict["volume"]), (0...1).contains(vol) else {
+                self.multiPlayer.logH5Error("set_volume: invalid parameters")
                 return false
             }
             self.multiPlayer.SetVolume(Float(vol))
@@ -147,7 +154,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func set_muted(_ parametersJson: String) -> Bool {
         return executeOnMainThreadSync {
             guard let dict = self.parseJSON(parametersJson),
-                  let muted = dict["muted"] as? Bool else {
+                  let muted = self.boolean(dict["muted"]) else {
+                self.multiPlayer.logH5Error("set_muted: invalid parameters")
                 return false
             }
             self.multiPlayer.SetMuted(muted)
@@ -176,7 +184,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func set_loop(_ parametersJson: String) -> Bool {
         return executeOnMainThreadSync {
             guard let dict = self.parseJSON(parametersJson),
-                  let loop = dict["loop"] as? Bool else {
+                  let loop = self.boolean(dict["loop"]) else {
+                self.multiPlayer.logH5Error("set_loop: invalid parameters")
                 return false
             }
             self.multiPlayer.SetLoop(loop)
@@ -194,7 +203,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func set_speed(_ parametersJson: String) -> Bool {
         return executeOnMainThreadSync {
             guard let dict = self.parseJSON(parametersJson),
-                  let speed = dict["speed"] as? Double ?? (dict["speed"] as? Float).map(Double.init) else {
+                  let speed = self.number(dict["speed"]), speed > 0, speed <= Double(Float.greatestFiniteMagnitude), Float(speed) > 0 else {
+                self.multiPlayer.logH5Error("set_speed: invalid parameters")
                 return false
             }
             self.multiPlayer.SetSpeed(Float(speed))
@@ -445,6 +455,15 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         }
     }
     
+    private func number(_ value: Any?) -> Double? {
+        guard let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(),
+              value.doubleValue.isFinite else { return nil }
+        return value.doubleValue
+    }
+    private func boolean(_ value: Any?) -> Bool? {
+        guard let value = value as? NSNumber, CFGetTypeID(value) == CFBooleanGetTypeID() else { return nil }
+        return value.boolValue
+    }
     private func parseJSON(_ json: String) -> [String: Any]? {
         guard let data = json.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

@@ -106,6 +106,14 @@ final class PlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, H5Event
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let player = self.vzPlayer else { return }
             
+            // Reuse SDK request/reply dispatch without replacing the Demo event listener.
+            if let requestId = dict["requestId"] as? String {
+                let bridge = PlayerBridge(player: nil)
+                bridge.player = player
+                PlayerBridge.reply(bridge.handleRequest(method: method, paramsJson: paramsJson, requestId: requestId), to: self.webView)
+                self.syncPropertiesToH5()
+                return
+            }
             switch method {
             case "ready":
                 // H5 DOM 与 JS 脚本初始化完毕握手，立即双向同步在线流与属性

@@ -106,3 +106,28 @@ Logger.logI("play", typeName: String(describing: Self.self))
 引擎只返回可获取的指标，未知值为 nil；无效数值不上传。首个样本只建立计数基线，之后使用单调时钟计算增量和速度。切源、切引擎、暂停后重置基线，计数回退或指标缺失时重新建立基线，不输出负增量。播放或缓冲状态下采样，暂停不采样；时间回调停止时不会额外轮询。统计字段写入 logSI，并将该次指标写入受 stateCountLimit 限制的附加日志。
 
 AVPlayer 字段来自 [Apple AVPlayerItemAccessLogEvent 文档](https://developer.apple.com/documentation/avfoundation/avplayeritemaccesslogevent)。这些聚合观测值并非逐请求网络埋点，也不能替代 Android 所有底层指标。
+
+## H5 / JS 对标补充
+
+H5 属性设置通过 MultiSourcePlayer 记录音量、静音、循环、倍速操作；沿用播放器分组和源上下文，不另建全局日志组。H5 setter 的 JSON 格式、类型或范围错误记录 Error，并返回 false，位置指向 H5Player 的实际校验处。不会把参数错误当成播放失败或触发 PlayerWARN。
+
+时间要求非负且可安全转换为 Int64；音量范围 0...1；倍速为正且可表示为 Float；布尔属性要求 JSON boolean。参数错误不改变原值。JS 页面日志仍用于 Demo 显示，不自动上传任意页面日志。
+
+### WKWebView 请求回执
+
+原有 `{method, paramsJson}` 消息继续有效。标准 SDK 方法可增加字符串 `requestId`，PlayerBridge 通过 `window.vzPlayerBridge.onResponse(response)` 回传：
+
+```javascript
+// 请求
+{ method: 'getVolume', paramsJson: '{}', requestId: 'query-1' }
+// 成功
+{ requestId: 'query-1', ok: true, result: { volume: 0.5 } }
+// 失败
+{ requestId: 'query-1', ok: false, error: 'invalid_parameters_or_rejected' }
+```
+
+未知方法返回 unsupported_method，播放器不存在返回 player_unavailable；无返回值的操作 result 为 null。回执确认方法已处理/受理，实际开始播放仍以 playing 等事件为准。SendEvent 仅支持 NEXT_SOURCE 和 SWITCH_SOURCE，NEXT_SOURCE 的受理回执不代表已成功切源。
+
+Demo 的 player.js 提供 `await window.vzPlayerBridge.request('getVolume')` 和 `request('setVolume', {volume: 0.5})`，支持 iOS 异步回执、Android 同步接口结果归一化、10 秒超时及页面退出清理。播放与属性控制已接入该接口。Demo 专属节点调度命令继续走 sendCmd，不在标准请求协议范围内。宿主接入 SDK PlayerBridge 时，需要自行提供 onResponse 或复用 Demo 中的 Promise 适配代码。
+
+验证：H5BridgeTests 覆盖属性校验、播放器日志分组、getter/setter 回执及失败；`node Tests/JavaScript/BridgeTests.cjs` 覆盖回执关联、失败、超时、页面清理和 Android 接口适配。

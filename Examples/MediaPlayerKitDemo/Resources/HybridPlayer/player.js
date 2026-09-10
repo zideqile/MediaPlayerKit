@@ -93,7 +93,72 @@ if (!window.vzPlayerBridge) {
     window.vzPlayerBridge = {};
 }
 
+// Standard SDK requests return a Promise. Demo scheduling commands retain sendCmd.
+const bridgePending = new Map();
+let bridgeSequence = 0;
+window.vzPlayerBridge.onResponse = function (response) {
+    const pending = bridgePending.get(response.requestId);
+    if (!pending) return;
+    bridgePending.delete(response.requestId);
+    clearTimeout(pending.timer);
+    if (response.ok) pending.resolve(response.result);
+    else pending.reject(new Error(response.error || 'bridge_error'));
+};
+window.vzPlayerBridge.request = function (method, params = {}) {
+    return new Promise((resolve, reject) => {
+        let paramsJson;
+        try { paramsJson = typeof params === 'string' ? params : JSON.stringify(params); }
+        catch (error) { reject(error); return; }
+        const native = window.AndroidBridge || window.vzPlayerNative;
+        const aliases = {Play:'play', Pause:'pause', Resume:'resume', Destroy:'destroy', getCurrentTime:'get_currentTime', setCurrentTime:'set_currentTime',
+            getDuration:'get_duration', getPause:'get_pause', getVolume:'get_volume', setVolume:'set_volume',
+            getMuted:'get_muted', setMuted:'set_muted', getLoop:'get_loop', setLoop:'set_loop',
+            getSpeed:'get_speed', setSpeed:'set_speed', getVideoWidth:'get_videoWidth',
+            getVideoHeight:'get_videoHeight', getBuffered:'get_buffered', getCurrentSource:'get_currentsource'};
+        if (native) {
+            try {
+                const name = typeof native[method] === 'function' ? method : aliases[method];
+                if (!name || typeof native[name] !== 'function') throw new Error('unsupported_method');
+                const raw = native[name](paramsJson);
+                const value = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (value === false) throw new Error('invalid_parameters_or_rejected');
+                resolve(value === undefined ? null : value);
+            } catch (error) { reject(error); }
+            return;
+        }
+        const handler = window.webkit?.messageHandlers?.vzPlayerBridge;
+        if (!handler) { reject(new Error('bridge_unavailable')); return; }
+        const requestId = `request-${++bridgeSequence}`;
+        const timer = setTimeout(() => {
+            bridgePending.delete(requestId);
+            reject(new Error('bridge_timeout'));
+        }, 10000);
+        bridgePending.set(requestId, {resolve, reject, timer});
+        try { handler.postMessage({method, paramsJson, requestId}); }
+        catch (error) {
+            clearTimeout(timer); bridgePending.delete(requestId); reject(error);
+        }
+    });
+};
+window.addEventListener('pagehide', () => {
+    for (const pending of bridgePending.values()) {
+        clearTimeout(pending.timer); pending.reject(new Error('page_closed'));
+    }
+    bridgePending.clear();
+});
+
 function sendCmd(method, paramsJson = '{}') {
+    if (['play', 'Play', 'pause', 'Pause', 'resume', 'Resume', 'setCurrentTime', 'setSpeed',
+         'setVolume', 'setMuted', 'setLoop'].includes(method)) {
+        return window.vzPlayerBridge.request(method, paramsJson).then(result => {
+            log('H5', `${method}: 已受理`);
+            return result;
+        }).catch(error => {
+            log('Error', `${method}: ${error.message}`);
+            return null;
+        });
+    }
+
     // 1. Android 原生 @JavascriptInterface 注入对象优先适配
     if (window.AndroidBridge && typeof window.AndroidBridge[method] === 'function') {
         window.AndroidBridge[method](paramsJson);

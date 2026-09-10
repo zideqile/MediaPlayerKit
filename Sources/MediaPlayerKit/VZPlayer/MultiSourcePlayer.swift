@@ -51,6 +51,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     private var terminalFailure = false
     private var wantsToPlay = true
     private let diagnostics = PlaybackDiagnostics()
+    func logH5Error(_ message: String, function: String = #function, line: UInt = #line) {
+        diagnostics.inputError(message, function: function, line: line)
+    }
     /// Cleared by a new explicit source list or source switch, retained across automatic recovery.
     public private(set) var failureHistory: [PlaybackAttemptFailure] = []
     
@@ -173,6 +176,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetVolume(_ volume: Float) {
+        diagnostics.command("set_volume: \(volume)")
         savedVolume = volume
         controller?.setVolume(volume)
     }
@@ -182,6 +186,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetMuted(_ isMuted: Bool) {
+        diagnostics.command("set_muted: \(isMuted)")
         savedMuted = isMuted
         controller?.setMute(isMuted)
     }
@@ -201,6 +206,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetLoop(_ loop: Bool) {
+        diagnostics.command("set_loop: \(loop)")
         savedLoop = loop
         controller?.setLoop(loop)
     }
@@ -212,6 +218,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetSpeed(_ speed: Float) {
+        diagnostics.command("set_speed: \(speed)")
         savedSpeed = speed
         controller?.setPlaybackRate(speed)
     }

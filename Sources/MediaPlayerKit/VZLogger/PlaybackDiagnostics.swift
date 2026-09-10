@@ -21,6 +21,10 @@ final class PlaybackDiagnostics {
         guard !closed else { return }
         logger.logI(name, fileID: fileID, function: function, line: line, typeName: typeName)
     }
+    func inputError(_ message: String, function: String, line: UInt) {
+        guard !closed else { return }
+        logger.logE(message, function: function, line: line, typeName: "H5Player")
+    }
     func sources(_ sources: [PlayerSource], fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
         for source in sources {
