@@ -31,7 +31,8 @@ let package = Package(
             ],
             path: "Sources/MediaPlayerKit",
             resources: [
-                .process("Rendering/Shaders.metal")
+                .process("Rendering/Shaders.metal"),
+                .copy("Resources/vzplayer-bridge.js")
             ],
             swiftSettings: [
                 .define("ENABLE_METAL_RENDER"),

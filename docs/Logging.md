@@ -128,6 +128,37 @@ H5 属性设置通过 MultiSourcePlayer 记录音量、静音、循环、倍速�
 
 未知方法返回 unsupported_method，播放器不存在返回 player_unavailable；无返回值的操作 result 为 null。回执确认方法已处理/受理，实际开始播放仍以 playing 等事件为准。SendEvent 仅支持 NEXT_SOURCE 和 SWITCH_SOURCE，NEXT_SOURCE 的受理回执不代表已成功切源。
 
-Demo 的 player.js 提供 `await window.vzPlayerBridge.request('getVolume')` 和 `request('setVolume', {volume: 0.5})`，支持 iOS 异步回执、Android 同步接口结果归一化、10 秒超时及页面退出清理。播放与属性控制已接入该接口。Demo 专属节点调度命令继续走 sendCmd，不在标准请求协议范围内。宿主接入 SDK PlayerBridge 时，需要自行提供 onResponse 或复用 Demo 中的 Promise 适配代码。
+SDK 的 vzplayer-bridge.js 提供 `await window.vzPlayerBridge.request('getVolume')` 和 `request('setVolume', {volume: 0.5})`，支持 iOS 异步回执、Android 同步接口结果归一化、10 秒超时及页面退出清理。播放与属性控制已接入该接口。Demo 专属节点调度命令继续走 sendCmd，不在标准请求协议范围内。宿主通过 PlayerBridge.installJavaScript(in:) 安装 SDK 自带的 Promise 适配代码，并注册 PlayerBridge 消息处理器。
 
 验证：H5BridgeTests 覆盖属性校验、播放器日志分组、getter/setter 回执及失败；`node Tests/JavaScript/BridgeTests.cjs` 覆盖回执关联、失败、超时、页面清理和 Android 接口适配。
+
+
+### 独立 JS 桥接资源与 Android 事件边界
+
+可复用脚本为 `Sources/MediaPlayerKit/Resources/vzplayer-bridge.js`，不依赖 Demo DOM。SPM 和 CocoaPods 均包含该资源。iOS 在创建 WKWebView 前调用：
+
+```swift
+let content = WKUserContentController()
+try PlayerBridge.installJavaScript(in: content)
+// 还需由宿主注册消息处理器，并持有 PlayerBridge、设置 webView。
+content.add(bridge, name: "vzPlayerBridge")
+```
+
+脚本在主 frame 的 document start 注入；重复安装同一脚本不重复注册。宿主销毁 WebView 时移除消息处理器。Demo 已使用该资源，不再维护独立的桥接实现。普通网页或 Android 页面可将同一 JS 文件作为脚本加载。
+
+Android 源码 IPlayer.PlayerEvent 实际只有 NEXT_SOURCE 和 SWITCH_PLAYER。IH5Player.SendEvent 接收 Java 枚举及 JSON 字符串；该 Java 接口不是已验证的 JS 注入协议。iOS 的 SWITCH_SOURCE / switchSource 为指定源索引扩展，不能声称 Android 原生支持相同事件。
+
+Android 宿主需提供可供 JS 调用的包装方法，将事件字符串转换为原生枚举，再显式配置适配函数：
+
+```javascript
+window.vzPlayerBridge.configure({
+  // 此方法由 Android 宿主实现并暴露，不是 vzplayer 已有接口的声明。
+  androidSendEvent: (eventName, paramsJson) =>
+    window.AndroidBridge.sendPlayerEvent(eventName, paramsJson)
+});
+await window.vzPlayerBridge.request('SendEvent', {
+  eventName: 'NEXT_SOURCE', params: {}
+});
+```
+
+未配置事件适配器返回 android_event_adapter_required；未知 Android 事件返回 unsupported_event。Android 的 SWITCH_PLAYER 通过此显式适配器转交宿主；iOS 尚不支持该事件，不将它误映射成切源。适配函数可返回同步结果或 Promise，false 表示拒绝，void 仅表示已受理。Android 包装和双端真机行为仍需宿主联调验证。

@@ -427,6 +427,11 @@ final class HybridPlayerViewModel: ObservableObject {
         
         // 2. 初始化 WKUserContentController 与 WKWebViewConfiguration
         let userController = WKUserContentController()
+        do {
+            try PlayerBridge.installJavaScript(in: userController)
+        } catch {
+            Logger.logE("JS bridge installation failed:", error.localizedDescription, typeName: "WebViewHybridPlayerView")
+        }
         let config = WKWebViewConfiguration()
         config.userContentController = userController
         
