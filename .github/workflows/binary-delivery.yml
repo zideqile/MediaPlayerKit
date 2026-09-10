@@ -1,0 +1,51 @@
+name: Prepare Binary SDK Delivery Candidate
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: '发行构建号（与实际分发序列协调，必须为正整数）'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: which xcodegen || brew install xcodegen
+      - name: Validate sources and prepare candidate
+        env:
+          DELIVERY_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          python3 scripts/generate_versions.py --check
+          python3 -m unittest discover -s Tests/Scripts -v
+          if [[ ! "$DELIVERY_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo '构建号必须为正整数' >&2
+            exit 1
+          fi
+          bash scripts/build_binary_delivery.sh "$DELIVERY_BUILD_NUMBER"
+      - name: Upload candidate (not a published release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaPlayerKit-CANDIDATE-${{ inputs.build_number }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            build/binary-delivery/SDK
+            build/binary-delivery/Docs
+            build/binary-delivery/Sample
+            build/binary-delivery/Licenses
+            build/binary-delivery/Audit
+            build/binary-delivery/README.md
+            build/binary-delivery/Package.resolved
+            build/binary-delivery/version-manifest.json
+            build/binary-delivery/SHA256SUMS
+            build/binary-delivery/CANDIDATE.txt
+      - name: Upload build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Binary-delivery-failure-${{ github.run_id }}
+          path: build/binary-delivery/Audit
+          if-no-files-found: ignore
