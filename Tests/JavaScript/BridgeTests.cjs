@@ -1,20 +1,24 @@
 const {readFileSync} = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = readFileSync(require('node:path').join(__dirname, '../../Examples/MediaPlayerKitDemo/Resources/HybridPlayer/player.js'), 'utf8');
-const code = source.slice(source.indexOf('const bridgePending'), source.indexOf('function sendCmd'));
+const source = readFileSync(require('node:path').join(__dirname, '../../Sources/MediaPlayerKit/Resources/vzplayer-bridge.js'), 'utf8');
+const code = source;
 function setup(native) {
     const messages = [], timers = new Map(), events = {};
     let sequence = 0;
     const window = {vzPlayerBridge: {}, addEventListener: (name, fn) => events[name] = fn};
     if (native) window.AndroidBridge = native;
     else window.webkit = {messageHandlers: {vzPlayerBridge: {postMessage: msg => messages.push(msg)}}};
-    vm.runInNewContext(code, {window, setTimeout: fn => { timers.set(++sequence, fn); return sequence; }, clearTimeout: id => timers.delete(id)});
-    return {bridge: window.vzPlayerBridge, messages, timers, events};
+    const context = vm.createContext({window, setTimeout: fn => { timers.set(++sequence, fn); return sequence; }, clearTimeout: id => timers.delete(id)});
+    vm.runInContext(code, context);
+    return {bridge: window.vzPlayerBridge, messages, timers, events, reinstall: () => vm.runInContext(code, context)};
 }
 (async () => {
     const ios = setup();
     const first = ios.bridge.request('getVolume');
+    const request = ios.bridge.request;
+    ios.reinstall();
+    assert.equal(ios.bridge.request, request);
     const second = ios.bridge.request('setVolume', {volume: 2});
     ios.bridge.onResponse({requestId: ios.messages[1].requestId, ok: false, error: 'invalid_parameters_or_rejected'});
     await assert.rejects(second, /invalid_parameters/);
@@ -31,5 +35,17 @@ function setup(native) {
     assert.equal((await android.bridge.request('getVolume')).volume, 0.8);
     await assert.rejects(android.bridge.request('setVolume', {volume: 2}), /invalid_parameters/);
     await assert.rejects(android.bridge.request('missing'), /unsupported_method/);
+    await assert.rejects(android.bridge.request('SendEvent', {eventName:'NEXT_SOURCE'}), /android_event_adapter_required/);
+    const calls = [];
+    android.bridge.configure({androidSendEvent: (event, params) => { calls.push([event, JSON.parse(params)]); return true; }});
+    assert.equal(await android.bridge.request('SendEvent', {eventName:'NEXT_SOURCE', params:{reason:'retry'}}), true);
+    assert.deepEqual(calls, [['NEXT_SOURCE', {reason:'retry'}]]);
+    await assert.rejects(android.bridge.request('SendEvent', {eventName:'SWITCH_SOURCE', params:{index:1}}), /unsupported_event/);
+    await assert.rejects(android.bridge.request('SendEvent', {eventName:'NEXT_SOURCE', params:[]}), /invalid_parameters/);
+    android.bridge.configure({androidSendEvent: () => false});
+    await assert.rejects(android.bridge.request('SendEvent', {eventName:'NEXT_SOURCE'}), /invalid_parameters_or_rejected/);
+    android.bridge.configure({androidSendEvent: async () => true});
+    assert.equal(await android.bridge.request('SendEvent', {eventName:'SWITCH_PLAYER'}), true);
+    ios.bridge.onResponse(null);
     console.log('Bridge tests passed: reply correlation, failure, timeout, page cleanup, Android aliases/results.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

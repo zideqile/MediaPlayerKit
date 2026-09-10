@@ -9,6 +9,23 @@ public final class PlayerBridge: NSObject, H5EventListener {
     public weak var player: IH5Player?
     #if canImport(WebKit)
     public weak var webView: WKWebView?
+
+    /// Install before creating/loading WKWebView. Message handler registration remains host-owned.
+    public static func installJavaScript(in controller: WKUserContentController) throws {
+        #if SWIFT_PACKAGE
+        let bundles = [Bundle.module]
+        #else
+        let bundles = [Bundle(for: PlayerBridge.self), Bundle.main]
+        #endif
+        guard let url = bundles.compactMap({ $0.url(forResource: "vzplayer-bridge", withExtension: "js") }).first else {
+            throw NSError(domain: "MediaPlayerKit.PlayerBridge", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "vzplayer-bridge.js resource is missing"])
+        }
+        let source = try String(contentsOf: url, encoding: .utf8)
+        guard !controller.userScripts.contains(where: { $0.source == source }) else { return }
+        controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
+
     #endif
     
     #if canImport(WebKit)

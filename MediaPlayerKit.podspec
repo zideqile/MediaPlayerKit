@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.swift_version = '5.9'
 
   s.source_files = 'Sources/MediaPlayerKit/**/*.{swift,h,m,mm,c,cpp}'
-  s.resources = 'Sources/MediaPlayerKit/Rendering/Shaders.metal'
+  s.resources = ['Sources/MediaPlayerKit/Rendering/Shaders.metal', 'Sources/MediaPlayerKit/Resources/vzplayer-bridge.js']
   
   s.frameworks = 'AVFoundation', 'VideoToolbox', 'Metal', 'MetalKit', 'AudioToolbox', 'CoreMedia', 'Accelerate'
   s.libraries = 'c++', 'z', 'bz2', 'iconv'
