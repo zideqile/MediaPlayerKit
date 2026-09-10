@@ -74,4 +74,4 @@ paths += [out/'version-manifest.json', out/'Package.resolved']
 (out/'SHA256SUMS').write_text(''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(out)}\n' for p in sorted(paths)))
 (out/'CANDIDATE.txt').write_text('尚未完成第三方依赖闭包检查、纯二进制消费编译和真机验收，不得作为正式包交付。\n')
 PY
-printf '%s\n' "候选产物：$OUT；按 Docs/Acceptance.md 完成依赖、消费工程和真机验收后才能交付。"
+printf '%s\n' "候选产物：${OUT}；按 Docs/Acceptance.md 完成依赖、消费工程和真机验收后才能交付。"
