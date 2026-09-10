@@ -42,6 +42,19 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
         }
         return bufferedDurationValue
     }
+    public var runtimeMetrics: PlayerRuntimeMetrics? {
+        guard let player = playerView.playerLayer?.player else { return nil }
+        var metrics = PlayerRuntimeMetrics()
+        let nominal = Double(player.nominalFrameRate)
+        if nominal > 0 { metrics.nominalFrameRate = nominal }
+        if let info = player.dynamicInfo {
+            metrics.displayFPS = info.displayFPS
+            metrics.bytesRead = info.bytesRead
+            metrics.droppedVideoFrames = Int64(info.droppedVideoFrameCount)
+            metrics.droppedVideoPackets = Int64(info.droppedVideoPacketCount)
+        }
+        return metrics
+    }
     public var isPlaying: Bool {
         return state == .playing
     }

@@ -29,6 +29,7 @@ public protocol MediaPlayerProtocol: AnyObject {
     var bufferedDuration: TimeInterval { get }
     var isPlaying: Bool { get }
     var naturalSize: CGSize { get }
+    var runtimeMetrics: PlayerRuntimeMetrics? { get }
     
     func prepare(with url: URL, config: PlayerConfig)
     func play()
@@ -44,4 +45,8 @@ public protocol MediaPlayerProtocol: AnyObject {
     
     func setSubtitleURL(_ url: URL?)
     func getQoSReport() -> PlayerQoSReport?
+}
+
+public extension MediaPlayerProtocol {
+    var runtimeMetrics: PlayerRuntimeMetrics? { nil }
 }

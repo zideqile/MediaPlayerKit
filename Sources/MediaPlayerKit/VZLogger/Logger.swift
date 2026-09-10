@@ -21,10 +21,11 @@ public final class InternalLogger {
             appenders.removeAll { $0 === appender }
         }
     }
-    public func log(_ level: LogLevel, messageType: MessageType = .log, messages: [Any]) {
+    public func log(_ level: LogLevel, messageType: MessageType = .log, messages: [Any], fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) {
         executor.sync {
             guard !closed, level.rawValue >= self.level.rawValue, !messages.isEmpty else { return }
-            let message = messages.map { String(describing: $0) }.joined(separator: " ")
+            let location = LogLocation(fileID: fileID, function: function, line: line, typeName: typeName)
+            let message = location.prefix + messages.map { String(describing: $0) }.joined(separator: " ")
             for appender in appenders { appender.append(level: level, tag: tag, message: message, messageType: messageType) }
         }
     }
@@ -35,14 +36,15 @@ public final class InternalLogger {
             for appender in appenders { appender.appendStatLog(level: level, tag: tag, name: name, data: data) }
         }
     }
-    public func merged(_ level: LogLevel, messageType: MessageType = .log, similarity: Int, format: String, args: [Any]) {
+    public func merged(_ level: LogLevel, messageType: MessageType = .log, similarity: Int, format: String, args: [Any], fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) {
         executor.sync {
             guard !closed, level.rawValue >= self.level.rawValue else { return }
+            let locatedFormat = LogLocation(fileID: fileID, function: function, line: line, typeName: typeName).prefix + format
             for appender in appenders {
                 if let merger = mergers[ObjectIdentifier(appender)] {
-                    merger.pushLog(level: level, tag: tag, messageType: messageType, similarity: similarity, format: format, args: args)
+                    merger.pushLog(level: level, tag: tag, messageType: messageType, similarity: similarity, format: locatedFormat, args: args)
                 } else {
-                    appender.append(level: level, tag: tag, message: LogMerger.formatBraces(format, args), messageType: messageType)
+                    appender.append(level: level, tag: tag, message: LogMerger.formatBraces(locatedFormat, args), messageType: messageType)
                 }
             }
         }
@@ -183,57 +185,57 @@ public enum Logger {
 }
 
 public extension InternalLogger {
-    func logD(_ messages: Any...) { log(.debug, messageType: .log, messages: messages) }
-    func logMD(_ similarity: Int, _ format: String, _ args: Any...) { merged(.debug, messageType: .log, similarity: similarity, format: format, args: args) }
-    func logAD(_ messages: Any...) { log(.debug, messageType: .attachedLog, messages: messages) }
-    func logMAD(_ similarity: Int, _ format: String, _ args: Any...) { merged(.debug, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    func logD(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.debug, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMD(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.debug, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logAD(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.debug, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMAD(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.debug, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     func logSD(_ name: String, _ data: Double) { statistic(.debug, name: name, data: data) }
-    func logI(_ messages: Any...) { log(.info, messageType: .log, messages: messages) }
-    func logMI(_ similarity: Int, _ format: String, _ args: Any...) { merged(.info, messageType: .log, similarity: similarity, format: format, args: args) }
-    func logAI(_ messages: Any...) { log(.info, messageType: .attachedLog, messages: messages) }
-    func logMAI(_ similarity: Int, _ format: String, _ args: Any...) { merged(.info, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    func logI(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.info, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMI(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.info, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logAI(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.info, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMAI(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.info, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     func logSI(_ name: String, _ data: Double) { statistic(.info, name: name, data: data) }
-    func logW(_ messages: Any...) { log(.warn, messageType: .log, messages: messages) }
-    func logMW(_ similarity: Int, _ format: String, _ args: Any...) { merged(.warn, messageType: .log, similarity: similarity, format: format, args: args) }
-    func logAW(_ messages: Any...) { log(.warn, messageType: .attachedLog, messages: messages) }
-    func logMAW(_ similarity: Int, _ format: String, _ args: Any...) { merged(.warn, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    func logW(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.warn, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMW(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.warn, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logAW(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.warn, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMAW(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.warn, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     func logSW(_ name: String, _ data: Double) { statistic(.warn, name: name, data: data) }
-    func logE(_ messages: Any...) { log(.error, messageType: .log, messages: messages) }
-    func logME(_ similarity: Int, _ format: String, _ args: Any...) { merged(.error, messageType: .log, similarity: similarity, format: format, args: args) }
-    func logAE(_ messages: Any...) { log(.error, messageType: .attachedLog, messages: messages) }
-    func logMAE(_ similarity: Int, _ format: String, _ args: Any...) { merged(.error, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    func logE(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.error, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logME(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.error, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logAE(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.error, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMAE(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.error, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     func logSE(_ name: String, _ data: Double) { statistic(.error, name: name, data: data) }
-    func logF(_ messages: Any...) { log(.fatal, messageType: .log, messages: messages) }
-    func logMF(_ similarity: Int, _ format: String, _ args: Any...) { merged(.fatal, messageType: .log, similarity: similarity, format: format, args: args) }
-    func logAF(_ messages: Any...) { log(.fatal, messageType: .attachedLog, messages: messages) }
-    func logMAF(_ similarity: Int, _ format: String, _ args: Any...) { merged(.fatal, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    func logF(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.fatal, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMF(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.fatal, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logAF(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { log(.fatal, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    func logMAF(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { merged(.fatal, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     func logSF(_ name: String, _ data: Double) { statistic(.fatal, name: name, data: data) }
 }
 
 public extension Logger {
-    static func logD(_ messages: Any...) { getLogger().log(.debug, messageType: .log, messages: messages) }
-    static func logMD(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.debug, messageType: .log, similarity: similarity, format: format, args: args) }
-    static func logAD(_ messages: Any...) { getLogger().log(.debug, messageType: .attachedLog, messages: messages) }
-    static func logMAD(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.debug, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    static func logD(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.debug, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMD(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.debug, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logAD(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.debug, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMAD(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.debug, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     static func logSD(_ name: String, _ data: Double) { getLogger().statistic(.debug, name: name, data: data) }
-    static func logI(_ messages: Any...) { getLogger().log(.info, messageType: .log, messages: messages) }
-    static func logMI(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.info, messageType: .log, similarity: similarity, format: format, args: args) }
-    static func logAI(_ messages: Any...) { getLogger().log(.info, messageType: .attachedLog, messages: messages) }
-    static func logMAI(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.info, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    static func logI(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.info, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMI(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.info, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logAI(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.info, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMAI(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.info, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     static func logSI(_ name: String, _ data: Double) { getLogger().statistic(.info, name: name, data: data) }
-    static func logW(_ messages: Any...) { getLogger().log(.warn, messageType: .log, messages: messages) }
-    static func logMW(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.warn, messageType: .log, similarity: similarity, format: format, args: args) }
-    static func logAW(_ messages: Any...) { getLogger().log(.warn, messageType: .attachedLog, messages: messages) }
-    static func logMAW(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.warn, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    static func logW(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.warn, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMW(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.warn, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logAW(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.warn, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMAW(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.warn, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     static func logSW(_ name: String, _ data: Double) { getLogger().statistic(.warn, name: name, data: data) }
-    static func logE(_ messages: Any...) { getLogger().log(.error, messageType: .log, messages: messages) }
-    static func logME(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.error, messageType: .log, similarity: similarity, format: format, args: args) }
-    static func logAE(_ messages: Any...) { getLogger().log(.error, messageType: .attachedLog, messages: messages) }
-    static func logMAE(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.error, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    static func logE(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.error, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logME(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.error, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logAE(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.error, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMAE(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.error, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     static func logSE(_ name: String, _ data: Double) { getLogger().statistic(.error, name: name, data: data) }
-    static func logF(_ messages: Any...) { getLogger().log(.fatal, messageType: .log, messages: messages) }
-    static func logMF(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.fatal, messageType: .log, similarity: similarity, format: format, args: args) }
-    static func logAF(_ messages: Any...) { getLogger().log(.fatal, messageType: .attachedLog, messages: messages) }
-    static func logMAF(_ similarity: Int, _ format: String, _ args: Any...) { getLogger().merged(.fatal, messageType: .attachedLog, similarity: similarity, format: format, args: args) }
+    static func logF(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.fatal, messageType: .log, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMF(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.fatal, messageType: .log, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logAF(_ messages: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().log(.fatal, messageType: .attachedLog, messages: messages, fileID: fileID, function: function, line: line, typeName: typeName) }
+    static func logMAF(_ similarity: Int, _ format: String, _ args: Any..., fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String? = nil) { getLogger().merged(.fatal, messageType: .attachedLog, similarity: similarity, format: format, args: args, fileID: fileID, function: function, line: line, typeName: typeName) }
     static func logSF(_ name: String, _ data: Double) { getLogger().statistic(.fatal, name: name, data: data) }
 }

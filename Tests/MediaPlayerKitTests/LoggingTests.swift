@@ -39,7 +39,7 @@ final class LoggingTests: XCTestCase {
         let logger = InternalLogger(logGroup: "test", level: .warn)
         logger.addAppender(appender)
         logger.logI("hidden"); logger.logE("visible"); logger.logSD("fps", 30)
-        XCTAssertEqual(appender.messages, ["visible"])
+        XCTAssertEqual(appender.messages.map { $0.components(separatedBy: "] ").dropFirst().joined(separator: "] ") }, ["visible"])
         XCTAssertEqual(appender.stats, [30])
         XCTAssertEqual(LogConfig().level, 1)
         logger.destroy(); logger.logF("ignored")
@@ -52,7 +52,7 @@ final class LoggingTests: XCTestCase {
         Logger.addAppender(appender); Logger.addAppender(appender)
         first.logI("one"); Logger.getLogger("second").logI("two")
         Logger.removeAppender(appender); first.logI("hidden")
-        XCTAssertEqual(appender.messages, ["one", "two"])
+        XCTAssertEqual(appender.messages.map { $0.components(separatedBy: "] ").dropFirst().joined(separator: "] ") }, ["one", "two"])
     }
     func testMergerFlushAndSimilarity() {
         let appender = RecordingAppender()
@@ -338,14 +338,15 @@ extension LoggingTests {
         let first = InternalLogger(logGroup: "first")
         let second = InternalLogger(logGroup: "second")
         first.addAppender(appender); second.addAppender(appender)
-        first.logMI(100, "frame {}", 1); first.logMI(100, "frame {}", 1)
-        second.logMI(100, "frame {}", 2)
+        func emit(_ logger: InternalLogger, _ value: Int) { logger.logMI(100, "frame {}", value) }
+        emit(first, 1); emit(first, 1)
+        emit(second, 2)
         XCTAssertTrue(appender.messages.isEmpty)
         first.removeAppender(appender) // flush and destroy only first group's merger
-        XCTAssertEqual(appender.messages, ["frame 1 [x2]"])
-        second.logMI(100, "frame {}", 2)
+        XCTAssertEqual(appender.messages.map { $0.components(separatedBy: "] ").dropFirst().joined(separator: "] ") }, ["frame 1 [x2]"])
+        emit(second, 2)
         second.flushLog(); second.flushLog()
-        XCTAssertEqual(appender.messages, ["frame 1 [x2]", "frame 2 [x2]"])
+        XCTAssertEqual(appender.messages.map { $0.components(separatedBy: "] ").dropFirst().joined(separator: "] ") }, ["frame 1 [x2]", "frame 2 [x2]"])
         first.destroy(); second.destroy()
     }
 }
@@ -399,7 +400,7 @@ extension LoggingTests {
         XCTAssertEqual(first.finishes, 1)
         XCTAssertEqual(second.finishes, 0)
         b.command("still playing")
-        XCTAssertTrue(second.messages.contains("still playing"))
+        XCTAssertTrue(second.messages.contains { $0.hasSuffix("] still playing") })
         b.finish()
     }
     func testUploadDrainWaitsForInflightRequest() {
@@ -428,8 +429,86 @@ extension LoggingTests {
         let options = InitConfig(); options.appenders = []; options.externalAppenders = [recorder]
         try Logger.initialize(config: VPlayerConfig(), initConfig: options)
         Logger.logI("custom sink")
-        XCTAssertEqual(recorder.messages, ["custom sink"])
+        XCTAssertEqual(recorder.messages.map { $0.components(separatedBy: "] ").dropFirst().joined(separator: "] ") }, ["custom sink"])
         Logger.destroy()
         XCTAssertEqual(recorder.finishes, 0) // caller owns external outputs
+    }
+}
+
+
+extension LoggingTests {
+    func testCallerLocationSurvivesConvenienceWrappers() {
+        let recorder = DiagnosticsRecorder()
+        Logger.configure { _ in [recorder] }
+        let line = #line + 1
+        Logger.logI("static", typeName: "LoggingTests")
+        XCTAssertEqual(recorder.messages.last, "[LoggingTests.\(#function):\(line)] static")
+        let logger = Logger.getLogger("location")
+        let instanceLine = #line + 1
+        logger.logAI("attached", typeName: "LoggingTests")
+        XCTAssertEqual(recorder.messages.last, "[LoggingTests.\(#function):\(instanceLine)] attached")
+        let diagnostics = PlaybackDiagnostics(group: "forwarding")
+        diagnostics.command("pause", fileID: "SDK/MultiSourcePlayer.swift", function: "pause()", line: 123)
+        XCTAssertEqual(recorder.messages.last, "[MultiSourcePlayer.pause():123] pause")
+        logger.logSI("fps", 25)
+        XCTAssertEqual(recorder.values["fps"], [25])
+    }
+
+    func testMergeKeepsDistinctCallerLocations() {
+        let appender = MergeableAppender()
+        let logger = InternalLogger(logGroup: "merge")
+        logger.addAppender(appender)
+        for line: UInt in [10, 10, 20] {
+            logger.logMI(100, "frame {}", 1, fileID: "SDK/Player.swift", function: "render()", line: line)
+        }
+        logger.flushLog()
+        XCTAssertEqual(appender.messages, ["[Player.render():10] frame 1 [x2]", "[Player.render():20] frame 1"])
+    }
+
+    func testRuntimeCounterDeltasAndUnavailableMeasurements() {
+        var sampler = RuntimeMetricsSampler()
+        var metrics = PlayerRuntimeMetrics()
+        metrics.displayFPS = 0; metrics.nominalFrameRate = .nan; metrics.bytesRead = 100
+        let first = sampler.sample(metrics, at: 10)
+        XCTAssertEqual(first["fps"], 0)
+        XCTAssertNil(first["frame_rate"])
+        XCTAssertNil(first["ios_bytes_read_delta"])
+        metrics.bytesRead = 700
+        XCTAssertEqual(sampler.sample(metrics, at: 13)["ios_bytes_read_per_second"], 200)
+        metrics.bytesRead = 20
+        XCTAssertNil(sampler.sample(metrics, at: 16)["ios_bytes_read_delta"])
+        metrics.bytesRead = nil
+        XCTAssertNil(sampler.sample(metrics, at: 19)["ios_bytes_read_delta"])
+        metrics.bytesRead = 900
+        XCTAssertNil(sampler.sample(metrics, at: 22)["ios_bytes_read_delta"])
+        metrics.displayFPS = -1; metrics.observedBitrate = .infinity
+        XCTAssertTrue(sampler.sample(metrics, at: 25).values.allSatisfy { $0.isFinite && $0 >= 0 })
+    }
+
+    func testRuntimeSamplingThrottleAndPauseReset() {
+        let recorder = DiagnosticsRecorder()
+        Logger.configure { _ in [recorder] }
+        var time: TimeInterval = 0
+        let diagnostics = PlaybackDiagnostics(group: "metrics", clock: { time })
+        let source = PlayerSource(url: "https://example.com/live")
+        diagnostics.begin(source: source, engine: .mePlayer)
+        diagnostics.state(.playing)
+        var reads = 0
+        func sample(_ interval: Double = 3) {
+            diagnostics.sampleMetrics(interval: interval, provider: {
+                reads += 1
+                var metrics = PlayerRuntimeMetrics()
+                metrics.bytesRead = Int64(time * 100); metrics.displayFPS = 24
+                return metrics
+            })
+        }
+        sample(); time = 1; sample(); XCTAssertEqual(reads, 1)
+        time = 3; sample(); XCTAssertEqual(recorder.values["ios_bytes_read_per_second"], [100])
+        diagnostics.state(.paused); time = 30; sample(); XCTAssertEqual(reads, 2)
+        diagnostics.state(.playing); sample()
+        XCTAssertEqual(recorder.values["ios_bytes_read_per_second"], [100])
+        diagnostics.begin(source: source, engine: .avPlayer); diagnostics.state(.playing)
+        time = 33; sample(); XCTAssertEqual(recorder.values["ios_bytes_read_per_second"], [100])
+        time = 36; sample(0); XCTAssertEqual(reads, 4)
     }
 }

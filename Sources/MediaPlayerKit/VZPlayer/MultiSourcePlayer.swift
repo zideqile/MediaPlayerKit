@@ -482,6 +482,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func player(_ player: MediaPlayerController, currentTime: TimeInterval, totalDuration: TimeInterval) {
         guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
         let token = generation
+        diagnostics.sampleMetrics(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds)) {
+            player.runtimeMetrics
+        }
         delegate?.multiSourcePlayer(self, currentTime: currentTime, totalDuration: totalDuration)
         guard generation == token, !isDestroyed else { return }
         notifyListeners { $0.onTimeUpdate(currentTime: Int64(currentTime), totalDuration: Int64(totalDuration)) }
