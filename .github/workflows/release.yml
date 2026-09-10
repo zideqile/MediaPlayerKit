@@ -1,4 +1,4 @@
-name: Build & Release XCFramework & Demo Apps
+name: Build & Release iOS Binary SDK & Demo
 
 on:
   push:
@@ -8,10 +8,16 @@ on:
 
 jobs:
   build-and-release:
-    name: Build XCFramework & Demo Apps
+    name: Build iOS SDK then Binary Demo
     runs-on: macos-14
 
     steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tooling dependencies
+        run: python3 -m pip install PyYAML==6.0.2
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -32,91 +38,35 @@ jobs:
         run: |
           xcodebuild -version
 
-      - name: Generate versioned Xcode project
-        run: |
-          which xcodegen || brew install xcodegen
-          xcodegen generate
+      - name: Install XcodeGen
+        run: which xcodegen || brew install xcodegen
 
-      # 1. 打包 SDK XCFramework
-      - name: Build iOS Device Slice (arm64)
-        run: |
-          xcodebuild archive \
-            -project MediaPlayerKitDemo.xcodeproj \
-            -scheme MediaPlayerKit \
-            -destination "generic/platform=iOS" \
-            -archivePath "build/MediaPlayerKit-iOS.xcarchive" \
-            SKIP_INSTALL=NO \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            CODE_SIGNING_ALLOWED=NO
+      - name: Build SDK binary and dependencies
+        env:
+          MPK_VERSION_MANIFEST: build/version-manifest.json
+          SDK_BUILD_NUMBER: ${{ github.run_number }}
+        run: bash scripts/build_binary_delivery.sh "$SDK_BUILD_NUMBER"
 
-      - name: Build iOS Simulator Slice (arm64 + x86_64)
+      - name: Build iOS Demo from the generated binary
         run: |
-          xcodebuild archive \
-            -project MediaPlayerKitDemo.xcodeproj \
-            -scheme MediaPlayerKit \
-            -destination "generic/platform=iOS Simulator" \
-            -archivePath "build/MediaPlayerKit-iOS-Simulator.xcarchive" \
-            SKIP_INSTALL=NO \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Package XCFramework
-        run: |
-          xcodebuild -create-xcframework \
-            -framework "build/MediaPlayerKit-iOS.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
-            -framework "build/MediaPlayerKit-iOS-Simulator.xcarchive/Products/Library/Frameworks/MediaPlayerKit.framework" \
-            -output "build/MediaPlayerKit.xcframework"
-          cd build && zip -r MediaPlayerKit.xcframework.zip MediaPlayerKit.xcframework
-
-      # 2. 打包 macOS Demo App
-      - name: Build macOS Demo App
-        run: |
-          mkdir -p build/macOS/MediaPlayerKitDemo.app/Contents/MacOS
-          mkdir -p build/macOS/MediaPlayerKitDemo.app/Contents/Resources
-          swift build -c release --product MediaPlayerKitDemo
-          cp .build/release/MediaPlayerKitDemo build/macOS/MediaPlayerKitDemo.app/Contents/MacOS/
-          cat << 'PLIST' > build/macOS/MediaPlayerKitDemo.app/Contents/Info.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleExecutable</key>
-              <string>MediaPlayerKitDemo</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.mediaplayerkit.demo.macos</string>
-              <key>CFBundleName</key>
-              <string>MediaPlayerKit Demo</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>LSMinimumSystemVersion</key>
-              <string>11.0</string>
-              <key>NSHighResolutionCapable</key>
-              <true/>
-          </dict>
-          </plist>
-          PLIST
-          python3 -c 'import json, plistlib; from pathlib import Path; m=json.loads(Path("build/version-manifest.json").read_text()); p=Path("build/macOS/MediaPlayerKitDemo.app/Contents/Info.plist"); d=plistlib.loads(p.read_bytes()); d.update(CFBundleShortVersionString=m["demoVersion"], CFBundleVersion=m["buildNumber"]); p.write_bytes(plistlib.dumps(d))'
-          cd build/macOS && zip -r ../MediaPlayerKitDemo-macOS.app.zip MediaPlayerKitDemo.app
-
-      # 3. 打包 iOS Demo App
-      - name: Build iOS Demo App
-        run: |
+          python3 scripts/generate_demo_project.py --mode binary --platform simulator
+          xcodegen generate --spec project.generated.yml
           xcodebuild build \
-            -project MediaPlayerKitDemo.xcodeproj \
+            -project MediaPlayerKitDemoBinary.xcodeproj \
             -scheme MediaPlayerKitDemo \
+            -configuration Release \
             -destination "generic/platform=iOS Simulator" \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
-          APP_PATH=$(find build/DerivedData -name "MediaPlayerKitDemo.app" | head -n 1)
-          if [ -d "$APP_PATH" ]; then
-            mkdir -p build/iOS
-            cp -R "$APP_PATH" build/iOS/
-            cd build/iOS
-            zip -r ../MediaPlayerKitDemo-iOS-Simulator.app.zip MediaPlayerKitDemo.app
-            mkdir -p Payload && cp -R MediaPlayerKitDemo.app Payload/
-            zip -r ../MediaPlayerKitDemo-iOS.ipa Payload
-          fi
+            -derivedDataPath build/DemoConsumerDerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+          mkdir -p build/iOS
+          cp -R build/DemoConsumerDerivedData/Build/Products/Release-iphonesimulator/MediaPlayerKitDemo.app build/iOS/
+          cd build/iOS
+          zip -r ../MediaPlayerKitDemo-iOS-Simulator.app.zip MediaPlayerKitDemo.app
+
+      - name: Package binary delivery candidate
+        run: |
+          cd build/binary-delivery
+          zip -r ../MediaPlayerKit-Binary-Candidate.zip SDK Docs Sample Licenses Audit README.md Package.resolved version-manifest.json SHA256SUMS CANDIDATE.txt
 
       # 4. 上传 Artifact
       - name: Upload Artifacts
@@ -125,9 +75,8 @@ jobs:
           name: Release-Artifacts-${{ github.run_number }}-${{ github.sha }}
           path: |
             build/version-manifest.json
-            build/MediaPlayerKit.xcframework.zip
-            build/MediaPlayerKitDemo-macOS.app.zip
-            build/MediaPlayerKitDemo-iOS.ipa
+            build/MediaPlayerKit-Binary-Candidate.zip
+            build/MediaPlayerKitDemo-iOS-Simulator.app.zip
 
       # 5. 发布 GitHub Release
       - name: Create GitHub Release
@@ -136,7 +85,6 @@ jobs:
         with:
           files: |
             build/version-manifest.json
-            build/MediaPlayerKit.xcframework.zip
-            build/MediaPlayerKitDemo-macOS.app.zip
-            build/MediaPlayerKitDemo-iOS.ipa
+            build/MediaPlayerKit-Binary-Candidate.zip
+            build/MediaPlayerKitDemo-iOS-Simulator.app.zip
           generate_release_notes: true

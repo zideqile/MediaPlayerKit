@@ -1,0 +1,5 @@
+{
+  "mode": "binary",
+  "sdkDirectory": "build/binary-delivery/SDK",
+  "platform": "device"
+}

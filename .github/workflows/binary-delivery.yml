@@ -13,6 +13,12 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tooling dependencies
+        run: python3 -m pip install PyYAML==6.0.2
+
       - name: Install XcodeGen
         run: which xcodegen || brew install xcodegen
       - name: Validate sources and prepare candidate
@@ -26,6 +32,14 @@ jobs:
             exit 1
           fi
           bash scripts/build_binary_delivery.sh "$DELIVERY_BUILD_NUMBER"
+      - name: Compile Demo against generated SDK only
+        run: |
+          python3 scripts/generate_demo_project.py --mode binary --platform simulator
+          xcodegen generate --spec project.generated.yml
+          xcodebuild build -project MediaPlayerKitDemoBinary.xcodeproj -scheme MediaPlayerKitDemo \
+            -configuration Release -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build/DemoConsumerDerivedData CODE_SIGNING_ALLOWED=NO
+
       - name: Upload candidate (not a published release)
         uses: actions/upload-artifact@v4
         with:

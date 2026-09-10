@@ -32,3 +32,4 @@ secret*
 
 # Python validation scripts
 __pycache__/
+project.generated.yml

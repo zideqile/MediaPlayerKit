@@ -1,6 +1,6 @@
 import Foundation
 import AVFoundation
-import KSPlayer
+@_implementationOnly import KSPlayer
 
 /// Platform-specific classification is isolated from the portable recovery policy.
 enum PlaybackErrorAdapters {
