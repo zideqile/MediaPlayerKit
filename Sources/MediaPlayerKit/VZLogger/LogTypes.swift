@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreFoundation)
+import CoreFoundation
+#endif
 
 /// Source location passed explicitly through wrappers; no stack walking or path disclosure.
 public struct LogLocation {
@@ -45,12 +48,39 @@ public enum LogFormatter {
             } else if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
                 if let data = trimmed.data(using: .utf8),
                    let obj = try? JSONSerialization.jsonObject(with: data, options: []),
-                   let arr = obj as? [[String: Any]] {
-                    return "[" + arr.map { formatDictionary($0) }.joined(separator: ", ") + "]"
+                   let arr = obj as? [Any] {
+                    return "[" + arr.map { formatValue($0) }.joined(separator: ", ") + "]"
                 }
             }
         }
         return String(describing: item)
+    }
+
+    /// 格式化单个值（递归支持字典、数组、布尔等）
+    public static func formatValue(_ val: Any) -> String {
+        if let subDict = val as? [String: Any] {
+            return "[\(formatDictionary(subDict))]"
+        }
+        if let arr = val as? [[String: Any]] {
+            let formattedArr = arr.map { "[\(formatDictionary($0))]" }.joined(separator: ", ")
+            return "[\(formattedArr)]"
+        }
+        if let arr = val as? [Any] {
+            let formattedArr = arr.map { formatValue($0) }.joined(separator: ", ")
+            return "[\(formattedArr)]"
+        }
+        #if canImport(CoreFoundation)
+        if let number = val as? NSNumber, CFGetTypeID(number as CFTypeRef) == CFBooleanGetTypeID() {
+            return number.boolValue ? "true" : "false"
+        }
+        #endif
+        if let number = val as? NSNumber, String(describing: type(of: val)).contains("Boolean") {
+            return number.boolValue ? "true" : "false"
+        }
+        if type(of: val) == Bool.self, let b = val as? Bool {
+            return b ? "true" : "false"
+        }
+        return "\(val)"
     }
 
     /// 将字典递归格式化为有序的键值对形式：key1: value1, key2: value2
@@ -58,18 +88,7 @@ public enum LogFormatter {
         let sortedKeys = dict.keys.sorted()
         return sortedKeys.map { key in
             let val = dict[key]!
-            if let subDict = val as? [String: Any] {
-                return "\(key): [\(formatDictionary(subDict))]"
-            }
-            if let arr = val as? [[String: Any]] {
-                let formattedArr = arr.map { "[\(formatDictionary($0))]" }.joined(separator: ", ")
-                return "\(key): [\(formattedArr)]"
-            }
-            if let arr = val as? [Any] {
-                let formattedArr = arr.map { "\($0)" }.joined(separator: ", ")
-                return "\(key): [\(formattedArr)]"
-            }
-            return "\(key): \(val)"
+            return "\(key): \(formatValue(val))"
         }.joined(separator: ", ")
     }
 }

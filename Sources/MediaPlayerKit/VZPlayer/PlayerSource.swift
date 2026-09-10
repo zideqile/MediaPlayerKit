@@ -95,11 +95,11 @@ public final class PlayerSource: NSObject, Codable {
         var parts: [String] = []
         for key in preferredOrder {
             if let val = dict[key] {
-                parts.append("\(key): \(val)")
+                parts.append("\(key): \(LogFormatter.formatValue(val))")
             }
         }
         for key in dict.keys.sorted() where !preferredOrder.contains(key) {
-            parts.append("\(key): \(dict[key]!)")
+            parts.append("\(key): \(LogFormatter.formatValue(dict[key]!))")
         }
         return parts.joined(separator: ", ")
     }
