@@ -55,10 +55,13 @@ out = Path('build/binary-delivery')
 s = Path('Examples/MediaPlayerKitDemo/Views/H5URLPlayerView.swift').read_text()
 (out/'Sample/H5URLPlayerView.swift').write_text(s.split('/// Keep both H5 samples')[0])
 shutil.copy('Examples/MediaPlayerKitDemo/Resources/URLHybridPlayer/url-player.html', out/'Sample/url-player.html')
-for checkout in (out/'SourcePackages/checkouts').iterdir():
-    for p in checkout.iterdir():
-        if p.is_file() and p.name.lower().startswith(('license', 'copying', 'notice')):
-            shutil.copy(p, out/'Licenses'/f'{checkout.name}-{p.name}')
+checkouts = out/'SourcePackages/checkouts'
+if checkouts.is_dir():
+    for checkout in checkouts.iterdir():
+        if checkout.is_dir():
+            for p in checkout.iterdir():
+                if p.is_file() and p.name.lower().startswith(('license', 'copying', 'notice')):
+                    shutil.copy(p, out/'Licenses'/f'{checkout.name}-{p.name}')
 import yaml
 sample = yaml.safe_load((out/'Sample/project.yml').read_text())
 target = sample['targets']['BinarySDKSample']
