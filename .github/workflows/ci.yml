@@ -190,8 +190,8 @@ jobs:
       - name: Source unit test regression (not the packaged Demo)
         run: swift test -v
 
-      # 4. 上传构建产物到 GitHub Actions Artifacts
-      - name: Upload iOS Demo App (.ipa)
+      # 4. 上传构建产物到 GitHub Actions Artifacts (包含 Demo IPA 与完整二进制交付包)
+      - name: Upload iOS Demo App & Binary Delivery Package
         uses: actions/upload-artifact@v4
         with:
           name: MediaPlayerKitDemo-iOS-${{ github.run_number }}-${{ github.sha }}
@@ -199,7 +199,14 @@ jobs:
             build/MediaPlayerKitDemo-iOS.ipa
             build/version-manifest.json
             build/binary-delivery/SDK
+            build/binary-delivery/Docs
+            build/binary-delivery/Sample
+            build/binary-delivery/Licenses
             build/binary-delivery/Audit/dependency-audit.json
+            build/binary-delivery/README.md
+            build/binary-delivery/Package.resolved
+            build/binary-delivery/SHA256SUMS
+            build/binary-delivery/CANDIDATE.txt
 
       # 5. 自动上传 IPA 到远程分发服务器 (通过 GitHub Actions 变量/密钥配置地址)
       - name: Upload IPA to Remote Distribution Server
