@@ -157,18 +157,7 @@ jobs:
             echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o "$PP_PATH/profile.mobileprovision"
             cp "$PP_PATH/profile.mobileprovision" "$APP_DIR/embedded.mobileprovision"
             
-            python3 -c "
-            import plistlib, re
-            with open('$PP_PATH/profile.mobileprovision', 'rb') as f:
-                content = f.read()
-            match = re.search(rb'<\?xml.*?</plist>', content, re.DOTALL)
-            if match:
-                data = plistlib.loads(match.group(0))
-                entitlements = data.get('Entitlements', {})
-                with open('build/entitlements.plist', 'wb') as out:
-                    plistlib.dump(entitlements, out)
-                print('已提取 Entitlements:', entitlements)
-            "
+            python3 scripts/extract_entitlements.py "$PP_PATH/profile.mobileprovision" build/entitlements.plist
             
             SIGNING_IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -E "iPhone Distribution|Apple Distribution|iPhone Developer|Apple Development" | head -1 | awk -F '"' '{print $2}')
             echo "Using Signing Identity: $SIGNING_IDENTITY"
@@ -191,10 +180,12 @@ jobs:
           # 3. 打包为标准 Payload 结构的 IPA 真机安装包
           mkdir -p build/iOS/Payload
           cp -R "$APP_DIR" build/iOS/Payload/
-          cd build/iOS
-          zip -qr ../MediaPlayerKitDemo-iOS.ipa Payload
+          (
+            cd build/iOS
+            zip -qr ../MediaPlayerKitDemo-iOS.ipa Payload
+          )
           echo "IPA 打包完成，文件大小:"
-          ls -lh ../MediaPlayerKitDemo-iOS.ipa
+          ls -lh build/MediaPlayerKitDemo-iOS.ipa
 
       - name: Source unit test regression (not the packaged Demo)
         run: swift test -v
