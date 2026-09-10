@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>H5 地址播放</title>
+<style>
+:root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif}*{box-sizing:border-box}body{margin:0;padding:20px;background:#101722;color:#ecf2fc}h1{font-size:21px;margin:0 0 8px}p{font-size:13px;color:#aab9cf;line-height:1.5}label{font-size:13px;display:block;margin:16px 0 8px}textarea,select,button{font:inherit;border-radius:10px}textarea{width:100%;padding:12px;background:#1b2739;color:#fff;border:1px solid #405370;font-size:16px;resize:vertical}select{padding:9px;background:#1b2739;color:#fff;border:1px solid #405370}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row label{margin:0}button{border:0;padding:12px 16px;background:#273953;color:#fff;cursor:pointer;min-height:44px}button.primary{background:#2875ed;width:100%;margin:14px 0}button:disabled{opacity:.5}#status{margin:14px 0;padding:12px;border-radius:10px;background:#1b2739}#error{color:#ffaba5;white-space:pre-wrap}#logs{font:12px ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;color:#aab9cf}footer{font-size:12px;color:#8293ad;margin-top:20px}
+</style>
+</head>
+<body>
+<h1>输入地址，直接播放</h1>
+<p>视频显示在上方。可更换地址重新播放，无需节点配置。</p>
+<form id="form">
+<label for="url">播放地址</label>
+<textarea id="url" rows="3" placeholder="https://example.com/live.m3u8" autocapitalize="off" autocorrect="off" spellcheck="false" required></textarea>
+<div class="row" style="margin-top:12px">
+<label for="type">格式</label><select id="type"><option value="hls">HLS / m3u8</option><option value="flv">HTTP-FLV</option><option value="rtmp">RTMP</option></select>
+<label><input id="live" type="checkbox" checked> 直播</label>
+</div>
+<button id="submit" class="primary" type="submit">播放此地址</button>
+</form>
+<div class="row"><button id="pause" type="button">暂停</button><button id="resume" type="button">继续</button><button id="mute" type="button">静音</button></div>
+<div id="status" role="status">等待输入播放地址</div>
+<div id="error" role="alert"></div>
+<p id="time">播放进度：0 秒</p>
+<details><summary>播放事件</summary><div id="logs"></div></details>
+<footer>支持 HLS、HTTP-FLV 和 RTMP；实际播放能力取决于地址、编码和网络环境。</footer>
+<script>
+const $ = id => document.getElementById(id);
+const bridge = window.vzPlayerBridge;
+let muted = false;
+const entries = [];
+function record(text) { entries.unshift(new Date().toLocaleTimeString() + ' ' + text); entries.length = Math.min(entries.length, 40); $('logs').textContent = entries.join('\n'); }
+async function command(method, params = {}) {
+    $('error').textContent = '';
+    if (!bridge || typeof bridge.request !== 'function') throw new Error('播放器桥接尚未就绪，请重新打开页面');
+    return bridge.request(method, params);
+}
+function showError(error) { $('error').textContent = error.message; record(error.message); }
+if (bridge) {
+    bridge.onEvent = event => {
+        const names = {play:'正在准备',playing:'播放中',pause:'已暂停',waiting:'缓冲中',ended:'播放结束',recovering:'正在尝试恢复',PlayerWARN:'播放失败，请检查地址或更换播放源',canplaythrough:'已就绪'};
+        $('status').textContent = names[event] || event;
+        if (event === 'PlayerWARN') $('error').textContent = '播放器已无法继续恢复，请检查播放地址、格式和网络。';
+        record(event);
+    };
+    bridge.onTimeUpdate = seconds => { $('time').textContent = `播放进度：${seconds} 秒`; };
+    bridge.onError = (code, message) => showError(new Error(`${code}: ${message}`));
+}
+$('form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const address = $('url').value.trim();
+    $('submit').disabled = true;
+    try {
+        await command('loadURL', {url:address, type:$('type').value, isLive:$('live').checked});
+        $('url').blur();
+        $('time').textContent = '播放进度：0 秒';
+        muted = false; $('mute').textContent = '静音';
+        record('播放地址已受理');
+    } catch (error) { showError(error); }
+    finally { $('submit').disabled = false; }
+});
+$('pause').onclick = () => command('pause').catch(showError);
+$('resume').onclick = () => command('resume').catch(showError);
+$('mute').onclick = async () => {
+    $('mute').disabled = true;
+    try { await command('setMuted', {muted:!muted}); muted = !muted; $('mute').textContent = muted ? '取消静音' : '静音'; }
+    catch (error) { showError(error); }
+    finally { $('mute').disabled = false; }
+};
+</script>
+</body>
+</html>
