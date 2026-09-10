@@ -15,6 +15,65 @@ public struct LogLocation {
     public var prefix: String { "[\(typeName).\(function):\(line)] " }
 }
 
+/// 格式化日志参数：当参数为 JSON 字符串、字典或数据时，以键值对形式输出。
+public enum LogFormatter {
+    /// 将日志消息中的参数转换为易读的文本。若为 JSON 字典/字符串/数据，转为键值对形式。
+    public static func formatArgument(_ item: Any) -> String {
+        if let source = item as? PlayerSource {
+            return source.toKeyValueString()
+        }
+        if let dict = item as? [String: Any] {
+            return formatDictionary(dict)
+        }
+        if let dict = item as? NSDictionary, let swiftDict = dict as? [String: Any] {
+            return formatDictionary(swiftDict)
+        }
+        if let data = item as? Data {
+            if let obj = try? JSONSerialization.jsonObject(with: data, options: []),
+               let dict = obj as? [String: Any] {
+                return formatDictionary(dict)
+            }
+        }
+        if let str = item as? String {
+            let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("{") && trimmed.hasSuffix("}") {
+                if let data = trimmed.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data, options: []),
+                   let dict = obj as? [String: Any] {
+                    return formatDictionary(dict)
+                }
+            } else if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                if let data = trimmed.data(using: .utf8),
+                   let obj = try? JSONSerialization.jsonObject(with: data, options: []),
+                   let arr = obj as? [[String: Any]] {
+                    return "[" + arr.map { formatDictionary($0) }.joined(separator: ", ") + "]"
+                }
+            }
+        }
+        return String(describing: item)
+    }
+
+    /// 将字典递归格式化为有序的键值对形式：key1: value1, key2: value2
+    public static func formatDictionary(_ dict: [String: Any]) -> String {
+        let sortedKeys = dict.keys.sorted()
+        return sortedKeys.map { key in
+            let val = dict[key]!
+            if let subDict = val as? [String: Any] {
+                return "\(key): [\(formatDictionary(subDict))]"
+            }
+            if let arr = val as? [[String: Any]] {
+                let formattedArr = arr.map { "[\(formatDictionary($0))]" }.joined(separator: ", ")
+                return "\(key): [\(formattedArr)]"
+            }
+            if let arr = val as? [Any] {
+                let formattedArr = arr.map { "\($0)" }.joined(separator: ", ")
+                return "\(key): [\(formattedArr)]"
+            }
+            return "\(key): \(val)"
+        }.joined(separator: ", ")
+    }
+}
+
 public enum LogLevel: Int, Codable, CaseIterable {
     case debug = 0, info, warn, error, fatal
     public var label: String { ["debug", "info", "warn", "error", "fatal"][rawValue] }

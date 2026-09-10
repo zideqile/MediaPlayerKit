@@ -511,4 +511,68 @@ extension LoggingTests {
         time = 33; sample(); XCTAssertEqual(recorder.values["ios_bytes_read_per_second"], [100])
         time = 36; sample(0); XCTAssertEqual(reads, 4)
     }
+
+    func testLogFormatterFormatsJSONStringAsKeyValue() {
+        let jsonStr = "{\"type\":\"hls\",\"url\":\"https://example.com/live.m3u8\",\"isLive\":true}"
+        let formatted = LogFormatter.formatArgument(jsonStr)
+        XCTAssertEqual(formatted, "isLive: true, type: hls, url: https://example.com/live.m3u8")
+
+        // Nested JSON
+        let nestedJson = "{\"action\":\"switch\",\"data\":{\"codec\":\"h265\",\"rate\":1080}}"
+        let formattedNested = LogFormatter.formatArgument(nestedJson)
+        XCTAssertEqual(formattedNested, "action: switch, data: [codec: h265, rate: 1080]")
+
+        // Non-JSON string should remain unchanged
+        let normalStr = "regular log message"
+        XCTAssertEqual(LogFormatter.formatArgument(normalStr), "regular log message")
+    }
+
+    func testLogFormatterFormatsDictionaryAndDataAsKeyValue() {
+        let dict: [String: Any] = ["alpha": "a", "beta": 2]
+        let formattedDict = LogFormatter.formatArgument(dict)
+        XCTAssertEqual(formattedDict, "alpha: a, beta: 2")
+
+        let jsonData = try! JSONSerialization.data(withJSONObject: ["key": "val", "num": 1], options: [.sortedKeys])
+        let formattedData = LogFormatter.formatArgument(jsonData)
+        XCTAssertEqual(formattedData, "key: val, num: 1")
+    }
+
+    func testPlayerSourceToKeyValueStringAndJSONCompatibility() {
+        let source = PlayerSource(url: "https://example.com/stream.m3u8", type: "hls", isLive: true)
+        source.sourceIndex = 1
+        source.videoCodec = "h264"
+        source.tag = "main"
+
+        let kvStr = source.toKeyValueString()
+        XCTAssertTrue(kvStr.contains("sourceIndex: 1"))
+        XCTAssertTrue(kvStr.contains("url: https://example.com/stream.m3u8"))
+        XCTAssertTrue(kvStr.contains("type: hls"))
+        XCTAssertTrue(kvStr.contains("isLive: true"))
+        XCTAssertTrue(kvStr.contains("videoCodec: h264"))
+        XCTAssertTrue(kvStr.contains("tag: main"))
+
+        // Ensure toJSONString() remains valid JSON for JSBridge compatibility
+        let jsonStr = source.toJSONString()
+        let jsonObject = try? JSONSerialization.jsonObject(with: Data(jsonStr.utf8), options: []) as? [String: Any]
+        XCTAssertNotNil(jsonObject)
+        XCTAssertEqual(jsonObject?["url"] as? String, "https://example.com/stream.m3u8")
+        XCTAssertEqual(jsonObject?["type"] as? String, "hls")
+    }
+
+    func testInternalLoggerFormatsJSONArguments() {
+        let appender = RecordingAppender()
+        let logger = InternalLogger(logGroup: "test", level: .info)
+        logger.addAppender(appender)
+
+        let source = PlayerSource(url: "https://example.com/live.m3u8", type: "hls", isLive: true)
+        logger.logI("source info:", source, fileID: "Test.swift", function: "test()", line: 1)
+        XCTAssertEqual(appender.messages.last, "[Test.test():1] source info: " + source.toKeyValueString())
+
+        let jsonPayload = "{\"event\":\"seek\",\"target\":30}"
+        logger.logI("payload:", jsonPayload, fileID: "Test.swift", function: "test()", line: 2)
+        XCTAssertEqual(appender.messages.last, "[Test.test():2] payload: event: seek, target: 30")
+
+        logger.merged(.info, similarity: 100, format: "data: {}", args: [jsonPayload], fileID: "Test.swift", function: "test()", line: 3)
+        XCTAssertEqual(appender.messages.last, "[Test.test():3] data: event: seek, target: 30")
+    }
 }

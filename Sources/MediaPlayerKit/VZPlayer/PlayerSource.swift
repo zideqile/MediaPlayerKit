@@ -88,6 +88,22 @@ public final class PlayerSource: NSObject, Codable {
         return str
     }
     
+    /// 输出为键值对形式（用于日志打印）
+    public func toKeyValueString() -> String {
+        let dict = toDictionary()
+        let preferredOrder = ["sourceIndex", "url", "type", "isLive", "videoCodec", "sar_num", "sar_den", "orderno", "tag", "ext"]
+        var parts: [String] = []
+        for key in preferredOrder {
+            if let val = dict[key] {
+                parts.append("\(key): \(val)")
+            }
+        }
+        for key in dict.keys.sorted() where !preferredOrder.contains(key) {
+            parts.append("\(key): \(dict[key]!)")
+        }
+        return parts.joined(separator: ", ")
+    }
+    
     public static func fromDictionary(_ dict: [String: Any]) -> PlayerSource {
         let source = PlayerSource()
         source.sourceIndex = dict["index"] as? Int ?? dict["sourceIndex"] as? Int ?? 0
