@@ -540,7 +540,7 @@ extension LoggingTests {
     func testPlayerSourceToKeyValueStringAndJSONCompatibility() {
         let source = PlayerSource(url: "https://example.com/stream.m3u8", type: "hls", isLive: true)
         source.sourceIndex = 1
-        source.videoCodec = "h264"
+        source.videoCodec = PlayerSource.CODEC_H264
         source.tag = "main"
 
         let kvStr = source.toKeyValueString()
@@ -548,7 +548,7 @@ extension LoggingTests {
         XCTAssertTrue(kvStr.contains("url: https://example.com/stream.m3u8"))
         XCTAssertTrue(kvStr.contains("type: hls"))
         XCTAssertTrue(kvStr.contains("isLive: true"))
-        XCTAssertTrue(kvStr.contains("videoCodec: h264"))
+        XCTAssertTrue(kvStr.contains("videoCodec: 2"))
         XCTAssertTrue(kvStr.contains("tag: main"))
 
         // Ensure toJSONString() remains valid JSON for JSBridge compatibility
