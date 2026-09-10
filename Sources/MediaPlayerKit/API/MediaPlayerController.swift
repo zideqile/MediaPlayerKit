@@ -39,6 +39,9 @@ import CoreGraphics
         return engine.naturalSize
     }
     
+    /// Available engine measurements; read on the main thread.
+    public var runtimeMetrics: PlayerRuntimeMetrics? { engine.runtimeMetrics }
+
     /// 当前配置
     @objc public var config: PlayerConfig
     

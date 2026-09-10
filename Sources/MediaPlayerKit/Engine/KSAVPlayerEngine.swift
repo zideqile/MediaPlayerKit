@@ -77,6 +77,32 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         return sec.isNaN || sec.isInfinite ? 0 : sec
     }
     
+    public var runtimeMetrics: PlayerRuntimeMetrics? {
+        guard let item = player?.currentItem else { return nil }
+        var metrics = PlayerRuntimeMetrics()
+        if let track = item.tracks.compactMap({ $0.assetTrack }).first(where: { $0.mediaType == .video }),
+           track.nominalFrameRate > 0 {
+            metrics.nominalFrameRate = Double(track.nominalFrameRate)
+        }
+        if let events = item.accessLog()?.events, !events.isEmpty {
+            // Access-log totals span events; they are not TS/M3U8 request-level timings.
+            func sum(_ values: [Int64]) -> Int64? {
+                guard values.allSatisfy({ $0 >= 0 }) else { return nil }
+                var total: Int64 = 0
+                for value in values {
+                    let (next, overflow) = total.addingReportingOverflow(value)
+                    guard !overflow else { return nil }
+                    total = next
+                }
+                return total
+            }
+            metrics.networkBytes = sum(events.map { $0.numberOfBytesTransferred })
+            metrics.droppedVideoFrames = sum(events.map { Int64($0.numberOfDroppedVideoFrames) })
+            metrics.mediaRequests = sum(events.map { Int64($0.numberOfMediaRequests) })
+            metrics.observedBitrate = events.last?.observedBitrate
+        }
+        return metrics
+    }
     public var isPlaying: Bool {
         return player?.rate != 0 && player?.error == nil
     }

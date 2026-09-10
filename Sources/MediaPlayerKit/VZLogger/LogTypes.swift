@@ -1,5 +1,20 @@
 import Foundation
 
+/// Source location passed explicitly through wrappers; no stack walking or path disclosure.
+public struct LogLocation {
+    public let fileID: String
+    public let function: String
+    public let line: UInt
+    public let typeName: String
+    /// Swift has no built-in enclosing-type literal. Supply typeName for multi-type files;
+    /// otherwise the filename is used as a readable fallback.
+    public init(fileID: String, function: String, line: UInt, typeName: String? = nil) {
+        self.fileID = fileID; self.function = function; self.line = line
+        self.typeName = typeName ?? URL(fileURLWithPath: fileID).deletingPathExtension().lastPathComponent
+    }
+    public var prefix: String { "[\(typeName).\(function):\(line)] " }
+}
+
 public enum LogLevel: Int, Codable, CaseIterable {
     case debug = 0, info, warn, error, fatal
     public var label: String { ["debug", "info", "warn", "error", "fatal"][rawValue] }
