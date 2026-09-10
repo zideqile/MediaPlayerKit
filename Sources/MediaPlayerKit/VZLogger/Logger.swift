@@ -91,7 +91,7 @@ public enum Logger {
         }
     }
     /// Explicit opt-in convenience wiring; does not fetch remote application configuration.
-    public static func initialize(config: VPlayerConfig, initConfig: InitConfig, version: String = "",
+    public static func initialize(config: VPlayerConfig, initConfig: InitConfig, version: String = SDKVersion.version,
                                   transport: LogHTTPTransport = URLSessionLogTransport()) throws {
         let context = LogContext(config: config, deviceInfo: initConfig.deviceInfo, customInfo: initConfig.customInfo, version: version)
         let enabled = initConfig.appenders

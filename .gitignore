@@ -29,3 +29,6 @@ Podfile.lock
 *.pat
 *credential*
 secret*
+
+# Python validation scripts
+__pycache__/

@@ -20,10 +20,22 @@ targets:
     dependencies:
       - package: KSPlayer
         product: KSPlayer
+    preBuildScripts:
+      - name: Stamp local build version
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${CI:-}" != "true" ]; then
+            python3 "$SRCROOT/scripts/generate_versions.py" --build
+          fi
     info:
       path: Sources/MediaPlayerKit/Info.plist
+    configFiles:
+      Debug: Config/Versions.xcconfig
+      Release: Config/Versions.xcconfig
     settings:
       base:
+        MARKETING_VERSION: "$(MPK_SDK_VERSION)"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         PRODUCT_NAME: MediaPlayerKit
         PRODUCT_BUNDLE_IDENTIFIER: com.yuanyuanhui.MediaPlayerKit
         SWIFT_VERSION: "5.9"
@@ -39,8 +51,12 @@ targets:
       - target: MediaPlayerKit
     info:
       path: Examples/MediaPlayerKitDemo/Info.plist
+    configFiles:
+      Debug: Config/Versions.xcconfig
+      Release: Config/Versions.xcconfig
     settings:
       base:
+        MARKETING_VERSION: "$(MPK_DEMO_VERSION)"
         PRODUCT_NAME: MediaPlayerKitDemo
         PRODUCT_BUNDLE_IDENTIFIER: com.yuanyuanhui.MediaPlayerKitDemo
         DEVELOPMENT_TEAM: GB8FE8WWF8

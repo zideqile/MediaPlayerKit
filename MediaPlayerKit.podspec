@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'MediaPlayerKit'
-  s.version          = '1.0.0'
+  s.version          = File.read(File.join(__dir__, 'SDK_VERSION')).strip
   s.summary          = 'A high-performance modern multimedia player SDK for iOS based on KSPlayer, FFmpeg, VideoToolbox, and Metal.'
   s.homepage         = 'https://github.com/your-org/MediaPlayerKit'
   s.license          = { :type => 'LGPL-2.1', :file => 'LICENSE' }

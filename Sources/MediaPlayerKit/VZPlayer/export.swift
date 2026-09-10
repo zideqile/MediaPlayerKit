@@ -9,7 +9,7 @@ public final class export: NSObject {
     
     /// 获取当前 SDK 版本号 (1:1 对标 Android export.GetVersion())
     @objc public static func GetVersion() -> String {
-        return "2"
+        return SDKVersion.version
     }
     
     /// 初始化播放器系统与全局配置 (1:1 对标 Android export.Init())
@@ -26,7 +26,7 @@ public final class export: NSObject {
         lastLoggingError = nil
         do {
             try Logger.initialize(config: config, initConfig: options, version: GetVersion())
-            Logger.logI("Logger.init", "env:", config.env, "version:", GetVersion(), "userId:", config.userId)
+            Logger.logI("Logger.init", "env:", config.env, "sdkVersion:", GetVersion(), "build:", SDKVersion.buildNumber, "commit:", SDKVersion.commit, "userId:", config.userId)
         } catch {
             // A log sink failure must not prevent media playback or reuse stale credentials.
             lastLoggingError = error as NSError
