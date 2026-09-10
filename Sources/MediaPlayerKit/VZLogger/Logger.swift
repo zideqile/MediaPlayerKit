@@ -25,7 +25,7 @@ public final class InternalLogger {
         executor.sync {
             guard !closed, level.rawValue >= self.level.rawValue, !messages.isEmpty else { return }
             let location = LogLocation(fileID: fileID, function: function, line: line, typeName: typeName)
-            let message = location.prefix + messages.map { String(describing: $0) }.joined(separator: " ")
+            let message = location.prefix + messages.map { LogFormatter.formatArgument($0) }.joined(separator: " ")
             for appender in appenders { appender.append(level: level, tag: tag, message: message, messageType: messageType) }
         }
     }
@@ -40,11 +40,12 @@ public final class InternalLogger {
         executor.sync {
             guard !closed, level.rawValue >= self.level.rawValue else { return }
             let locatedFormat = LogLocation(fileID: fileID, function: function, line: line, typeName: typeName).prefix + format
+            let formattedArgs = args.map { LogFormatter.formatArgument($0) }
             for appender in appenders {
                 if let merger = mergers[ObjectIdentifier(appender)] {
-                    merger.pushLog(level: level, tag: tag, messageType: messageType, similarity: similarity, format: locatedFormat, args: args)
+                    merger.pushLog(level: level, tag: tag, messageType: messageType, similarity: similarity, format: locatedFormat, args: formattedArgs)
                 } else {
-                    appender.append(level: level, tag: tag, message: LogMerger.formatBraces(locatedFormat, args), messageType: messageType)
+                    appender.append(level: level, tag: tag, message: LogMerger.formatBraces(locatedFormat, formattedArgs), messageType: messageType)
                 }
             }
         }

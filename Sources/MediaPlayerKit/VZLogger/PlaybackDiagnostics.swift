@@ -30,7 +30,7 @@ final class PlaybackDiagnostics {
         for source in sources {
             let type = source.type.lowercased()
             let fullType = type == "hls" && source.videoCodec == PlayerSource.CODEC_H265 ? "hls_hevc" : type
-            logger.logI("add playerSource:", source.toJSONString(), fileID: fileID, function: function, line: line, typeName: typeName)
+            logger.logI("add playerSource:", source.toKeyValueString(), fileID: fileID, function: function, line: line, typeName: typeName)
             logger.logSI("source_" + fullType, 1)
         }
     }
@@ -40,7 +40,7 @@ final class PlaybackDiagnostics {
         logger.onSourceChanged(srcUrl: source.url, srcType: source.type)
         attemptStarted = clock(); firstFrameRecorded = false; lastState = nil
         metricsSampler = RuntimeMetricsSampler(); lastMetricsTime = nil
-        logger.logI("create player", "engine:", engineName(engine), "source:", source.toJSONString(), fileID: fileID, function: function, line: line, typeName: typeName)
+        logger.logI("create player", "engine:", engineName(engine), "source:", source.toKeyValueString(), fileID: fileID, function: function, line: line, typeName: typeName)
     }
     func state(_ state: PlayerState, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed, state != lastState else { return }
