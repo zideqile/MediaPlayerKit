@@ -20,7 +20,11 @@ class DependencyCollectionTests(unittest.TestCase):
     def test_copies_dynamic_dependency_and_platform_resources(self):
         self.make_framework(self.out/'SourcePackages/artifacts/vendor/Extra.xcframework','Extra')
         def links(binary):
-            if binary.name=='MediaPlayerKit':return ['@rpath/MediaPlayerKit.framework/MediaPlayerKit','@rpath/Extra.framework/Extra']
+            if binary.name=='MediaPlayerKit':return [
+                '@rpath/MediaPlayerKit.framework/MediaPlayerKit',
+                '@rpath/libswift_Concurrency.dylib',
+                '@rpath/Extra.framework/Extra'
+            ]
             return ['@rpath/Extra.framework/Extra','/usr/lib/libSystem.B.dylib']
         with patch.object(deps,'dependencies',links):deps.collect(self.out)
         self.assertTrue((self.out/'SDK/Extra.xcframework/Info.plist').exists())

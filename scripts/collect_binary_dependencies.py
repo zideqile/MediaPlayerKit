@@ -23,7 +23,7 @@ def collect(out):
             if entry.get('SupportedPlatform') != 'ios': continue
             fw=xc/entry['LibraryIdentifier']/entry['LibraryPath']
             for dep in dependencies(fw/fw.stem):
-                if dep.startswith(('/System/Library/','/usr/lib/')): continue
+                if dep.startswith(('/System/Library/','/usr/lib/','@rpath/libswift')): continue
                 if '.framework/' not in dep:
                     raise ValueError('Unpackaged non-system dependency: '+dep)
                 name=dep.split('.framework/')[0].split('/')[-1]
@@ -41,7 +41,7 @@ def collect(out):
         for bundle in (out/('DerivedData-'+platform)).rglob('*.bundle'):
             if not any(part=='Release-'+suffix for part in bundle.parts): continue
             target=destination/bundle.name
-            if not target.exists(): shutil.copytree(bundle,target,symlinks=True)
+            if not target.exists(): shutil.copytree(bundle.resolve(),target,symlinks=True)
         if not any('KSPlayer' in p.name for p in destination.glob('*.bundle')):
             raise ValueError(f'Missing KSPlayer resource bundle for {platform}')
 
