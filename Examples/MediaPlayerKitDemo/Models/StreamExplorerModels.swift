@@ -180,11 +180,18 @@ public struct PlayerSourceItem: Codable, Identifiable {
         self.tag = try container.decodeIfPresent(String.self, forKey: .tag)
         self.vendor = try container.decodeIfPresent(String.self, forKey: .vendor)
         
-        // 兼容 videoCodec 可以为 Int 或 String
+        // 兼容 videoCodec 可以为 Int 或 String (如 "4", "h265", "hevc")
         if let intVal = try? container.decodeIfPresent(Int.self, forKey: .videoCodec) {
             self.videoCodec = intVal
         } else if let strVal = try? container.decodeIfPresent(String.self, forKey: .videoCodec) {
-            self.videoCodec = Int(strVal)
+            let lower = strVal.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if lower == "4" || lower.contains("265") || lower.contains("hevc") {
+                self.videoCodec = 4
+            } else if lower == "2" || lower.contains("264") || lower.contains("avc") {
+                self.videoCodec = 2
+            } else {
+                self.videoCodec = Int(strVal)
+            }
         } else {
             self.videoCodec = nil
         }

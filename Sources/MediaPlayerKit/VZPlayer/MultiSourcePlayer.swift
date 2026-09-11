@@ -321,13 +321,17 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     // MARK: - 内部容错调度
     
-    private func computeEngineOrder(for source: PlayerSource) -> [PlayerEngineType] {
+    func computeEngineOrder(for source: PlayerSource) -> [PlayerEngineType] {
         let type = source.type.lowercased()
         let urlStr = source.url.lowercased()
+        let tagStr = source.tag.lowercased()
         let isFlv = type == "flv" || urlStr.contains(".flv")
         let isRtmp = type == "rtmp" || urlStr.hasPrefix("rtmp://")
         let isRtsp = urlStr.hasPrefix("rtsp://")
-        let isH265 = source.videoCodec == PlayerSource.CODEC_H265 || source.videoCodec == 4 || source.tag.lowercased().contains("265") || urlStr.contains("265")
+        let isH265 = source.videoCodec == PlayerSource.CODEC_H265 || source.videoCodec == 4 ||
+                     tagStr.contains("265") || tagStr.contains("hevc") ||
+                     type.contains("265") || type.contains("hevc") ||
+                     urlStr.contains("265") || urlStr.contains("hevc")
         
         if isFlv || isRtmp || isRtsp {
             return [.mePlayer]
@@ -361,7 +365,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         // 2. 创建新控制器并配置
         let config = MediaPlayerKit.PlayerConfig()
         config.preferredEngine = engineType
-        config.enableHardwareDecode = (engineType == .avPlayer) ? playerConfig.isHardwareDecode : false
+        config.enableHardwareDecode = playerConfig.isHardwareDecode
         config.isLoop = savedLoop
         config.autoPlay = wantsToPlay
         config.customHeaders = playerConfig.headers

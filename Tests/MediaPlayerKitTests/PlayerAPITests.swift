@@ -250,4 +250,64 @@ extension PlayerAPITests {
         XCTAssertEqual(player.currentSourceIndex, 0)
         player.Destroy()
     }
+
+    func testH265SourceParsingFromDictionary() {
+        // 1. Explicit Int 4
+        let s1 = PlayerSource.fromDictionary(["src": "https://example.com/test.m3u8", "videoCodec": 4])
+        XCTAssertEqual(s1.videoCodec, PlayerSource.CODEC_H265)
+
+        // 2. String "4"
+        let s2 = PlayerSource.fromDictionary(["src": "https://example.com/test.m3u8", "videoCodec": "4"])
+        XCTAssertEqual(s2.videoCodec, PlayerSource.CODEC_H265)
+
+        // 3. String "h265"
+        let s3 = PlayerSource.fromDictionary(["src": "https://example.com/test.m3u8", "videoCodec": "h265"])
+        XCTAssertEqual(s3.videoCodec, PlayerSource.CODEC_H265)
+
+        // 4. "codec": "hevc"
+        let s4 = PlayerSource.fromDictionary(["src": "https://example.com/test.m3u8", "codec": "hevc"])
+        XCTAssertEqual(s4.videoCodec, PlayerSource.CODEC_H265)
+
+        // 5. Inferred from url containing hevc when codec omitted
+        let s5 = PlayerSource.fromDictionary(["src": "https://example.com/live_hevc.m3u8"])
+        XCTAssertEqual(s5.videoCodec, PlayerSource.CODEC_H265)
+
+        // 6. Inferred from type "hls_hevc"
+        let s6 = PlayerSource.fromDictionary(["src": "https://example.com/stream.m3u8", "type": "hls_hevc"])
+        XCTAssertEqual(s6.videoCodec, PlayerSource.CODEC_H265)
+
+        // 7. Explicit H.264
+        let s7 = PlayerSource.fromDictionary(["src": "https://example.com/stream.m3u8", "videoCodec": 2])
+        XCTAssertEqual(s7.videoCodec, PlayerSource.CODEC_H264)
+    }
+
+    func testComputeEngineOrderForH265AndOtherFormats() {
+        let playerView = MediaPlayerView()
+        let player = MultiSourcePlayer(playerView: playerView)
+        defer { player.Destroy() }
+
+        // H.265 by codec -> mePlayer first, then avPlayer
+        let h265Source = PlayerSource(url: "https://example.com/live.m3u8", videoCodec: PlayerSource.CODEC_H265)
+        XCTAssertEqual(player.computeEngineOrder(for: h265Source), [.mePlayer, .avPlayer])
+
+        // H.265 by HEVC tag -> mePlayer first
+        let hevcTagSource = PlayerSource(url: "https://example.com/live.m3u8", tag: "HEVC-1080P")
+        XCTAssertEqual(player.computeEngineOrder(for: hevcTagSource), [.mePlayer, .avPlayer])
+
+        // H.265 by HEVC URL -> mePlayer first
+        let hevcUrlSource = PlayerSource(url: "https://example.com/live_hevc.m3u8")
+        XCTAssertEqual(player.computeEngineOrder(for: hevcUrlSource), [.mePlayer, .avPlayer])
+
+        // FLV -> only mePlayer
+        let flvSource = PlayerSource(url: "https://example.com/live.flv", type: "flv")
+        XCTAssertEqual(player.computeEngineOrder(for: flvSource), [.mePlayer])
+
+        // RTMP -> only mePlayer
+        let rtmpSource = PlayerSource(url: "rtmp://example.com/live/stream")
+        XCTAssertEqual(player.computeEngineOrder(for: rtmpSource), [.mePlayer])
+
+        // Standard H.264 HLS -> avPlayer first, then mePlayer
+        let h264Source = PlayerSource(url: "https://example.com/live.m3u8", type: "hls", videoCodec: PlayerSource.CODEC_H264)
+        XCTAssertEqual(player.computeEngineOrder(for: h264Source), [.avPlayer, .mePlayer])
+    }
 }
