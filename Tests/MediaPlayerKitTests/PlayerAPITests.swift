@@ -64,6 +64,9 @@ final class PlayerAPITests: XCTestCase {
         XCTAssertTrue(player.set_muted("{\"muted\": true}"))
         let mutedJson = player.get_muted()
         XCTAssertTrue(mutedJson.contains("true"))
+        XCTAssertTrue(player.set_muted("{\"muted\": false}"))
+        let unmutedJson = player.get_muted()
+        XCTAssertTrue(unmutedJson.contains("false"))
         
         // 3. Speed
         XCTAssertTrue(player.set_speed("{\"speed\": 1.5}"))

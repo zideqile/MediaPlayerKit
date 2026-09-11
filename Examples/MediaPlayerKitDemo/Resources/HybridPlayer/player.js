@@ -708,7 +708,7 @@ function setSpeed(spd) {
 function toggleMute() {
     isMutedState = !isMutedState;
     const muteBtn = document.getElementById('muteBtn');
-    if (muteBtn) muteBtn.innerText = isMutedState ? '🔇 已静音' : '🔊 静音开';
+    if (muteBtn) muteBtn.innerText = isMutedState ? '🔊 取消静音' : '🔇 静音';
     sendCmd('setMuted', JSON.stringify({ muted: isMutedState }));
     updateStats();
 }
@@ -728,7 +728,7 @@ function refreshProperties() {
 function updateStats() {
     const volSlider = document.getElementById('volumeSlider');
     const volText = (volSlider ? volSlider.value : '100') + '%';
-    const muteText = isMutedState ? ' (静音)' : '';
+    const muteText = isMutedState ? ' (已静音)' : '';
     const statSpeedVol = document.getElementById('statSpeedVol');
     if (statSpeedVol) statSpeedVol.innerText = `${currentSpeed}x / ${volText}${muteText}`;
 }
@@ -898,6 +898,11 @@ window.vzBridgeUpdateProperties = function(props) {
                 pendingSwitchSourceIndex = null;
             }
             updateSubSourcesVisualHighlight();
+        }
+        if (props.muted !== undefined) {
+            isMutedState = Boolean(props.muted);
+            const muteBtn = document.getElementById('muteBtn');
+            if (muteBtn) muteBtn.innerText = isMutedState ? '🔊 取消静音' : '🔇 静音';
         }
         updateStats();
     } catch(e) {

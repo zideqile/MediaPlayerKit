@@ -435,6 +435,11 @@ final class UniversalPlayerViewModel: ObservableObject {
         currentSourceJSON = player.get_currentsource()
         bufferedText = player.get_buffered()
         refreshDuration()
+        if let mutedData = player.get_muted().data(using: .utf8),
+           let mutedDict = try? JSONSerialization.jsonObject(with: mutedData) as? [String: Any],
+           let m = mutedDict["muted"] as? Bool {
+            self.isMuted = m
+        }
     }
     
     func refreshDuration() {
