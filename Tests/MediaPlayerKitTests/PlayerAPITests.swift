@@ -374,4 +374,37 @@ extension PlayerAPITests {
             XCTAssertEqual(player.computeEngineOrder(for: fromDict), player.computeEngineOrder(for: fromJson), "Mismatch engine order for dict: \(dict)")
         }
     }
+
+    func testMuteButtonClickAndToggleSemantics() {
+        let playerView = MediaPlayerView()
+        let player = export.CreateVZPlayer(playerView)
+        defer { player.destroy() }
+        
+        // 验证初始状态：未静音 (有声音)
+        var isMuted = false
+        func buttonActionTitle(_ muted: Bool) -> String { muted ? "取消静音" : "静音" }
+        func buttonStatusLabel(_ muted: Bool) -> String { muted ? "已静音" : "正常" }
+        
+        // 1. 初始未静音时，按钮动作显示为 "静音"，状态为 "正常"
+        XCTAssertEqual(buttonActionTitle(isMuted), "静音")
+        XCTAssertEqual(buttonStatusLabel(isMuted), "正常")
+        
+        // 2. 点击 "静音" 按钮 -> 触发静音动作，发送 {"muted": true}
+        isMuted.toggle()
+        XCTAssertTrue(isMuted)
+        XCTAssertTrue(player.set_muted("{\"muted\": \(isMuted)}"))
+        let mutedJson = player.get_muted()
+        XCTAssertTrue(mutedJson.contains("true"))
+        XCTAssertEqual(buttonActionTitle(isMuted), "取消静音")
+        XCTAssertEqual(buttonStatusLabel(isMuted), "已静音")
+        
+        // 3. 点击 "取消静音" 按钮 -> 触发恢复声音动作，发送 {"muted": false}
+        isMuted.toggle()
+        XCTAssertFalse(isMuted)
+        XCTAssertTrue(player.set_muted("{\"muted\": \(isMuted)}"))
+        let unmutedJson = player.get_muted()
+        XCTAssertTrue(unmutedJson.contains("false"))
+        XCTAssertEqual(buttonActionTitle(isMuted), "静音")
+        XCTAssertEqual(buttonStatusLabel(isMuted), "正常")
+    }
 }

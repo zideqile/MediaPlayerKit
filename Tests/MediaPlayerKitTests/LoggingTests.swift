@@ -634,4 +634,36 @@ extension LoggingTests {
         wait(for: [sampled], timeout: 2)
         diagnostics.finish()
     }
+
+    func testSetMutedSnapshotCapturesPostState() {
+        let output = RecordingAppender()
+        Logger.configure { _ in [] }
+        Logger.addAppender(output)
+        
+        let diagnostics = PlaybackDiagnostics(group: "mute-state-test")
+        var currentMuted = false
+        diagnostics.startStateCollection(interval: 0) {
+            ["muted": currentMuted, "playState": "playing"]
+        }
+        
+        // 模拟 SetMuted(true): 先更新状态再记录事件与采集快照
+        currentMuted = true
+        diagnostics.command("set_muted: true")
+        
+        let muteLog = output.messages.first { $0.contains("set_muted: true") && $0.contains("runtime state:") }
+        XCTAssertNotNil(muteLog, "Must capture state snapshot for set_muted: true")
+        XCTAssertTrue(muteLog?.contains("\"muted\":true") == true || muteLog?.contains("\"muted\": 1") == true,
+                      "State snapshot for set_muted: true must reflect post-operation muted: true")
+        
+        // 模拟 SetMuted(false): 先更新状态再记录事件与采集快照
+        currentMuted = false
+        diagnostics.command("set_muted: false")
+        
+        let unmuteLog = output.messages.first { $0.contains("set_muted: false") && $0.contains("runtime state:") }
+        XCTAssertNotNil(unmuteLog, "Must capture state snapshot for set_muted: false")
+        XCTAssertTrue(unmuteLog?.contains("\"muted\":false") == true || unmuteLog?.contains("\"muted\": 0") == true,
+                      "State snapshot for set_muted: false must reflect post-operation muted: false")
+        
+        diagnostics.finish()
+    }
 }

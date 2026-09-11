@@ -126,17 +126,17 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func Pause() {
-        diagnostics.command("pause player")
         wantsToPlay = false
         controller?.config.autoPlay = false
         controller?.pause()
+        diagnostics.command("pause player")
     }
     
     public func Resume() {
-        diagnostics.command("resume player")
         wantsToPlay = true
         controller?.config.autoPlay = true
         controller?.play()
+        diagnostics.command("resume player")
     }
     
     public func Destroy() {
@@ -153,8 +153,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     // MARK: - IPlayer: 进度与状态
     
     public func Seek(_ seconds: Int64) {
-        diagnostics.command("seek to \(seconds)")
         controller?.seek(to: TimeInterval(seconds))
+        diagnostics.command("seek to \(seconds)")
     }
     
     public func GetCurrentTime() -> Int64 {
@@ -177,9 +177,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetVolume(_ volume: Float) {
-        diagnostics.command("set_volume: \(volume)")
         savedVolume = volume
         controller?.setVolume(volume)
+        diagnostics.command("set_volume: \(volume)")
     }
     
     public func IsMuted() -> Bool {
@@ -187,9 +187,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetMuted(_ isMuted: Bool) {
-        diagnostics.command("set_muted: \(isMuted)")
         savedMuted = isMuted
         controller?.setMute(isMuted)
+        diagnostics.command("set_muted: \(isMuted)")
     }
     
     // MARK: - IPlayer: 画面与循环
@@ -207,9 +207,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetLoop(_ loop: Bool) {
-        diagnostics.command("set_loop: \(loop)")
         savedLoop = loop
         controller?.setLoop(loop)
+        diagnostics.command("set_loop: \(loop)")
     }
     
     // MARK: - IPlayer: 倍速与缓冲
@@ -219,9 +219,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func SetSpeed(_ speed: Float) {
-        diagnostics.command("set_speed: \(speed)")
         savedSpeed = speed
         controller?.setPlaybackRate(speed)
+        diagnostics.command("set_speed: \(speed)")
     }
     
     public func GetBuffered() -> BufferRange {
