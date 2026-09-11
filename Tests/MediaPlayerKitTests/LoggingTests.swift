@@ -650,19 +650,33 @@ extension LoggingTests {
         currentMuted = true
         diagnostics.command("set_muted: true")
         
-        let muteLog = output.messages.first { $0.contains("set_muted: true") && $0.contains("runtime state:") }
-        XCTAssertNotNil(muteLog, "Must capture state snapshot for set_muted: true")
-        XCTAssertTrue(muteLog?.contains("\"muted\":true") == true || muteLog?.contains("\"muted\": 1") == true,
-                      "State snapshot for set_muted: true must reflect post-operation muted: true")
+        guard let muteLog = output.messages.first(where: { $0.contains("set_muted: true") && $0.contains("runtime state:") }),
+              let muteJsonStr = muteLog.components(separatedBy: "runtime state: ").last,
+              let muteData = muteJsonStr.data(using: .utf8),
+              let muteDict = try? JSONSerialization.jsonObject(with: muteData) as? [String: Any] else {
+            XCTFail("Must capture and parse state snapshot for set_muted: true")
+            return
+        }
+        let muteEvent = muteDict["lastEvent"] as? [String: Any]
+        XCTAssertEqual(muteEvent?["name"] as? String, "set_muted: true")
+        XCTAssertEqual((muteDict["muted"] as? NSNumber)?.boolValue, true,
+                       "State snapshot for set_muted: true must reflect post-operation muted: true")
         
         // 模拟 SetMuted(false): 先更新状态再记录事件与采集快照
         currentMuted = false
         diagnostics.command("set_muted: false")
         
-        let unmuteLog = output.messages.first { $0.contains("set_muted: false") && $0.contains("runtime state:") }
-        XCTAssertNotNil(unmuteLog, "Must capture state snapshot for set_muted: false")
-        XCTAssertTrue(unmuteLog?.contains("\"muted\":false") == true || unmuteLog?.contains("\"muted\": 0") == true,
-                      "State snapshot for set_muted: false must reflect post-operation muted: false")
+        guard let unmuteLog = output.messages.first(where: { $0.contains("set_muted: false") && $0.contains("runtime state:") }),
+              let unmuteJsonStr = unmuteLog.components(separatedBy: "runtime state: ").last,
+              let unmuteData = unmuteJsonStr.data(using: .utf8),
+              let unmuteDict = try? JSONSerialization.jsonObject(with: unmuteData) as? [String: Any] else {
+            XCTFail("Must capture and parse state snapshot for set_muted: false")
+            return
+        }
+        let unmuteEvent = unmuteDict["lastEvent"] as? [String: Any]
+        XCTAssertEqual(unmuteEvent?["name"] as? String, "set_muted: false")
+        XCTAssertEqual((unmuteDict["muted"] as? NSNumber)?.boolValue, false,
+                       "State snapshot for set_muted: false must reflect post-operation muted: false")
         
         diagnostics.finish()
     }
