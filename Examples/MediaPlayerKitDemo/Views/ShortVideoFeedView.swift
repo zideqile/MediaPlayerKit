@@ -293,16 +293,17 @@ public struct ShortVideoFeedView: View {
                     }
                     .disabled(!canSwitchNext)
                     
-                    // 静音切换 (IH5Player set_muted)
+                    // 静音切换 (IH5Player set_muted: 操作动作与状态严格对齐)
                     Button(action: {
                         isMuted.toggle()
                         _ = vzPlayer?.set_muted("{\"muted\": \(isMuted)}")
+                        syncMutedState()
                     }) {
                         VStack(spacing: 2) {
                             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                                 .font(.system(size: 22))
                                 .frame(height: 34)
-                            Text(isMuted ? "静音" : "声音")
+                            Text(isMuted ? "取消静音" : "静音")
                                 .font(.system(size: 9))
                         }
                         .foregroundColor(isMuted ? .red : .primary)
@@ -315,7 +316,7 @@ public struct ShortVideoFeedView: View {
                         .foregroundColor(.green)
                     Text("事件: \(lastH5Event.isEmpty ? "ready" : lastH5Event)")
                         .foregroundColor(.primary)
-                    Text("静音: \(isMuted ? "是" : "否")")
+                    Text("静音状态: \(isMuted ? "已静音" : "正常")")
                         .foregroundColor(.secondary)
                 }
                 .font(.system(size: 8.5, design: .monospaced))
@@ -383,6 +384,17 @@ public struct ShortVideoFeedView: View {
         
         self.vzPlayer = player
         self.coordinator = coord
+        syncMutedState()
+    }
+    
+    private func syncMutedState() {
+        guard let player = vzPlayer,
+              let data = player.get_muted().data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let m = dict["muted"] as? Bool else { return }
+        if self.isMuted != m {
+            self.isMuted = m
+        }
     }
     
     private var canSwitchPrevious: Bool {
