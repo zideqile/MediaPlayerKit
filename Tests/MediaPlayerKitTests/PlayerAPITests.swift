@@ -310,4 +310,65 @@ extension PlayerAPITests {
         let h264Source = PlayerSource(url: "https://example.com/live.m3u8", type: "hls", videoCodec: PlayerSource.CODEC_H264)
         XCTAssertEqual(player.computeEngineOrder(for: h264Source), [.avPlayer, .mePlayer])
     }
+
+    func testExplicitCodecPrecedenceOverStringInference() {
+        let playerView = MediaPlayerView()
+        let player = MultiSourcePlayer(playerView: playerView)
+        defer { player.Destroy() }
+
+        // 1. Explicit H.264 with tag="hevc-backup" and URL containing "hevc" MUST remain H.264
+        let h264WithHevcTag = PlayerSource(
+            url: "https://example.com/stream_hevc.m3u8",
+            type: "hls",
+            tag: "hevc-backup",
+            videoCodec: PlayerSource.CODEC_H264
+        )
+        XCTAssertEqual(h264WithHevcTag.videoCodec, PlayerSource.CODEC_H264)
+        XCTAssertEqual(player.computeEngineOrder(for: h264WithHevcTag), [.avPlayer, .mePlayer])
+
+        // 2. URL query parameters MUST NOT trigger H.265 inference
+        let urlWithQueryParam = PlayerSource(url: "https://example.com/live.m3u8?token=hevc_token123&codec=265")
+        XCTAssertEqual(urlWithQueryParam.videoCodec, PlayerSource.CODEC_H264)
+        XCTAssertEqual(player.computeEngineOrder(for: urlWithQueryParam), [.avPlayer, .mePlayer])
+
+        // 3. URL path without explicit codec SHOULD trigger H.265 inference
+        let urlWithPath = PlayerSource(url: "https://example.com/live_hevc/playlist.m3u8")
+        XCTAssertEqual(urlWithPath.videoCodec, PlayerSource.CODEC_H265)
+        XCTAssertEqual(player.computeEngineOrder(for: urlWithPath), [.mePlayer, .avPlayer])
+    }
+
+    func testCodableAndDictionaryConsistency() {
+        let testCases: [[String: Any]] = [
+            ["src": "https://example.com/test.m3u8", "videoCodec": 4],
+            ["src": "https://example.com/test.m3u8", "videoCodec": "4"],
+            ["src": "https://example.com/test.m3u8", "videoCodec": "h265"],
+            ["src": "https://example.com/test.m3u8", "codec": "hevc"],
+            ["url": "https://example.com/test.m3u8", "video_codec": "hevc"],
+            ["src": "https://example.com/test.m3u8", "videoCodec": 2, "tag": "hevc-backup"],
+            ["src": "https://example.com/live_hevc/playlist.m3u8"],
+            ["src": "https://example.com/live.m3u8?token=hevc_token"]
+        ]
+
+        let playerView = MediaPlayerView()
+        let player = MultiSourcePlayer(playerView: playerView)
+        defer { player.Destroy() }
+
+        for dict in testCases {
+            let fromDict = PlayerSource.fromDictionary(dict)
+            let jsonData = try! JSONSerialization.data(withJSONObject: dict, options: [])
+            
+            // JSONDecoder must succeed without typeMismatch
+            var decoded: PlayerSource?
+            XCTAssertNoThrow(decoded = try JSONDecoder().decode(PlayerSource.self, from: jsonData))
+            guard let fromJson = decoded else {
+                XCTFail("Failed to decode PlayerSource from JSON: \(dict)")
+                continue
+            }
+
+            // Both entry points must produce identical codec and engine scheduling results
+            XCTAssertEqual(fromDict.videoCodec, fromJson.videoCodec, "Mismatch for dict: \(dict)")
+            XCTAssertEqual(fromDict.url, fromJson.url, "Mismatch for dict: \(dict)")
+            XCTAssertEqual(player.computeEngineOrder(for: fromDict), player.computeEngineOrder(for: fromJson), "Mismatch engine order for dict: \(dict)")
+        }
+    }
 }
