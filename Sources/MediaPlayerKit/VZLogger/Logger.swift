@@ -98,6 +98,7 @@ public enum Logger {
         let enabled = initConfig.appenders
         let level = LogLevel(rawValue: min(4, max(0, config.logConfig.level))) ?? .info
         var policy = LogUploadPolicy()
+        policy.printAttachedLogsOnUpload = enabled.contains("ConsoleAppender")
         policy.uploadIntervalSeconds = Double(config.logConfig.uploadIntervalSeconds)
         policy.maxAttachedMessageCount = max(0, config.runtimeStateCollect.stateCountLimit)
         let app = config.appVZPlayerConfigJsonString.data(using: .utf8)

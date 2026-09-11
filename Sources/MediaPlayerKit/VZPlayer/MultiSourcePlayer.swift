@@ -140,6 +140,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func Destroy() {
+        diagnostics.collectState(event: "destroy")
         isDestroyed = true
         generation &+= 1
         controller?.delegate = nil
@@ -373,6 +374,17 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         let ctrl = MediaPlayerController(config: config)
         ctrl.delegate = self
         self.controller = ctrl
+        diagnostics.startStateCollection(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds)) { [weak self, weak ctrl] in
+            guard let self = self, let ctrl = ctrl, self.controller === ctrl,
+                  !self.isDestroyed, !self.needsReloadSource, !self.attemptHandled else { return nil }
+            func finite(_ value: Double) -> Any { value.isFinite ? value as Any : NSNull() }
+            return ["videoCurrentTime": finite(ctrl.currentPosition), "duration": finite(ctrl.duration),
+                    "playbackRate": finite(Double(self.savedSpeed)),
+                    "bufferedEnd": finite(ctrl.bufferedDuration), "playState": ctrl.state.description,
+                    "paused": !self.wantsToPlay || [.paused, .stopped, .completed].contains(ctrl.state), "muted": self.savedMuted,
+                    "videoWidth": finite(Double(ctrl.naturalSize.width)),
+                    "videoHeight": finite(Double(ctrl.naturalSize.height))]
+        }
         
         // 3. 附加视图并准备播放
         playerView.attachRenderView(ctrl.playerView)
@@ -390,6 +402,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     private func handleRetry(error: NSError) {
         guard !isDestroyed, !attemptHandled, !needsReloadSource else { return }
+        diagnostics.collectState(event: "error")
         attemptHandled = true
         let token = generation
         let category = PlaybackErrorAdapters.classify(error)

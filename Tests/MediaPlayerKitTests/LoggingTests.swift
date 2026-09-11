@@ -576,3 +576,62 @@ extension LoggingTests {
         XCTAssertEqual(appender.messages.last, "[Test.test():3] data: event: seek, target: 30")
     }
 }
+
+
+extension LoggingTests {
+    func testAttachedContextRollsAndNeverUploadsAlone() {
+        let uploader = RecordingUploader()
+        var policy = LogUploadPolicy(); policy.uploadIntervalSeconds = 600; policy.maxAttachedMessageCount = 2
+        let appender = ESUploadAppender(context: LogContext(config: VPlayerConfig()), policy: policy, uploader: uploader)
+        defer { appender.destroy() }
+        for message in ["oldest", "recent", "latest"] {
+            appender.append(level: .info, tag: "", message: message, messageType: .attachedLog)
+        }
+        appender.flush(); appender.flushIfNeeded()
+        XCTAssertTrue(uploader.records.isEmpty)
+        for _ in 0..<2 {
+            appender.append(level: .warn, tag: "", message: "trigger", messageType: .log)
+            appender.flush()
+        }
+        XCTAssertEqual(uploader.records.count, 2)
+        for record in uploader.records {
+            let context = record["attachedLogs"] as? String ?? ""
+            XCTAssertFalse(context.contains("oldest"))
+            XCTAssertTrue(context.contains("recent")); XCTAssertTrue(context.contains("latest"))
+        }
+        appender.onSourceChanged(srcUrl: "https://new.example/live", srcType: "hls")
+        appender.append(level: .info, tag: "", message: "new source", messageType: .log)
+        appender.flush()
+        XCTAssertEqual(uploader.records.last?["attachedLogs"] as? String, "")
+    }
+
+    func testRuntimeStateEventsAndFinish() {
+        let output = RecordingAppender()
+        Logger.configure { _ in [] }; Logger.addAppender(output)
+        let diagnostics = PlaybackDiagnostics(group: "state-test")
+        diagnostics.startStateCollection(interval: 0) { ["videoCurrentTime": 12.5, "paused": true] }
+        diagnostics.state(.buffering)
+        XCTAssertTrue(output.messages.contains { $0.contains("runtime state:") && $0.contains("12.5") && $0.contains("buffering") })
+        diagnostics.finish()
+        let count = output.messages.count
+        diagnostics.collectState(event: "late")
+        XCTAssertEqual(output.messages.count, count)
+    }
+}
+
+
+extension LoggingTests {
+    func testRuntimeStateTimerDoesNotDependOnProgressCallbacks() {
+        Logger.configure { _ in [] }
+        let diagnostics = PlaybackDiagnostics(group: "timer-test")
+        let sampled = expectation(description: "timer sampled while no media progress callbacks")
+        var calls = 0
+        diagnostics.startStateCollection(interval: 0.1) {
+            calls += 1
+            if calls == 2 { sampled.fulfill() }
+            return ["playState": "buffering"]
+        }
+        wait(for: [sampled], timeout: 2)
+        diagnostics.finish()
+    }
+}

@@ -2,6 +2,7 @@ import Foundation
 
 public struct LogUploadPolicy {
     public var uploadIntervalSeconds: TimeInterval = 30
+    public var printAttachedLogsOnUpload = false
     public var maxAttachedMessageCount = 10
     public var maxBufferedMessages = 1000
     public var maxMessageBytes = 8192
@@ -101,7 +102,11 @@ public final class ESUploadAppender: Appender {
             }
             if let started = statisticsStarted, Date().timeIntervalSince(started) * 1000 < policy.statsMinUploadIntervalMs { return }
         }
-        while !messages.isEmpty || !statistics.isEmpty || (force && !attached.isEmpty) {
+        // Attached state is context, never an independent upload trigger.
+        if policy.printAttachedLogsOnUpload, !messages.isEmpty || !statistics.isEmpty {
+            for line in attached { ConsoleAppender().append(level: .info, tag: group, message: line, messageType: .log) }
+        }
+        while !messages.isEmpty || !statistics.isEmpty {
             var chunk: [(LogLevel, String)] = []
             var bytes = (try? JSONSerialization.data(withJSONObject: record([])).count) ?? 0
             while let next = messages.first {
@@ -109,7 +114,7 @@ public final class ESUploadAppender: Appender {
                 chunk.append(messages.removeFirst()); bytes += next.1.utf8.count
             }
             uploadTask.upload(record(chunk)); index += 1
-            attached.removeAll(); statistics.removeAll(); statisticsStarted = nil
+            statistics.removeAll(); statisticsStarted = nil
         }
     }
     public func makeLogMerger() -> LogMerger? { LogMerger(delayMs: mergeDelayMs, appender: self) }
@@ -119,7 +124,7 @@ public final class ESUploadAppender: Appender {
     public func onSourceChanged(srcUrl: String, srcType: String) {
         executor.sync {
             // Preserve the old source on logs collected before the switch.
-            flushBuffered(force: true); sourceURL = srcUrl; sourceType = srcType
+            flushBuffered(force: true); attached.removeAll(); sourceURL = srcUrl; sourceType = srcType
         }
     }
     public func finish() {

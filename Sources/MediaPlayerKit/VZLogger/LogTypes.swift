@@ -150,6 +150,7 @@ func logTime(_ date: Date = Date()) -> String {
 public final class ConsoleAppender: Appender {
     public init() {}
     public func append(level: LogLevel, tag: String, message: String, messageType: MessageType) {
+        guard messageType != .attachedLog else { return }
         NSLog("[%@] [%@] %@", level.label, tag, message)
     }
 }
