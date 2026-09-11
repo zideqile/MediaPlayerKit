@@ -1,4 +1,5 @@
 import Foundation
+import MediaPlayerKit
 
 // MARK: - 节点域名配置项模型 (含域名与备注)
 public struct NodeConfigItem: Codable, Identifiable, Equatable, Hashable {
@@ -184,14 +185,7 @@ public struct PlayerSourceItem: Codable, Identifiable {
         if let intVal = try? container.decodeIfPresent(Int.self, forKey: .videoCodec) {
             self.videoCodec = intVal
         } else if let strVal = try? container.decodeIfPresent(String.self, forKey: .videoCodec) {
-            let lower = strVal.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            if lower == "4" || lower.contains("265") || lower.contains("hevc") {
-                self.videoCodec = 4
-            } else if lower == "2" || lower.contains("264") || lower.contains("avc") {
-                self.videoCodec = 2
-            } else {
-                self.videoCodec = Int(strVal)
-            }
+            self.videoCodec = PlayerSource.parseCodec(strVal)
         } else {
             self.videoCodec = nil
         }
@@ -226,6 +220,7 @@ public struct PlayerSourceItem: Codable, Identifiable {
     
     public var codecText: String {
         switch videoCodec {
+        case 0: return "未知"
         case 4: return "H.265"
         case 2, 7: return "H.264"
         case .some(let c): return "Codec:\(c)"

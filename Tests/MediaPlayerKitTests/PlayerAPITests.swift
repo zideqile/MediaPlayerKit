@@ -264,17 +264,17 @@ extension PlayerAPITests {
         let s3 = PlayerSource.fromDictionary(["src": "https://example.com/test.m3u8", "videoCodec": "h265"])
         XCTAssertEqual(s3.videoCodec, PlayerSource.CODEC_H265)
 
-        // 4. "codec": "hevc"
+        // 4. Alias fields are ignored
         let s4 = PlayerSource.fromDictionary(["src": "https://example.com/test.m3u8", "codec": "hevc"])
-        XCTAssertEqual(s4.videoCodec, PlayerSource.CODEC_H265)
+        XCTAssertEqual(s4.videoCodec, PlayerSource.CODEC_UNKNOWN)
 
-        // 5. Inferred from url containing hevc when codec omitted
+        // 5. URL does not determine codec
         let s5 = PlayerSource.fromDictionary(["src": "https://example.com/live_hevc.m3u8"])
-        XCTAssertEqual(s5.videoCodec, PlayerSource.CODEC_H265)
+        XCTAssertEqual(s5.videoCodec, PlayerSource.CODEC_UNKNOWN)
 
-        // 6. Inferred from type "hls_hevc"
+        // 6. Type does not determine codec
         let s6 = PlayerSource.fromDictionary(["src": "https://example.com/stream.m3u8", "type": "hls_hevc"])
-        XCTAssertEqual(s6.videoCodec, PlayerSource.CODEC_H265)
+        XCTAssertEqual(s6.videoCodec, PlayerSource.CODEC_UNKNOWN)
 
         // 7. Explicit H.264
         let s7 = PlayerSource.fromDictionary(["src": "https://example.com/stream.m3u8", "videoCodec": 2])
@@ -290,13 +290,13 @@ extension PlayerAPITests {
         let h265Source = PlayerSource(url: "https://example.com/live.m3u8", videoCodec: PlayerSource.CODEC_H265)
         XCTAssertEqual(player.computeEngineOrder(for: h265Source), [.mePlayer, .avPlayer])
 
-        // H.265 by HEVC tag -> mePlayer first
+        // HEVC tag alone uses default order
         let hevcTagSource = PlayerSource(url: "https://example.com/live.m3u8", tag: "HEVC-1080P")
-        XCTAssertEqual(player.computeEngineOrder(for: hevcTagSource), [.mePlayer, .avPlayer])
+        XCTAssertEqual(player.computeEngineOrder(for: hevcTagSource), [.avPlayer, .mePlayer])
 
-        // H.265 by HEVC URL -> mePlayer first
+        // HEVC URL alone uses default order
         let hevcUrlSource = PlayerSource(url: "https://example.com/live_hevc.m3u8")
-        XCTAssertEqual(player.computeEngineOrder(for: hevcUrlSource), [.mePlayer, .avPlayer])
+        XCTAssertEqual(player.computeEngineOrder(for: hevcUrlSource), [.avPlayer, .mePlayer])
 
         // FLV -> only mePlayer
         let flvSource = PlayerSource(url: "https://example.com/live.flv", type: "flv")
@@ -328,13 +328,13 @@ extension PlayerAPITests {
 
         // 2. URL query parameters MUST NOT trigger H.265 inference
         let urlWithQueryParam = PlayerSource(url: "https://example.com/live.m3u8?token=hevc_token123&codec=265")
-        XCTAssertEqual(urlWithQueryParam.videoCodec, PlayerSource.CODEC_H264)
+        XCTAssertEqual(urlWithQueryParam.videoCodec, PlayerSource.CODEC_UNKNOWN)
         XCTAssertEqual(player.computeEngineOrder(for: urlWithQueryParam), [.avPlayer, .mePlayer])
 
-        // 3. URL path without explicit codec SHOULD trigger H.265 inference
+        // 3. URL path without videoCodec must remain unknown
         let urlWithPath = PlayerSource(url: "https://example.com/live_hevc/playlist.m3u8")
-        XCTAssertEqual(urlWithPath.videoCodec, PlayerSource.CODEC_H265)
-        XCTAssertEqual(player.computeEngineOrder(for: urlWithPath), [.mePlayer, .avPlayer])
+        XCTAssertEqual(urlWithPath.videoCodec, PlayerSource.CODEC_UNKNOWN)
+        XCTAssertEqual(player.computeEngineOrder(for: urlWithPath), [.avPlayer, .mePlayer])
     }
 
     func testCodableAndDictionaryConsistency() {

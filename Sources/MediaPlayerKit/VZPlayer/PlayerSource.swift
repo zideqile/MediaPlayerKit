@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 /// 播放源数据模型 (对标 Android vzplayer 的 PlayerSource)
 @objc(PlayerSource)
@@ -16,7 +17,7 @@ public final class PlayerSource: NSObject, Codable {
     @objc public var url: String = ""
     @objc public var type: String = PlayerSource.TYPE_HLS
     @objc public var tag: String = ""
-    @objc public var videoCodec: Int = 2 // 2: H.264, 4: H.265
+    @objc public var videoCodec: Int = PlayerSource.CODEC_UNKNOWN // 0: unknown, 2: H.264, 4: H.265
     @objc public var sarNum: Int = 1
     @objc public var sarDen: Int = 1
     @objc public var orderno: Int = 1
@@ -36,6 +37,7 @@ public final class PlayerSource: NSObject, Codable {
         case ext
     }
 
+    // Only used for the url and sourceIndex aliases; codec aliases are not supported.
     private struct DynamicCodingKey: CodingKey {
         var stringValue: String
         var intValue: Int?
@@ -62,11 +64,7 @@ public final class PlayerSource: NSObject, Codable {
         self.url = url
         self.type = type
         self.tag = tag
-        if videoCodec != PlayerSource.CODEC_UNKNOWN {
-            self.videoCodec = videoCodec
-        } else {
-            self.videoCodec = PlayerSource.inferCodec(url: url, type: type, tag: tag)
-        }
+        self.videoCodec = videoCodec
         self.sarNum = sarNum
         self.sarDen = sarDen
         self.orderno = orderno
@@ -122,28 +120,12 @@ public final class PlayerSource: NSObject, Codable {
             self.sarDen = 1
         }
         
-        var explicitCodec: Int? = nil
-        if let c = try? container.decodeIfPresent(Int.self, forKey: .videoCodec) {
-            explicitCodec = c
-        } else if let cStr = try? container.decodeIfPresent(String.self, forKey: .videoCodec) {
-            explicitCodec = PlayerSource.parseCodec(cStr)
+        if let value = try? container.decodeIfPresent(Int.self, forKey: .videoCodec) {
+            self.videoCodec = value
+        } else if let value = try? container.decodeIfPresent(String.self, forKey: .videoCodec) {
+            self.videoCodec = Self.parseCodec(value) ?? Self.CODEC_UNKNOWN
         } else {
-            let alt = try? decoder.container(keyedBy: DynamicCodingKey.self)
-            if let c = try? alt?.decodeIfPresent(Int.self, forKey: DynamicCodingKey("codec")) {
-                explicitCodec = c
-            } else if let cStr = try? alt?.decodeIfPresent(String.self, forKey: DynamicCodingKey("codec")) {
-                explicitCodec = PlayerSource.parseCodec(cStr)
-            } else if let vc = try? alt?.decodeIfPresent(Int.self, forKey: DynamicCodingKey("video_codec")) {
-                explicitCodec = vc
-            } else if let vcStr = try? alt?.decodeIfPresent(String.self, forKey: DynamicCodingKey("video_codec")) {
-                explicitCodec = PlayerSource.parseCodec(vcStr)
-            }
-        }
-        
-        if let codec = explicitCodec {
-            self.videoCodec = codec
-        } else {
-            self.videoCodec = PlayerSource.inferCodec(url: self.url, type: self.type, tag: self.tag)
+            self.videoCodec = Self.CODEC_UNKNOWN
         }
     }
 
@@ -203,53 +185,23 @@ public final class PlayerSource: NSObject, Codable {
         return parts.joined(separator: ", ")
     }
     
+    /// Only normalize videoCodec values; no URL/tag/type or alias-field inference.
     public static func parseCodec(_ raw: Any?) -> Int? {
-        if let intVal = raw as? Int {
-            return intVal
+        // Exact native type only: NSNumber(true) can also pass `as? Int` via bridging.
+        if let raw = raw, Swift.type(of: raw) == Int.self, let value = raw as? Int {
+            return value
         }
-        if let numVal = raw as? NSNumber {
-            return numVal.intValue
+        if let value = raw as? NSNumber {
+            guard CFGetTypeID(value) != CFBooleanGetTypeID() else { return nil }
+            // stringValue preserves large integer precision and rejects fractions/overflow.
+            return Int(value.stringValue) ?? Int(exactly: value.doubleValue)
         }
-        if let strVal = raw as? String {
-            let lower = strVal.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            if lower == "4" || lower == "h265" || lower == "hevc" || lower.contains("265") || lower.contains("hevc") {
-                return CODEC_H265
-            }
-            if lower == "2" || lower == "h264" || lower == "avc" || lower.contains("264") || lower.contains("avc") {
-                return CODEC_H264
-            }
-            return Int(lower)
+        guard let value = raw as? String else { return nil }
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "h265", "h.265", "hevc": return CODEC_H265
+        case "h264", "h.264", "avc": return CODEC_H264
+        default: return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        return nil
-    }
-
-    public static func inferCodec(url: String, type: String, tag: String) -> Int {
-        let typeLower = type.lowercased()
-        let tagLower = tag.lowercased()
-        
-        // 1. Check type
-        if typeLower.contains("265") || typeLower.contains("hevc") {
-            return CODEC_H265
-        }
-        
-        // 2. Check tag: exact match or clear prefix/suffix
-        if tagLower == "hevc" || tagLower == "h265" || tagLower.hasPrefix("hevc") || tagLower.hasPrefix("h265") ||
-           tagLower.contains("-hevc") || tagLower.contains("_hevc") || tagLower.contains("-265") || tagLower.contains("_265") {
-            return CODEC_H265
-        }
-        
-        // 3. Check URL path (strictly EXCLUDE query parameters like ?token=hevc_xxx)
-        let pathLower: String
-        if let parsedURL = URL(string: url) {
-            pathLower = parsedURL.path.lowercased()
-        } else {
-            pathLower = url.components(separatedBy: "?").first?.lowercased() ?? ""
-        }
-        if pathLower.contains("265") || pathLower.contains("hevc") {
-            return CODEC_H265
-        }
-        
-        return CODEC_H264
     }
 
     public static func fromDictionary(_ dict: [String: Any]) -> PlayerSource {
@@ -259,12 +211,7 @@ public final class PlayerSource: NSObject, Codable {
         source.type = dict["type"] as? String ?? TYPE_HLS
         source.tag = dict["tag"] as? String ?? ""
         
-        let rawCodec = dict["videoCodec"] ?? dict["codec"] ?? dict["video_codec"]
-        if let explicit = parseCodec(rawCodec) {
-            source.videoCodec = explicit
-        } else {
-            source.videoCodec = inferCodec(url: source.url, type: source.type, tag: source.tag)
-        }
+        source.videoCodec = parseCodec(dict["videoCodec"]) ?? CODEC_UNKNOWN
 
         source.sarNum = dict["sar_num"] as? Int ?? 1
         source.sarDen = dict["sar_den"] as? Int ?? 1

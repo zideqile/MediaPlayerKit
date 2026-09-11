@@ -467,7 +467,7 @@ final class UniversalPlayerViewModel: ObservableObject {
                     url: item.src,
                     type: item.type.lowercased(),
                     tag: item.tag ?? "source_\(index)",
-                    videoCodec: item.videoCodec ?? (item.codecText.contains("265") ? 4 : 2),
+                    videoCodec: item.videoCodec ?? PlayerSource.CODEC_UNKNOWN,
                     orderno: index + 1,
                     isLive: true,
                     ext: item.type.lowercased()
