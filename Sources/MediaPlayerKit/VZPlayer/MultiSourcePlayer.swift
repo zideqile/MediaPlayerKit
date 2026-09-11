@@ -324,18 +324,28 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     func computeEngineOrder(for source: PlayerSource) -> [PlayerEngineType] {
         let type = source.type.lowercased()
         let urlStr = source.url.lowercased()
-        let tagStr = source.tag.lowercased()
         let isFlv = type == "flv" || urlStr.contains(".flv")
         let isRtmp = type == "rtmp" || urlStr.hasPrefix("rtmp://")
         let isRtsp = urlStr.hasPrefix("rtsp://")
-        let isH265 = source.videoCodec == PlayerSource.CODEC_H265 || source.videoCodec == 4 ||
-                     tagStr.contains("265") || tagStr.contains("hevc") ||
-                     type.contains("265") || type.contains("hevc") ||
-                     urlStr.contains("265") || urlStr.contains("hevc")
         
         if isFlv || isRtmp || isRtsp {
             return [.mePlayer]
-        } else if isH265 {
+        }
+        
+        // 编码判断遵循“编码字段明确优先”原则：
+        let isH265: Bool
+        if source.videoCodec == PlayerSource.CODEC_H265 || source.videoCodec == 4 {
+            isH265 = true
+        } else if source.videoCodec == PlayerSource.CODEC_H264 || source.videoCodec == 2 {
+            // 明确指定为 H.264 时，绝不被 tag 或 url 中的字符串推断覆盖
+            isH265 = false
+        } else {
+            // 仅在编码未明确指定时，通过类型、标签或 URL 路径安全推断（排除 query 参数干扰）
+            let inferred = PlayerSource.inferCodec(url: source.url, type: source.type, tag: source.tag)
+            isH265 = (inferred == PlayerSource.CODEC_H265)
+        }
+        
+        if isH265 {
             return [.mePlayer, .avPlayer]
         } else {
             return [.avPlayer, .mePlayer]
