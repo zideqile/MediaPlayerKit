@@ -110,7 +110,39 @@ public final class PlayerSource: NSObject, Codable {
         source.url = dict["src"] as? String ?? dict["url"] as? String ?? ""
         source.type = dict["type"] as? String ?? TYPE_HLS
         source.tag = dict["tag"] as? String ?? ""
-        source.videoCodec = dict["videoCodec"] as? Int ?? CODEC_H264
+        
+        var explicitCodec: Int? = nil
+        let rawCodec = dict["videoCodec"] ?? dict["codec"] ?? dict["video_codec"]
+        if let intVal = rawCodec as? Int {
+            explicitCodec = intVal
+        } else if let numVal = rawCodec as? NSNumber {
+            explicitCodec = numVal.intValue
+        } else if let strVal = rawCodec as? String {
+            let lower = strVal.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            if lower == "4" || lower.contains("265") || lower.contains("hevc") {
+                explicitCodec = CODEC_H265
+            } else if lower == "2" || lower.contains("264") || lower.contains("avc") {
+                explicitCodec = CODEC_H264
+            } else if let parsed = Int(lower) {
+                explicitCodec = parsed
+            }
+        }
+        
+        if let codec = explicitCodec {
+            source.videoCodec = codec
+        } else {
+            let typeLower = source.type.lowercased()
+            let tagLower = source.tag.lowercased()
+            let urlLower = source.url.lowercased()
+            if typeLower.contains("265") || typeLower.contains("hevc") ||
+               tagLower.contains("265") || tagLower.contains("hevc") ||
+               urlLower.contains("265") || urlLower.contains("hevc") {
+                source.videoCodec = CODEC_H265
+            } else {
+                source.videoCodec = CODEC_H264
+            }
+        }
+
         source.sarNum = dict["sar_num"] as? Int ?? 1
         source.sarDen = dict["sar_den"] as? Int ?? 1
         source.orderno = dict["orderno"] as? Int ?? 1
