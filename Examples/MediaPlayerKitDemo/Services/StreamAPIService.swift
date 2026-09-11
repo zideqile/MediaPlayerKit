@@ -339,6 +339,7 @@ public final class StreamAPIService: ObservableObject {
         initConfig.topicId = topicId
         initConfig.deviceInfo = deviceInfo
         initConfig.appenders = ["ConsoleAppender", "ESAppender"]
+        initConfig.externalAppenders = [DemoSDKLogStore.shared]
         
         var configJson: String? = nil
         if !domain.isEmpty {
