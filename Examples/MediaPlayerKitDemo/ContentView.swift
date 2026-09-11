@@ -92,7 +92,13 @@ public struct ContentView: View {
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
+                            #if os(iOS)
                             .fill(Color(.systemBackground).opacity(0.92))
+                            #elseif os(macOS)
+                            .fill(Color(NSColor.windowBackgroundColor).opacity(0.92))
+                            #else
+                            .fill(Color.primary.opacity(0.1))
+                            #endif
                             .shadow(color: Color.black.opacity(0.18), radius: 4, x: 0, y: 2)
                     )
             }
@@ -223,32 +229,47 @@ private struct SDKLogConsoleView: View {
             }
             .padding()
             .navigationTitle("SDK 日志")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
+                #if os(iOS)
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("清空") { store.clear() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button(copiedHint ? "已复制" : "复制全部") {
-                            let text = visibleEntries.reversed().map {
-                                "\($0.time) [\($0.level)] [\($0.kind)] \($0.group): \($0.message)"
-                            }.joined(separator: "\n")
-                            #if canImport(UIKit)
-                            UIPasteboard.general.string = text
-                            #elseif canImport(AppKit)
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(text, forType: .string)
-                            #endif
-                            copiedHint = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                copiedHint = false
-                            }
-                        }
-                        Button("关闭") { presentationMode.wrappedValue.dismiss() }
-                    }
+                    trailingToolbarButtons
+                }
+                #else
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("清空") { store.clear() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    trailingToolbarButtons
+                }
+                #endif
+            }
+        }
+    }
+
+    private var trailingToolbarButtons: some View {
+        HStack(spacing: 12) {
+            Button(copiedHint ? "已复制" : "复制全部") {
+                let text = visibleEntries.reversed().map {
+                    "\($0.time) [\($0.level)] [\($0.kind)] \($0.group): \($0.message)"
+                }.joined(separator: "\n")
+                #if canImport(UIKit)
+                UIPasteboard.general.string = text
+                #elseif canImport(AppKit)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                #endif
+                copiedHint = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    copiedHint = false
                 }
             }
+            Button("关闭") { presentationMode.wrappedValue.dismiss() }
         }
     }
 }
