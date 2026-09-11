@@ -12,6 +12,35 @@ final class PlaybackDiagnostics {
     private var closed = false
     private var metricsSampler = RuntimeMetricsSampler()
     private var lastMetricsTime: TimeInterval?
+    private var stateTimer: Timer?
+    private var stateProvider: (() -> [String: Any]?)?
+    private var lastEvent: [String: String] = [:]
+    private var playingSince: TimeInterval?
+    private var totalPlayTime: TimeInterval = 0
+
+    /// Main-run-loop sampling continues even when buffering stops time callbacks.
+    func startStateCollection(interval: TimeInterval, provider: @escaping () -> [String: Any]?) {
+        stateTimer?.invalidate()
+        stateProvider = provider
+        collectState(event: "loadstart")
+        guard interval.isFinite, interval > 0 else { return }
+        let timer = Timer(timeInterval: max(0.1, interval), repeats: true) { [weak self] _ in
+            self?.collectState()
+        }
+        stateTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func collectState(event: String? = nil) {
+        guard !closed, var fields = stateProvider?() else { return }
+        if let event = event { lastEvent = ["name": event, "time": logTime()] }
+        fields["lastEvent"] = lastEvent
+        fields["totalPlayTime"] = totalPlayTime + (playingSince.map { max(0, clock() - $0) } ?? 0)
+        guard JSONSerialization.isValidJSONObject(fields),
+              let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else { return }
+        logger.logAI("runtime state:", text)
+    }
     private var logger: InternalLogger { Logger.getLogger(group) }
 
     init(group: String = "player-" + UUID().uuidString, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
@@ -19,6 +48,7 @@ final class PlaybackDiagnostics {
     }
     func command(_ name: String, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
+        collectState(event: name)
         logger.logI(name, fileID: fileID, function: function, line: line, typeName: typeName)
     }
     func inputError(_ message: String, function: String, line: UInt) {
@@ -36,14 +66,19 @@ final class PlaybackDiagnostics {
     }
     func begin(source: PlayerSource, engine: PlayerEngineType, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
+        stateTimer?.invalidate(); stateTimer = nil; stateProvider = nil; lastEvent = [:]
         endBuffering()
         logger.onSourceChanged(srcUrl: source.url, srcType: source.type)
+        playingSince = nil; totalPlayTime = 0
         attemptStarted = clock(); firstFrameRecorded = false; lastState = nil
         metricsSampler = RuntimeMetricsSampler(); lastMetricsTime = nil
         logger.logI("create player", "engine:", engineName(engine), "source:", source.toKeyValueString(), fileID: fileID, function: function, line: line, typeName: typeName)
     }
     func state(_ state: PlayerState, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed, state != lastState else { return }
+        if let start = playingSince { totalPlayTime += max(0, clock() - start) }
+        playingSince = state == .playing ? clock() : nil
+        collectState(event: state.description)
         lastState = state
         if state == .paused || state == .stopped || state == .completed {
             metricsSampler = RuntimeMetricsSampler(); lastMetricsTime = nil
@@ -85,6 +120,7 @@ final class PlaybackDiagnostics {
     func failed(_ failure: PlaybackAttemptFailure, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
         endBuffering()
+        collectState(event: "error")
         let engine = engineName(failure.engine)
         logger.logE("player error", "source:", failure.sourceURL, "engine:", engine,
                     "domain:", failure.error.domain, "code:", failure.error.code,
@@ -106,6 +142,8 @@ final class PlaybackDiagnostics {
     func finish(fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
         endBuffering()
+        collectState(event: "destroy")
+        stateTimer?.invalidate(); stateTimer = nil; stateProvider = nil
         logger.logI("destroy player", fileID: fileID, function: function, line: line, typeName: typeName)
         closed = true
         Logger.releaseLogger(group)

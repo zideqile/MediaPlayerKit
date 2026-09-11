@@ -162,3 +162,26 @@ await window.vzPlayerBridge.request('SendEvent', {
 ```
 
 未配置事件适配器返回 android_event_adapter_required；未知 Android 事件返回 unsupported_event。Android 的 SWITCH_PLAYER 通过此显式适配器转交宿主；iOS 尚不支持该事件，不将它误映射成切源。适配函数可返回同步结果或 Promise，false 表示拒绝，void 仅表示已受理。Android 包装和双端真机行为仍需宿主联调验证。
+
+
+## attachedLogs：近期播放状态上下文
+
+每个 MultiSourcePlayer 的诊断分组独立采集状态。创建播放内核后立即采样，之后按
+`runtimeStateCollect.collectIntervalSeconds`（默认 3 秒）在主运行循环定时采样；
+状态变化、播放操作和错误也触发采样。定时器不依赖播放进度回调，因此卡顿时仍可采样。
+间隔小于等于 0 时关闭定时采样，保留事件采样。销毁时停止采集，闭包弱引用播放器。
+
+状态通过 `logAI` 写入附加日志，包含 `videoCurrentTime`、`duration`、`playbackRate`、
+`bufferedEnd`、`playState`、`paused`、`muted`、视频尺寸、`lastEvent` 和本次内核尝试的
+`totalPlayTime`（秒，仅累计 playing 状态）。不可用的非有限数值输出 null。
+原生 SDK 没有 HTML readyState；bufferedEnd 是媒体时间轴上的缓冲终点，不伪造浏览器缓冲区间。
+
+ESAppender 按 `runtimeStateCollect.stateCountLimit` 保留最近 N 条附加日志（默认沿用
+SDK 的 10 条，可配置为 100；0 表示不保留）。上传后保留该滚动窗口，后续记录可重复携带
+上下文。只有附加日志时，定时上传、flush 和 finish 都不会单独上传；普通日志或已有统计
+上传时会附带上下文。statLogs 的独立上传策略保持不变。
+
+切源或切换内核前先提交旧日志，再清空旧状态，避免新源记录携带旧源状态。
+启用 ConsoleAppender 时，附加日志在 ES 上传打包时集中打印，不在采集时立即打印；
+仅启用 ConsoleAppender 而未启用 ESAppender 时不会集中打印附加日志。
+自定义 Appender 和 FileAppender 仍接收采集时的原始附加日志。
