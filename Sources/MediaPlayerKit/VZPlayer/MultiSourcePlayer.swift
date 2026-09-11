@@ -153,8 +153,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     // MARK: - IPlayer: 进度与状态
     
     public func Seek(_ seconds: Int64) {
-        controller?.seek(to: TimeInterval(seconds))
         diagnostics.command("seek to \(seconds)")
+        controller?.seek(to: TimeInterval(seconds))
     }
     
     public func GetCurrentTime() -> Int64 {

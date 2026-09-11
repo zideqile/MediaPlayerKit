@@ -640,34 +640,36 @@ extension LoggingTests {
         Logger.configure { _ in [] }
         Logger.addAppender(output)
         
-        let diagnostics = PlaybackDiagnostics(group: "mute-state-test")
-        var currentMuted = false
-        diagnostics.startStateCollection(interval: 0) {
-            ["muted": currentMuted, "playState": "playing"]
-        }
+        let playerView = MediaPlayerView()
+        let player = MultiSourcePlayer(playerView: playerView)
+        defer { player.Destroy() }
+        player.setSources([PlayerSource(url: "https://example.com/live.m3u8", type: "hls")])
+        player.Play()
         
-        // 模拟 SetMuted(true): 先更新状态再记录事件与采集快照
-        currentMuted = true
-        diagnostics.command("set_muted: true")
+        // 1. 调用真实 MultiSourcePlayer.SetMuted(true)
+        player.SetMuted(true)
         
-        guard let muteLog = output.messages.first(where: { $0.contains("set_muted: true") && $0.contains("runtime state:") }) else {
+        guard let muteLog = output.messages.last(where: { $0.contains("set_muted: true") && $0.contains("runtime state:") }) else {
             XCTFail("Must capture state snapshot for set_muted: true")
             return
         }
-        XCTAssertTrue(muteLog.contains("muted: true"),
-                      "State snapshot for set_muted: true must reflect post-operation muted: true, got: \(muteLog)")
+        // 精确断言独立的 muted 字段，避免误匹配 lastEvent 中的 "set_muted: true"
+        XCTAssertTrue(muteLog.contains(", muted: true"),
+                      "State snapshot for set_muted: true must contain isolated field ', muted: true', got: \(muteLog)")
+        XCTAssertFalse(muteLog.contains(", muted: false"),
+                       "State snapshot for set_muted: true must NOT contain ', muted: false', got: \(muteLog)")
         
-        // 模拟 SetMuted(false): 先更新状态再记录事件与采集快照
-        currentMuted = false
-        diagnostics.command("set_muted: false")
+        // 2. 调用真实 MultiSourcePlayer.SetMuted(false)
+        player.SetMuted(false)
         
-        guard let unmuteLog = output.messages.first(where: { $0.contains("set_muted: false") && $0.contains("runtime state:") }) else {
+        guard let unmuteLog = output.messages.last(where: { $0.contains("set_muted: false") && $0.contains("runtime state:") }) else {
             XCTFail("Must capture state snapshot for set_muted: false")
             return
         }
-        XCTAssertTrue(unmuteLog.contains("muted: false"),
-                      "State snapshot for set_muted: false must reflect post-operation muted: false, got: \(unmuteLog)")
-        
-        diagnostics.finish()
+        // 精确断言独立的 muted 字段，避免误匹配 lastEvent 中的 "set_muted: false"
+        XCTAssertTrue(unmuteLog.contains(", muted: false"),
+                      "State snapshot for set_muted: false must contain isolated field ', muted: false', got: \(unmuteLog)")
+        XCTAssertFalse(unmuteLog.contains(", muted: true"),
+                       "State snapshot for set_muted: false must NOT contain ', muted: true', got: \(unmuteLog)")
     }
 }
