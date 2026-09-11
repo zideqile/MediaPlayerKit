@@ -39,3 +39,10 @@ Apple 解码错误映射参考：[AVError.Code](https://developer.apple.com/docu
 
 PlaybackRecoveryTests 覆盖错误域区分、底层错误链、HTTP 分类、策略矩阵、无效地址连续换源、最终事件去重及回调中销毁。Apple 环境另验证 AVFoundation / KSPlayer 枚举映射。
 Linux 临时包可直接执行纯策略测试（仅在临时副本移除 @objc），以及使用平台替身执行不创建媒体引擎的无效源调度测试。它不替代 Xcode 编译与真实源联调。
+
+
+## 播放源编码判定
+
+编码判定仅读取 `videoCodec`。4 表示 H.265，2 表示 H.264，0 表示未知；JSON 的整数值和整数字符串保留，字符串 h265 / h.265 / hevc、h264 / h.264 / avc（忽略大小写及首尾空白）按明确值归一化。缺失、null、布尔、非整数或无法识别的字符串统一为未知，不从 url、tag、type、codec、video_codec 补猜。无参初始化和 Demo 的缺省编码同样为未知，UI 显示“未知”。
+
+FLV/RTMP/RTSP 仍按协议选择 KSPlayer；其他源只有 videoCodec=4 才采用 KSPlayer 优先，未知编码采用默认 AVPlayer→KSPlayer 顺序。此字段只影响初始选择，实际媒体编码由引擎解析。SDK 不再提供 inferCodec 字符串推断接口。

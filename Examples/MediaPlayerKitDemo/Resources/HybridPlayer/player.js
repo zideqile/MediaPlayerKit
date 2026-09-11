@@ -553,7 +553,7 @@ function renderSubSourcesList() {
         }
 
         const typeBadge = `<span class="line-badge badge-type">${(sub.type || 'HLS').toUpperCase()}</span>`;
-        const codecBadge = `<span class="line-badge badge-codec">${sub.codecText || (sub.videoCodec === 4 ? 'H.265' : 'H.264')}</span>`;
+        const codecBadge = `<span class="line-badge badge-codec">${sub.codecText || (sub.videoCodec === 4 ? 'H.265' : ([2, 7].includes(sub.videoCodec) ? 'H.264' : '未知'))}</span>`;
         const tagBadge = sub.tag ? `<span class="line-badge badge-tag">${sub.tag}</span>` : '';
 
         html += `
@@ -663,7 +663,7 @@ function updateConsoleQuickBar() {
         } else if (totalLines > 0 && availableSubSources[currentActiveSourceIndex]) {
             const curSub = availableSubSources[currentActiveSourceIndex];
             const typeStr = (curSub.type || 'HLS').toUpperCase();
-            const codecStr = curSub.codecText || (curSub.videoCodec === 4 ? 'H.265' : 'H.264');
+            const codecStr = curSub.codecText || (curSub.videoCodec === 4 ? 'H.265' : ([2, 7].includes(curSub.videoCodec) ? 'H.264' : '未知'));
             const stateTag = (currentPlaybackState === 'playing' || isPlayingState) ? '● 播放中' : (pendingSwitchSourceIndex !== null ? '⏳ 切换中' : '⏳ 缓冲中');
             ctrlLineInfoText.innerText = `🔀 线路: ${currentLineNum}/${totalLines} · ${typeStr} · ${codecStr} (${stateTag})`;
         } else {

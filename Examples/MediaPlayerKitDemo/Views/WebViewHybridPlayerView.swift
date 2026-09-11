@@ -237,7 +237,7 @@ final class PlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, H5Event
                         url: item.src,
                         type: item.type.lowercased(),
                         tag: item.tag ?? "source_\(index)",
-                        videoCodec: item.videoCodec ?? (item.codecText.contains("265") ? 4 : 2),
+                        videoCodec: item.videoCodec ?? PlayerSource.CODEC_UNKNOWN,
                         orderno: index + 1,
                         isLive: true,
                         ext: item.type.lowercased()
@@ -288,7 +288,7 @@ final class PlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, H5Event
                 "tag": s.tag,
                 "type": s.type,
                 "videoCodec": s.videoCodec,
-                "codecText": s.videoCodec == 4 ? "H.265" : "H.264",
+                "codecText": [4: "H.265", 2: "H.264", 7: "H.264"][s.videoCodec] ?? "未知",
                 "url": s.url,
                 "isLive": s.isLive
             ]
