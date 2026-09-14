@@ -63,9 +63,7 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 
 ## 原生能力边界
 
-metrics 只包含内核实际返回的值：显示/标称帧率、观测码率、可用字节、请求和丢帧计数，
-以及采样周期差值与每秒速率。带 Total 的字段为本次内核提供的累计计数；delta/per_second
-字段是最近采样区间的值，首次采样和计数器重置后不伪造差值。
+metrics 只包含内核实际返回的有效指标：显示帧率（`fps`）、标称帧率（`frame_rate`）、观测码率（`bitrate`）、网络增量与速率（`net_bytes`、`net_speed`、`net_bytes_total`）、读取增量与速率（`read_bytes`、`read_speed`、`read_bytes_total`）、丢帧与丢包（`drop`、`drop_count`、`drop_packet`、`drop_packet_count`）以及媒体请求（`media_requests`、`media_requests_total`）。所有字段除既有对标字段外均遵循言简意赅原则，首次采样和计数器重置后不伪造差值。
 
 requestMetricsScope 固定为 engineAggregate，requestDetailsAvailable 为 false。
 AVPlayer access log 的汇总数据不能充当每个 m3u8/TS 请求的 URL、耗时、大小和 HTTP 状态。

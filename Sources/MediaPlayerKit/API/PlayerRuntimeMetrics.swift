@@ -21,32 +21,29 @@ struct RuntimeMetricsSampler {
         guard time.isFinite else { return [:] }
         var result: [String: Double] = [:]
         for (key, value) in [("fps", metrics.displayFPS), ("frame_rate", metrics.nominalFrameRate),
-                             ("ios_observed_bitrate_bps", metrics.observedBitrate)] {
+                             ("bitrate", metrics.observedBitrate)] {
             if let value = value, value.isFinite, value >= 0,
                key == "fps" || value > 0 { result[key] = value }
         }
-        let counters: [(String, Int64?)] = [
-            ("ios_bytes_read", metrics.bytesRead), ("ios_network_bytes", metrics.networkBytes),
-            ("drop", metrics.droppedVideoFrames),
-            ("ios_dropped_video_packets", metrics.droppedVideoPackets),
-            ("ios_media_requests", metrics.mediaRequests)
+        let counters: [(deltaKey: String, rateKey: String?, value: Int64?)] = [
+            ("read_bytes", "read_speed", metrics.bytesRead),
+            ("net_bytes", "net_speed", metrics.networkBytes),
+            ("drop", nil, metrics.droppedVideoFrames),
+            ("drop_packet", nil, metrics.droppedVideoPackets),
+            ("media_requests", nil, metrics.mediaRequests)
         ]
         let elapsed = previousTime.map { time - $0 }
         var next: [String: Int64] = [:]
-        for (key, value) in counters {
-            guard let value = value, value >= 0 else { continue }
-            next[key] = value
+        for counter in counters {
+            guard let value = counter.value, value >= 0 else { continue }
+            next[counter.deltaKey] = value
             guard let elapsed = elapsed, elapsed > 0,
-                  let old = previous[key], value >= old else { continue }
+                  let old = previous[counter.deltaKey], value >= old else { continue }
             let delta = Double(value - old)
-            if key == "drop" {
-                result["drop"] = delta
-            } else {
-                result[key + "_delta"] = delta
-            }
-            if key == "ios_bytes_read" || key == "ios_network_bytes" {
+            result[counter.deltaKey] = delta
+            if let rateKey = counter.rateKey {
                 let rate = delta / elapsed
-                if rate.isFinite { result[key + "_per_second"] = rate }
+                if rate.isFinite { result[rateKey] = rate }
             }
         }
         previous = next; previousTime = time

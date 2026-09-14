@@ -184,10 +184,10 @@ final class PlaybackDiagnostics {
         }
         let fields = metricsSampler.sample(metrics, at: time)
         var summary = fields
-        for (name, value) in [("bytesReadTotal", metrics.bytesRead), ("networkBytesTotal", metrics.networkBytes),
-                              ("droppedVideoFramesTotal", metrics.droppedVideoFrames),
-                              ("droppedVideoPacketsTotal", metrics.droppedVideoPackets),
-                              ("mediaRequestsTotal", metrics.mediaRequests)] {
+        for (name, value) in [("read_bytes_total", metrics.bytesRead), ("net_bytes_total", metrics.networkBytes),
+                              ("drop_count", metrics.droppedVideoFrames),
+                              ("drop_packet_count", metrics.droppedVideoPackets),
+                              ("media_requests_total", metrics.mediaRequests)] {
             if let value = value, value >= 0 { summary[name] = Double(value) }
         }
         statistics.updateMetrics(summary)
