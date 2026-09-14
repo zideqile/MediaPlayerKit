@@ -20,6 +20,12 @@ public struct LogLocation {
 
 /// 格式化日志参数：当参数为 JSON 字符串、字典或数据时，以键值对形式输出。
 public enum LogFormatter {
+    /// Round only serialized samples, preserving full-precision accumulation.
+    static func roundedSample(_ value: Double) -> Double {
+        guard value.isFinite, abs(value) <= Double.greatestFiniteMagnitude / 100 else { return value }
+        let result = (value * 100).rounded() / 100
+        return result == 0 ? 0 : result
+    }
     /// 将日志消息中的参数转换为易读的文本。若为 JSON 字典/字符串/数据，转为键值对形式。
     public static func formatArgument(_ item: Any) -> String {
         if let source = item as? PlayerSource {
@@ -53,7 +59,7 @@ public enum LogFormatter {
                 }
             }
         }
-        return String(describing: item)
+        return formatValue(item)
     }
 
     /// 格式化单个值（递归支持字典、数组、布尔等）
@@ -79,6 +85,17 @@ public enum LogFormatter {
         }
         if type(of: val) == Bool.self, let b = val as? Bool {
             return b ? "true" : "false"
+        }
+        if let number = val as? NSNumber {
+            let kind = String(cString: number.objCType)
+            if kind == "f" || kind == "d" {
+                let value = number.doubleValue
+                guard value.isFinite else { return number.stringValue }
+                // Avoid negative zero; never convert integer IDs through Double.
+                return String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"),
+                              abs(value) < 0.005 ? 0 : value)
+            }
+            return number.stringValue
         }
         return "\(val)"
     }

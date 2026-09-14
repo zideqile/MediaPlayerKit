@@ -701,3 +701,16 @@ extension LoggingTests {
                        "State snapshot for set_muted: false must NOT contain ', muted: true', got: \(unmuteLog)")
     }
 }
+
+extension LoggingTests {
+    func testNumericLogFormattingPreservesTypesAndRoundsDecimals() {
+        XCTAssertEqual(LogFormatter.formatArgument(244747.42835211314), "244747.43")
+        XCTAssertEqual(LogFormatter.formatArgument(-0.0001), "0.00")
+        XCTAssertEqual(LogFormatter.formatArgument(Int64.max), String(Int64.max))
+        XCTAssertEqual(LogFormatter.formatArgument(true), "true")
+        XCTAssertEqual(LogFormatter.formatArgument("https://example.com/1.23456"), "https://example.com/1.23456")
+        XCTAssertEqual(LogFormatter.formatArgument(["x": [1.23456, 2.34567]]), "x: [1.23, 2.35]")
+        XCTAssertEqual(LogFormatter.roundedSample(244747.42835211314), 244747.43)
+        XCTAssertTrue(LogFormatter.roundedSample(Double.greatestFiniteMagnitude).isFinite)
+    }
+}
