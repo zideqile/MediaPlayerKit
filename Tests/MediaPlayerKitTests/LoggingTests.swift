@@ -531,7 +531,7 @@ extension LoggingTests {
         }
         sample(); time = 1; sample(); XCTAssertEqual(reads, 1)
         time = 3; sample(); XCTAssertEqual(recorder.values["read_speed"], [100])
-        XCTAssertEqual(recorder.values["bitrate"], [500_000])
+        XCTAssertEqual(recorder.values["bandwidth"], [500_000, 500_000])
         diagnostics.state(.paused); time = 30; sample(); XCTAssertEqual(reads, 2)
         diagnostics.state(.playing); sample()
         XCTAssertEqual(recorder.values["read_speed"], [100])

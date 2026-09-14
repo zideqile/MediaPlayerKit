@@ -32,8 +32,8 @@ struct PlaybackTimeAccumulator {
     func fields(at time: TimeInterval) -> [String: Any] {
         let value = values(at: time)
         let total = value.play + value.stall
-        return ["playDurationMs": value.play * 1000, "stalledTotalDuration": value.stall * 1000,
-                "stalledCount": value.count, "stallRatio": total > 0 ? value.stall / total : 0]
+        return ["play_ms": value.play * 1000, "stalledTotalDuration": value.stall * 1000,
+                "stalledCount": value.count, "stall_ratio": total > 0 ? value.stall / total : 0]
     }
 }
 
@@ -173,28 +173,28 @@ final class PlaybackStatisticsTracker {
         guard sessionStarted else { return }
         let time = clock()
         let cumulative = session.values(at: time)
-        let window: [String: Any] = ["playDurationMs": max(0, cumulative.play - lastWindow.play) * 1000,
+        let window: [String: Any] = ["play_ms": max(0, cumulative.play - lastWindow.play) * 1000,
             "stalledTotalDuration": max(0, cumulative.stall - lastWindow.stall) * 1000,
             "stalledCount": max(0, cumulative.count - lastWindow.count)]
         lastWindow = cumulative
         sequence += 1
-        var record: [String: Any] = ["schemaVersion": 1, "sessionId": sessionID,
+        var record: [String: Any] = ["schemaVersion": 2, "sessionId": sessionID,
             "sourceId": sourceID, "attemptId": attemptID, "sequence": sequence,
             "time": Int64(Date().timeIntervalSince1970 * 1000), "reason": reason,
             "sourceUrl": sourceURL, "sourceType": sourceType, "sourceIndex": sourceIndex,
             "sourceDomain": URL(string: sourceURL)?.host ?? "", "engine": engine,
             "session": session.fields(at: time), "source": source.fields(at: time),
             "attempt": attempt.fields(at: time), "window": window,
-            "attemptCount": attemptCount, "sourceSwitchCount": sourceSwitchCount,
-            "engineSwitchCount": engineSwitchCount, "errorCount": errorCount,
-            "recoveryCount": recoveryCount, "recoverySuccessCount": recoverySuccessCount,
-            "recoveryFailureCount": recoveryFailureCount, "recoveryCancelledCount": recoveryCancelledCount,
-            "recovering": recoveryStarted != nil, "recoveryDurationMs": recoveryDurationMs.map { $0 as Any } ?? NSNull(),
-            "firstFrameDurationMs": firstFrameMs.map { $0 as Any } ?? NSNull(),
-            "creationDurationMs": creationMs.map { $0 as Any } ?? NSNull(), "createOK": creationOK,
+            "attempts": attemptCount, "source_switches": sourceSwitchCount,
+            "engine_switches": engineSwitchCount, "errors": errorCount,
+            "recoveries": recoveryCount, "recover_ok": recoverySuccessCount,
+            "recover_fail": recoveryFailureCount, "recover_cancel": recoveryCancelledCount,
+            "recovering": recoveryStarted != nil, "recover_ms": recoveryDurationMs.map { $0 as Any } ?? NSNull(),
+            "first_frame_time": firstFrameMs.map { $0 as Any } ?? NSNull(),
+            "create_ms": creationMs.map { $0 as Any } ?? NSNull(), "createOK": creationOK,
             "error": lastError.map { $0 as Any } ?? NSNull(), "metrics": metrics,
-            "metricsSampleTime": metricsSampleTime.map { $0 as Any } ?? NSNull(),
-            "requestMetricsScope": "engineAggregate", "requestDetailsAvailable": false]
+            "metrics_time": metricsSampleTime.map { $0 as Any } ?? NSNull(),
+            "request_scope": "engineAggregate", "request_details": false]
         record["reportable"] = Self.isReportable(record)
         latest = record; emit?(record)
     }

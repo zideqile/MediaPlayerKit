@@ -25,23 +25,23 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 
 | 字段 | 口径 |
 | --- | --- |
-| playDurationMs | 只累计 playing 状态的单调时钟时长，暂停、卡顿及恢复间隙不计入 |
+| play_ms | 只累计 playing 状态的单调时钟时长，暂停、卡顿及恢复间隙不计入 |
 | stalledTotalDuration | buffering 状态累计毫秒；暂停、错误、切源或销毁会结算未结束的区间 |
 | stalledCount | 进入 buffering 的次数，重复通知不重复计数，包含起播阶段 buffering |
-| stallRatio | 卡顿时长 /（有效播放时长 + 卡顿时长），排除暂停时间 |
+| stall_ratio | 卡顿时长 /（有效播放时长 + 卡顿时长），排除暂停时间 |
 
 `window` 为自上一次快照以来的增量，不是固定自然时间窗口。
 `sequence` 是实例内递增序号；后台应以 sessionId + sequence 去重。
 累计量按相应 ID 覆盖更新，不能逐条相加；需要求和时只累加去重后的 window。
 跨窗口卡顿的时长逐段计算，次数只在开始所在区间增加。
 
-`creationDurationMs` 是从开始本次尝试到 MediaPlayerController 对象创建完成的耗时，
-`createOK` 不表示媒体已可播放。`firstFrameDurationMs` 是本次尝试开始至首帧通知的耗时。
+`create_ms` 是从开始本次尝试到 MediaPlayerController 对象创建完成的耗时，
+`createOK` 不表示媒体已可播放。`first_frame_time` 是本次尝试开始至首帧通知的耗时。
 
-会话还包含 attemptCount、sourceSwitchCount、engineSwitchCount、errorCount，
-以及 recoveryCount、recoverySuccessCount、recoveryFailureCount、recoveryCancelledCount。
+会话还包含 attempts、source_switches、engine_switches、errors，
+以及 recoveries、recover_ok、recover_fail、recover_cancel。
 同一连续自动恢复过程只计一次；内核报告 playing 时判为恢复成功，最终失败计失败，
-用户切源/替换源列表/销毁打断未完成恢复计取消。recoveryDurationMs 为最近已结算恢复耗时。
+用户切源/替换源列表/销毁打断未完成恢复计取消。recover_ms 为最近已结算恢复耗时。
 
 ## 采集与发布
 
@@ -58,14 +58,14 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
   2. **周期性检查（`periodic`）**：严格对标 vplayer，**仅当该周期窗口内发生卡顿（`stalledCount > 0` 或 `stalledTotalDuration > 0`）时才输出日志上报**。若该窗口内平稳播放且零卡顿，坚决不写 Logger、不上报 ES，实现平稳期零日志打扰、零网络开销。
 
 运行状态与可用性能指标按 runtimeStateCollect.collectIntervalSeconds 采样，默认 3 秒。
-定时采样不依赖进度回调，卡顿时仍工作；metricsSampleTime 标识 metrics 最后采样时刻。
+定时采样不依赖进度回调，卡顿时仍工作；metrics_time 标识 metrics 最后采样时刻。
 内核和源切换时清空旧性能样本，避免跨内核累计计数器相减。
 
 ## 原生能力边界
 
-metrics 只包含内核实际返回的有效指标：显示帧率（`fps`）、标称帧率（`frame_rate`）、观测码率（`bitrate`）、网络增量与速率（`net_bytes`、`net_speed`、`net_bytes_total`）、读取增量与速率（`read_bytes`、`read_speed`、`read_bytes_total`）、丢帧与丢包（`drop`、`drop_count`、`drop_packet`、`drop_packet_count`）以及媒体请求（`media_requests`、`media_requests_total`）。所有字段除既有对标字段外均遵循言简意赅原则，首次采样和计数器重置后不伪造差值。
+metrics 只包含内核实际返回的有效指标：显示帧率（`fps`）、标称帧率（`frame_rate`）、观测吞吐率（`bandwidth`）、网络增量与速率（`net_bytes`、`net_speed`、`net_bytes_total`）、读取增量与速率（`read_bytes`、`read_speed`、`read_bytes_total`）、丢帧与丢包（`drop`、`drop_count`、`drop_packet`、`drop_packet_count`）以及媒体请求（`media_requests`、`media_requests_total`）。所有字段除既有对标字段外均遵循言简意赅原则，首次采样和计数器重置后不伪造差值。
 
-requestMetricsScope 固定为 engineAggregate，requestDetailsAvailable 为 false。
+request_scope 固定为 engineAggregate，request_details 为 false。
 AVPlayer access log 的汇总数据不能充当每个 m3u8/TS 请求的 URL、耗时、大小和 HTTP 状态。
 本次未改造 FFmpeg 网络层、未增加代理，也未伪造慢请求/重复请求明细。
 这些逐请求指标仍需底层提供可靠回调后单独扩展。
@@ -77,3 +77,42 @@ PlayerQoSReport 的 DNS、TCP、首包、未到达的首帧默认值改为 NaN�
 
 原生 QoSAPMTracker 采用同一状态计时器；snapshot 为非终止读取，finish 幂等结算。
 Demo QoS 页面已移除固定示例数值，展示最近收到的真实会话快照；没有数据时明确显示未采集。
+
+
+## 字段命名与版本 2
+
+JSON/日志中的自定义字段使用简短名称；vplayer/vzplayer 已有字段保持原名。
+Native 的 Swift/Objective-C 属性名不变。本次快照和 PlayerQoSReport.toDictionary 的
+schemaVersion 为 2，不同时输出旧别名，业务侧需按版本更新读取字段。
+first_frame_time 沿用 Android 既有名称，单位毫秒；play_ms/create_ms/recover_ms 为毫秒，
+play_sec/stall_sec 为秒，metrics_time 为 Unix 毫秒时间戳。
+
+bandwidth 是 AVPlayer 观测下载吞吐率（bit/s），不是视频编码码率。
+net_speed 为本采样周期网络字节增量除以单调时钟间隔（B/s），两者统计区间不同，
+不能简单按 8 倍换算后要求相等。net_bytes/media_requests 为周期增量，_total 后缀为累计值。
+
+| 旧字段 | 新字段 |
+| --- | --- |
+| `playDurationMs` | `play_ms` |
+| `stallRatio` | `stall_ratio` |
+| `attemptCount` | `attempts` |
+| `sourceSwitchCount` | `source_switches` |
+| `engineSwitchCount` | `engine_switches` |
+| `errorCount` | `errors` |
+| `recoveryCount` | `recoveries` |
+| `recoverySuccessCount` | `recover_ok` |
+| `recoveryFailureCount` | `recover_fail` |
+| `recoveryCancelledCount` | `recover_cancel` |
+| `recoveryDurationMs` | `recover_ms` |
+| `firstFrameDurationMs` | `first_frame_time` |
+| `creationDurationMs` | `create_ms` |
+| `metricsSampleTime` | `metrics_time` |
+| `requestMetricsScope` | `request_scope` |
+| `requestDetailsAvailable` | `request_details` |
+| `dns_duration_ms` | `dns_ms` |
+| `tcp_duration_ms` | `tcp_ms` |
+| `first_packet_duration_ms` | `first_packet_ms` |
+| `first_frame_duration_ms` | `first_frame_time` |
+| `play_duration_sec` | `play_sec` |
+| `stutter_duration_sec` | `stall_sec` |
+| `bitrate`（原 observedBitrate） | `bandwidth` |
