@@ -99,12 +99,16 @@ final class PlaybackDiagnostics {
         self.statistics = PlaybackStatisticsTracker(clock: clock)
         self.statistics.emit = { [weak self] record in
             guard let self = self else { return }
-            if PlaybackStatisticsTracker.isReportable(record) {
-                self.logger.logI("playback_statistics:", record)
-            }
+            self.logStatistics(record)
             self.onStatistics?(record)
         }
     }
+    private func logStatistics(_ snapshot: [String: Any]) {
+        for entry in PlaybackStatisticsLog.records(from: snapshot) {
+            logger.log(entry.level, messages: [entry.name, entry.fields])
+        }
+    }
+
     func command(_ name: String, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
         collectState(event: name)

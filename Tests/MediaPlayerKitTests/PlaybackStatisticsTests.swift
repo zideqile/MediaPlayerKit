@@ -210,3 +210,25 @@ extension PlaybackStatisticsTests {
         XCTAssertNotNil(session?["play_ms"])
     }
 }
+
+extension PlaybackStatisticsTests {
+    func testWebStyleLogsSeparateSummariesAndKeepQuietDuringSmoothPlayback() {
+        let record: [String: Any] = ["reason": "switch", "sourceIndex": 0, "engine": "ksmeplayer",
+            "attempt": ["play_ms": 1043266.6, "stall_ratio": 0.000632],
+            "window": ["stalledCount": 0, "stalledTotalDuration": 0.0]]
+        let logs = PlaybackStatisticsLog.records(from: record)
+        XCTAssertEqual(logs.count, 1)
+        XCTAssertEqual(logs.first?.name, "playtime")
+        XCTAssertEqual(logs.first?.fields["totalPlayTime"] as? Double, 1043266.6)
+        XCTAssertEqual(LogFormatter.formatValue(logs.first?.fields["stall_pct"] ?? NSNull()), "0.06")
+        XCTAssertNil(logs.first?.fields["session"])
+        XCTAssertNil(logs.first?.fields["metrics"])
+        var periodic = record; periodic["reason"] = "periodic"
+        XCTAssertTrue(PlaybackStatisticsLog.records(from: periodic).isEmpty)
+        periodic["window"] = ["stalledCount": 1, "stalledTotalDuration": 100.25]
+        let stall = PlaybackStatisticsLog.records(from: periodic)
+        XCTAssertEqual(stall.count, 1)
+        XCTAssertEqual(stall.first?.name, "StalledSummaryInfoStatistics.summarize")
+        XCTAssertEqual(stall.first?.fields["stalledTotalDuration"] as? Double, 100.25)
+    }
+}

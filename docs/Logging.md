@@ -216,3 +216,9 @@ SDK 的 10 条，可配置为 100；0 表示不保留）。上传后保留该滚
 保持原类型显示，不通过 Double 转换大整数。普通字符串与 URL 不做数字正则替换。
 statLogs 在序列化时保留最多两位小数；JSON 数字不会强制补零。
 采样、计时、累计和业务统计回调保留原始精度，仅日志展示/上传样本进行舍入。
+
+### 播放汇总日志
+
+播放统计按 vplayer 的用途拆分为 `playtime`、`StalledSummaryInfoStatistics.summarize` 和 `playerCreation`，
+不再输出包含 session/source/attempt 和 metrics 的整包 `playback_statistics:`。
+完整业务快照保持兼容；触发条件、单位及累计口径见 [播放统计](PlaybackStatistics.md)。

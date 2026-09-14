@@ -8,7 +8,7 @@
   这是 MediaPlayerKit 新增接口，Android 端需有同名能力才可直接调用。
 - 全局观察：`PlayerStatisticsEvents.didUpdate`，通知的 `userInfo` 是同一快照。按 `sessionId` 区分播放器。
 - 当前容器：`MediaPlayerView.playbackStatistics`；原生多源门面：`MultiSourcePlayer.currentStatistics`。
-- SDK 日志：独立普通日志 `playback_statistics:`，复用现有分组、等级过滤、ES 上传与 Demo SDK 日志面板。
+- SDK 日志：按用途拆分的播放时长、卡顿汇总和创建统计日志，复用现有分组、等级过滤、ES 上传与 Demo SDK 日志面板。
   业务回调不依赖日志级别。现有 Android 对标 statLogs 指标保留。
 
 Native 回调和通知在主线程异步交付，避免业务回调重入切源过程；每条记录含自身的源与会话标识，
@@ -49,13 +49,27 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 0 关闭周期快照，但保留创建、首帧、恢复、错误、切换及销毁等事件快照。
 该参数控制统计记录生成，ES 实际发送节奏仍由 logConfig.uploadIntervalSeconds 控制。
 
-### 静默优先与非必要不上报（对标 vplayer）
+### 按 vplayer 的统计用途拆分日志
 
-严格遵循 vplayer `StalledSummaryInfoStatistics` 的“非必要不上报”设计哲学，将**内存状态刷新**与**日志/网络上报**彻底解耦：
-- **内存快照（持续供给）**：周期到达时始终更新内存快照 `latest`，触发 `onStatistics` 代理与 `PlayerStatisticsEvents.didUpdate` 通知，供本地 UI/大盘和 JS Bridge（`get_statistics`）随时零开销读取；
-- **上报门禁（`reportable` / `isReportable`）**：只有满足以下条件时，才向 Logger 写入 `playback_statistics:` 并触发 ES 上传：
-  1. **关键里程碑**：`created`、`firstFrame`、`error`、`recovered`、`ended`、`sourceEnded`、`sessionEnded:*` 等非周期性事件；
-  2. **周期性检查（`periodic`）**：严格对标 vplayer，**仅当该周期窗口内发生卡顿（`stalledCount > 0` 或 `stalledTotalDuration > 0`）时才输出日志上报**。若该窗口内平稳播放且零卡顿，坚决不写 Logger、不上报 ES，实现平稳期零日志打扰、零网络开销。
+完整快照继续供 Native、JS 和 Demo 使用，字段及 schemaVersion 保持兼容；不再整包写入 `playback_statistics:`。
+
+| 日志 | 触发与字段 |
+| --- | --- |
+| `StalledSummaryInfoStatistics.summarize` | 窗口存在卡顿次数或时长时输出 error 日志；沿用 vplayer 的 `stalledCount`、`stalledTotalDuration`（毫秒） |
+| `playerCreation` | 创建完成时输出 `elapsedMs`、`createOK` |
+| `playtime` | 切换、替换、错误、播放结束时输出 attempt 累计播放时长；会话结束时输出 session 累计播放时长 |
+
+`playtime.totalPlayTime` 单位为毫秒；`scope` 区分 attempt/session，`reason` 标识结算原因。
+这些是累计值，不应逐条相加；播放结束后再切源也可能再次输出同一尝试的累计时长。
+`stall_pct` 为百分比，两位小数，例如 `0.06` 表示 0.06%；业务快照中的 `stall_ratio` 仍为原始比例。
+首帧、恢复与错误沿用已有专项日志；性能采样沿用 statLogs，不重复附带整份 metrics。
+
+周期快照仍持续交付业务回调。平稳周期不产生上述汇总日志，但普通事件日志和 statLogs 仍可能上传。
+`reportable` 保留原兼容语义，表示快照是否满足原日志候选条件，并不表示实际发生网络请求。
+ES 实际发送仍由现有上传策略控制，本次没有增加独立上报接口。
+
+这是按用途对标，并非逐字复刻 vplayer 的上传协议：vplayer 的独立播放时长上传调用目前被注释；
+原生卡顿会跨窗口分段结算，并在切源、错误或销毁时保留未结束区间，避免遗漏时长。
 
 运行状态与可用性能指标按 runtimeStateCollect.collectIntervalSeconds 采样，默认 3 秒。
 定时采样不依赖进度回调，卡顿时仍工作；metrics_time 标识 metrics 最后采样时刻。
