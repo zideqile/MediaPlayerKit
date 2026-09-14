@@ -477,18 +477,36 @@ extension LoggingTests {
         var sampler = RuntimeMetricsSampler()
         var metrics = PlayerRuntimeMetrics()
         metrics.displayFPS = 0; metrics.nominalFrameRate = .nan; metrics.bytesRead = 100
+        metrics.networkBytes = 500; metrics.mediaRequests = 10; metrics.droppedVideoFrames = 2; metrics.droppedVideoPackets = 4
         let first = sampler.sample(metrics, at: 10)
         XCTAssertEqual(first["fps"], 0)
         XCTAssertNil(first["frame_rate"])
-        XCTAssertNil(first["ios_bytes_read_delta"])
+        XCTAssertNil(first["read_bytes"])
+        XCTAssertNil(first["net_bytes"])
+        XCTAssertNil(first["media_requests"])
+        XCTAssertNil(first["drop"])
+        XCTAssertNil(first["drop_packet"])
+
         metrics.bytesRead = 700
-        XCTAssertEqual(sampler.sample(metrics, at: 13)["ios_bytes_read_per_second"], 200)
+        metrics.networkBytes = 1100
+        metrics.mediaRequests = 12
+        metrics.droppedVideoFrames = 5
+        metrics.droppedVideoPackets = 7
+        let second = sampler.sample(metrics, at: 13)
+        XCTAssertEqual(second["read_bytes"], 600)
+        XCTAssertEqual(second["read_speed"], 200)
+        XCTAssertEqual(second["net_bytes"], 600)
+        XCTAssertEqual(second["net_speed"], 200)
+        XCTAssertEqual(second["media_requests"], 2)
+        XCTAssertEqual(second["drop"], 3)
+        XCTAssertEqual(second["drop_packet"], 3)
+
         metrics.bytesRead = 20
-        XCTAssertNil(sampler.sample(metrics, at: 16)["ios_bytes_read_delta"])
+        XCTAssertNil(sampler.sample(metrics, at: 16)["read_bytes"])
         metrics.bytesRead = nil
-        XCTAssertNil(sampler.sample(metrics, at: 19)["ios_bytes_read_delta"])
+        XCTAssertNil(sampler.sample(metrics, at: 19)["read_bytes"])
         metrics.bytesRead = 900
-        XCTAssertNil(sampler.sample(metrics, at: 22)["ios_bytes_read_delta"])
+        XCTAssertNil(sampler.sample(metrics, at: 22)["read_bytes"])
         metrics.displayFPS = -1; metrics.observedBitrate = .infinity
         XCTAssertTrue(sampler.sample(metrics, at: 25).values.allSatisfy { $0.isFinite && $0 >= 0 })
     }
@@ -507,16 +525,18 @@ extension LoggingTests {
                 reads += 1
                 var metrics = PlayerRuntimeMetrics()
                 metrics.bytesRead = Int64(time * 100); metrics.displayFPS = 24
+                metrics.observedBitrate = 500_000
                 return metrics
             })
         }
         sample(); time = 1; sample(); XCTAssertEqual(reads, 1)
-        time = 3; sample(); XCTAssertEqual(recorder.values["ios_bytes_read_per_second"], [100])
+        time = 3; sample(); XCTAssertEqual(recorder.values["read_speed"], [100])
+        XCTAssertEqual(recorder.values["bitrate"], [500_000])
         diagnostics.state(.paused); time = 30; sample(); XCTAssertEqual(reads, 2)
         diagnostics.state(.playing); sample()
-        XCTAssertEqual(recorder.values["ios_bytes_read_per_second"], [100])
+        XCTAssertEqual(recorder.values["read_speed"], [100])
         diagnostics.begin(source: source, engine: .avPlayer); diagnostics.state(.playing)
-        time = 33; sample(); XCTAssertEqual(recorder.values["ios_bytes_read_per_second"], [100])
+        time = 33; sample(); XCTAssertEqual(recorder.values["read_speed"], [100])
         time = 36; sample(0); XCTAssertEqual(reads, 4)
     }
 

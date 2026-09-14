@@ -57,8 +57,10 @@ public struct QoSDashboardView: View {
                 Section(header: Text("最近内核采样 · 非逐请求统计")) {
                     row("显示帧率", number(metrics["fps"], unit: " fps"))
                     row("视频标称帧率", number(metrics["frame_rate"], unit: " fps"))
-                    row("观测码率", number(metrics["ios_observed_bitrate_bps"], unit: " bps"))
-                    row("网络下载速度", number(metrics["ios_network_bytes_per_second"], unit: " B/s"))
+                    row("观测码率", number(metrics["bitrate"], unit: " bps"))
+                    row("网络下载速度", number(metrics["net_speed"], unit: " B/s"))
+                    row("网络传输字节", number(metrics["net_bytes"], unit: " B"))
+                    row("媒体请求数", number(metrics["media_requests"]))
                     Text("DNS、TCP、首包耗时和分片请求明细暂未采集，不以 0 代替。")
                         .font(.caption).foregroundColor(.secondary)
                 }

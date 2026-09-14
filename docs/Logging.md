@@ -86,7 +86,13 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
   - `close_normal` / `player_<engine>_close_normal`：正常退出为 1，异常为 0
   - `drop`：采样周期丢帧数（对标 Android `drop`）
   - `drop_count`：累计丢帧总数（对标 Android `drop_count`）
-- 聚合网络与平台指标：KSPlayer 的实际显示 FPS 使用 fps，轨道标称帧率使用 frame_rate。引擎读取字节、AVPlayer 网络传输字节、丢包、请求数因属于 iOS 平台聚合观测值，使用 ios_ 前缀；详见下表。
+- 聚合网络与质量指标：除对标 Android vzplayer 的既有字段（`fps`、`frame_rate`、`drop`、`drop_count`、`bitrate` 等）严格同名外，其余运行时网络、读取、丢包与请求指标均遵循“言简意赅”原则，消除冗余的平台特异前缀（如 `ios_`）与过度修饰（如 `_delta`、`_per_second`、`_bps`）：
+  - `net_bytes`：采样周期网络传输增量字节数
+  - `net_speed`：采样周期网络下载速率（字节/秒）
+  - `read_bytes`：采样周期引擎读取增量字节数
+  - `read_speed`：采样周期引擎读取速率（字节/秒）
+  - `drop_packet`：采样周期丢弃的视频数据包数
+  - `media_requests`：采样周期完成的媒体请求增量数
 - 尚未采集：TS/M3U8 细粒度逐切片请求的耗时、字节、HTTP 状态码（AVPlayer 守护进程接管下载，不提供切片级网络拦截）。
 - 未调用 export.Init 时，播放器仍可运行；也可由宿主先调用 Logger.configure / initialize 设置自定义日志输出。
 
@@ -108,17 +114,17 @@ Logger.logI("play", typeName: String(describing: Self.self))
 
 ## 运行指标口径
 
-| 字段 | 来源及单位 |
-| --- | --- |
-| fps | KSPlayer DynamicInfo.displayFPS，实际显示帧/秒；AVPlayer 不提供时省略 |
-| frame_rate | 当前视频轨道标称帧率，帧/秒 |
-| drop | 采样周期期间丢弃的视频帧数（对标 Android vzplayer statLogs.drop） |
-| drop_count | 累计丢弃的视频帧数（对标 Android vzplayer statLogs.drop_count） |
-| ios_bytes_read_delta / ios_bytes_read_per_second | KSPlayer 读取字节的采样增量 / 字节每秒，可包含本地读取 |
-| ios_network_bytes_delta / ios_network_bytes_per_second | AVPlayer access log 累计传输字节的采样增量 / 字节每秒 |
-| ios_dropped_video_packets_delta | KSPlayer 采样期间丢弃的视频包数 |
-| ios_media_requests_delta | AVPlayer 采样期间媒体请求数 |
-| ios_observed_bitrate_bps | AVPlayer 最近 access log 事件的 observedBitrate，bit/s |
+| 字段 | 来源及单位 | 对标 / 简化规范 |
+| --- | --- | --- |
+| fps | KSPlayer DynamicInfo.displayFPS，实际显示帧/秒；AVPlayer 不提供时省略 | 对标 Android vzplayer `fps` |
+| frame_rate | 当前视频轨道标称帧率，帧/秒 | 对标 Android vzplayer `frame_rate` |
+| drop | 采样周期内丢弃的视频帧数 | 对标 Android vzplayer `drop` |
+| drop_count | 累计丢弃的视频帧数 | 对标 Android vzplayer `drop_count` |
+| bitrate | AVPlayer access log 观测码率，bit/s | 对标 Android vzplayer 标准字段，言简意赅 |
+| net_bytes / net_speed | 采样周期内网络下行增量字节 / 网络下载速率（字节/秒） | 简化命名，言简意赅 |
+| read_bytes / read_speed | KSPlayer 采样周期内读取增量字节 / 读取速率（字节/秒） | 简化命名，言简意赅 |
+| drop_packet | KSPlayer 采样周期内丢弃的视频数据包数 | 对称 `drop`，言简意赅 |
+| media_requests | AVPlayer 采样周期内媒体请求增量数 | 简化命名，言简意赅 |
 
 引擎只返回可获取的指标，未知值为 nil；无效数值不上传。首个样本只建立计数基线，之后使用单调时钟计算增量和速度。切源、切引擎、暂停后重置基线，计数回退或指标缺失时重新建立基线，不输出负增量。播放或缓冲状态下采样，暂停不采样；时间回调停止时不会额外轮询。统计字段写入 logSI，并将该次指标写入受 stateCountLimit 限制的附加日志。
 
