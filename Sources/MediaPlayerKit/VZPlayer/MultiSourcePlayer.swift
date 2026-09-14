@@ -194,7 +194,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func SetVolume(_ volume: Float) {
         savedVolume = volume
         controller?.setVolume(volume)
-        diagnostics.command("set_volume: \(volume)")
+        diagnostics.command("set_volume: \(LogFormatter.formatValue(volume))")
     }
     
     public func IsMuted() -> Bool {
@@ -236,7 +236,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func SetSpeed(_ speed: Float) {
         savedSpeed = speed
         controller?.setPlaybackRate(speed)
-        diagnostics.command("set_speed: \(speed)")
+        diagnostics.command("set_speed: \(LogFormatter.formatValue(speed))")
     }
     
     public func GetBuffered() -> BufferRange {
