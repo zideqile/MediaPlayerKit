@@ -74,6 +74,8 @@ public final class VPlayerConfig: NSObject, Codable {
     @objc public var logConfig: LogConfig = LogConfig()
     @objc public var logServerConfig: LogServerConfig = LogServerConfig()
     @objc public var runtimeStateCollect = RuntimeStateCollectConfig()
+    /// vplayer-compatible statistics publication interval, milliseconds. 0 disables periodic snapshots.
+    @objc public var generalStatisticsUploadInterval: Int = 10000
     
     @objc public var appVZPlayerConfigJsonString: String = ""
     
@@ -81,7 +83,7 @@ public final class VPlayerConfig: NSObject, Codable {
         case loop, autoplay, muted, volume, speed
         case topicId, streamId, userId, userIdUuid
         case isLive, env, isHardwareDecode, headers
-        case logConfig, logServerConfig, runtimeStateCollect
+        case logConfig, logServerConfig, runtimeStateCollect, generalStatisticsUploadInterval
         case appVZPlayerConfigJsonString
     }
 
@@ -105,6 +107,7 @@ public final class VPlayerConfig: NSObject, Codable {
         headers = try values.decodeIfPresent([String: String].self, forKey: .headers) ?? headers
         logConfig = try values.decodeIfPresent(LogConfig.self, forKey: .logConfig) ?? logConfig
         logServerConfig = try values.decodeIfPresent(LogServerConfig.self, forKey: .logServerConfig) ?? logServerConfig
+        generalStatisticsUploadInterval = try values.decodeIfPresent(Int.self, forKey: .generalStatisticsUploadInterval) ?? generalStatisticsUploadInterval
         runtimeStateCollect = try values.decodeIfPresent(RuntimeStateCollectConfig.self, forKey: .runtimeStateCollect) ?? runtimeStateCollect
         appVZPlayerConfigJsonString = try values.decodeIfPresent(String.self, forKey: .appVZPlayerConfigJsonString) ?? appVZPlayerConfigJsonString
     }

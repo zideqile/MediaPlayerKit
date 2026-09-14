@@ -9,6 +9,8 @@ import AppKit
 @objc public final class MediaPlayerView: PlatformView {
     private weak var currentEngineRenderView: PlatformView?
     var engineDisplayName: String?
+    /// Latest QoE snapshot from the multi-source facade; updated on the main thread.
+    public internal(set) var playbackStatistics: [String: Any] = [:]
 
     /// Actual instantiated engine, including a nested controller view after source fallback.
     /// Read on the main thread. nil means no engine is attached.

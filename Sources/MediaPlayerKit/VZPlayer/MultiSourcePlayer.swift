@@ -65,7 +65,20 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         self.savedLoop = config.loop
         self.savedSpeed = config.speed
         super.init()
+        diagnostics.configureStatistics(interval: Double(config.generalStatisticsUploadInterval) / 1000)
+        diagnostics.onStatistics = { [weak self] record in
+            guard let self = self else { return }
+            self.playerView.playbackStatistics = record
+            let recipients = self.eventListeners.compactMap { $0.value }
+            // Never let business callbacks re-enter an in-progress source/engine transition.
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: PlayerStatisticsEvents.didUpdate, object: nil, userInfo: record)
+                for listener in recipients { listener.onStatistics?(record) }
+            }
+        }
     }
+
+    public var currentStatistics: [String: Any] { diagnostics.currentStatistics }
     
     // MARK: - IPlayer: 事件监听器
     
@@ -129,6 +142,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         wantsToPlay = false
         controller?.config.autoPlay = false
         controller?.pause()
+        diagnostics.state(.paused)
         diagnostics.command("pause player")
     }
     
@@ -140,14 +154,15 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func Destroy() {
+        guard !isDestroyed else { return }
         diagnostics.collectState(event: "destroy")
         isDestroyed = true
         generation &+= 1
+        diagnostics.finish()
         controller?.delegate = nil
         controller?.stop()
         controller = nil
         eventListeners.removeAll()
-        diagnostics.finish()
     }
     
     // MARK: - IPlayer: 进度与状态
@@ -253,6 +268,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     // MARK: - 播放源列表与策略配置
     
     public func setSources(_ sources: [PlayerSource]) {
+        guard !isDestroyed else { return }
+        diagnostics.newSources()
+        playerView.playbackStatistics = [:]
         generation &+= 1 // Cancel a queued retry, even before Play is called.
         terminalFailure = false
         failureHistory.removeAll()
@@ -272,6 +290,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func setConfig(_ config: VPlayerConfig) {
+        diagnostics.configureStatistics(interval: Double(config.generalStatisticsUploadInterval) / 1000)
         self.playerConfig = config
         self.savedVolume = config.volume
         self.savedMuted = config.muted
@@ -345,6 +364,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     private func startPlaybackWithCurrentSourceAndEngine() {
         guard !isDestroyed else { return }
+        diagnostics.endAttempt(reason: "switch")
         generation &+= 1
         let token = generation
         attemptHandled = false
@@ -374,7 +394,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         let ctrl = MediaPlayerController(config: config)
         ctrl.delegate = self
         self.controller = ctrl
-        diagnostics.startStateCollection(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds)) { [weak self, weak ctrl] in
+        diagnostics.created()
+        diagnostics.startStateCollection(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds), metrics: { [weak ctrl] in ctrl?.runtimeMetrics }) { [weak self, weak ctrl] in
             guard let self = self, let ctrl = ctrl, self.controller === ctrl,
                   !self.isDestroyed, !self.needsReloadSource, !self.attemptHandled else { return nil }
             func finite(_ value: Double) -> Any { value.isFinite ? value as Any : NSNull() }
@@ -464,6 +485,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func switchToSource(index: Int) -> Bool {
         guard !isDestroyed, index >= 0 && index < sources.count else { return false }
+        diagnostics.manualSwitch()
         generation &+= 1
         let token = generation
         failureHistory.removeAll()

@@ -3,6 +3,7 @@ import Foundation
 /// H5 事件与错误回调监听器 (1:1 严格对标 Android vzplayer 的 IH5Player.H5EventListener)
 @objc public protocol H5EventListener: AnyObject {
     /// 标准状态事件通知 ("play", "playing", "pause", "ended", "waiting", "canplaythrough", "recovering", "PlayerWARN")
+    @objc optional func onStatistics(_ statistics: [String: Any])
     func onEvent(_ eventName: String)
     
     @objc optional func onPlayAttemptFailed(_ failure: PlaybackAttemptFailure)
@@ -38,6 +39,9 @@ import Foundation
     /// 手动指定切换到某个播放源索引
     @objc func switchSource(index: Int) -> Bool
     
+    /// Latest native QoE snapshot (JSON). Optional for compatibility with existing implementations.
+    @objc optional func get_statistics() -> String
+
     // MARK: - H5 风格属性 Getters / Setters (JSON 格式入参出参，对标 Android @JavascriptInterface)
     
     /// 获取当前播放进度: {"currentTime": 120}

@@ -1,58 +1,61 @@
 import Foundation
 
-/// 全链路 APM 质量监控与卡顿度量追踪器
+/// Native QoS uses the same state-driven, monotonic timing contract as facade statistics.
 public final class QoSAPMTracker {
     private var report: PlayerQoSReport
-    private var prepareStartTime: CFAbsoluteTime = 0
-    private var playStartTime: CFAbsoluteTime = 0
-    private var bufferingStartTime: CFAbsoluteTime = 0
+    private let clock: () -> TimeInterval
+    private var prepareStartTime: TimeInterval?
+    private var timing = PlaybackTimeAccumulator()
+    private var ended = false
     private var isFirstFrameRendered = false
-    
-    public init(sessionID: String, mediaURL: URL, engineName: String) {
-        self.report = PlayerQoSReport(sessionID: sessionID, mediaURL: mediaURL, engineName: engineName)
+
+    public convenience init(sessionID: String, mediaURL: URL, engineName: String) {
+        self.init(sessionID: sessionID, mediaURL: mediaURL, engineName: engineName,
+                  clock: { ProcessInfo.processInfo.systemUptime })
     }
-    
-    public func markPrepareStart() {
-        prepareStartTime = CFAbsoluteTimeGetCurrent()
+    init(sessionID: String, mediaURL: URL, engineName: String, clock: @escaping () -> TimeInterval) {
+        report = PlayerQoSReport(sessionID: sessionID, mediaURL: mediaURL, engineName: engineName)
+        self.clock = clock
     }
-    
+    public func markPrepareStart() { prepareStartTime = clock() }
     public func markFirstFrameRendered() {
-        guard !isFirstFrameRendered else { return }
+        guard !ended, !isFirstFrameRendered, let start = prepareStartTime else { return }
         isFirstFrameRendered = true
-        report.firstFrameDuration = (CFAbsoluteTimeGetCurrent() - prepareStartTime) * 1000
+        report.firstFrameDuration = max(0, clock() - start) * 1000
     }
-    
-    public func markPlayStart() {
-        if playStartTime == 0 {
-            playStartTime = CFAbsoluteTimeGetCurrent()
-        }
+    public func markState(_ state: PlayerState) {
+        guard !ended else { return }
+        timing.transition(to: state, at: clock())
     }
-    
-    public func markBufferingStart() {
-        bufferingStartTime = CFAbsoluteTimeGetCurrent()
-        report.stutterCount += 1
-    }
-    
-    public func markBufferingEnd() {
-        guard bufferingStartTime > 0 else { return }
-        let duration = CFAbsoluteTimeGetCurrent() - bufferingStartTime
-        report.totalStutterDuration += duration
-        bufferingStartTime = 0
-    }
-    
-    public func markDroppedFrame() {
-        report.droppedFrames += 1
-    }
-    
+    public func markPlayStart() { markState(.playing) }
+    public func markBufferingStart() { markState(.buffering) }
+    /// Closing buffering alone does not prove playback resumed.
+    public func markBufferingEnd() { markState(.paused) }
+    public func markDroppedFrame() { report.droppedFrames = max(0, report.droppedFrames) + 1 }
     public func markError(code: Int, message: String) {
-        report.errorCode = code
-        report.errorMessage = message
+        markState(.error)
+        report.errorCode = code; report.errorMessage = message
     }
-    
-    public func finish() -> PlayerQoSReport {
-        if playStartTime > 0 {
-            report.totalPlayDuration = CFAbsoluteTimeGetCurrent() - playStartTime
+    public func updateMetrics(_ metrics: PlayerRuntimeMetrics?, size: CGSize) {
+        if size.width.isFinite && size.height.isFinite && size.width > 0 && size.height > 0,
+           size.width < CGFloat(Int.max), size.height < CGFloat(Int.max) {
+            report.videoWidth = Int(size.width); report.videoHeight = Int(size.height)
         }
+        if let frames = metrics?.droppedVideoFrames, frames >= 0, frames <= Int64(Int.max) {
+            report.droppedFrames = Int(frames)
+        }
+    }
+    /// Read without terminating open intervals.
+    public func snapshot() -> PlayerQoSReport {
+        let values = timing.values(at: clock())
+        report.totalPlayDuration = values.play
+        report.totalStutterDuration = values.stall
+        report.stutterCount = values.count
         return report
+    }
+    /// Idempotent finalization: repeated reports cannot extend the finished session.
+    public func finish() -> PlayerQoSReport {
+        if !ended { timing.transition(to: .stopped, at: clock()); ended = true }
+        return snapshot()
     }
 }

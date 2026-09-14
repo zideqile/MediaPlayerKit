@@ -20,6 +20,13 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         self.multiPlayer.AddEventListener(self)
     }
     
+    @objc public func get_statistics() -> String {
+        executeOnMainThreadSync { self.toJSON(self.multiPlayer.currentStatistics) }
+    }
+    public func onStatistics(_ statistics: [String: Any]) {
+        h5EventListener?.onStatistics?(statistics)
+    }
+
     // MARK: - IH5Player: 事件监听器注册 (1:1 对标 Android SetOnH5EventListener)
     
     @objc public func SetOnH5EventListener(_ listener: H5EventListener?) {
@@ -53,7 +60,12 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         executeOnMainThread {
             self.stopTimeUpdateTimer()
             self.multiPlayer.Destroy()
+            let finalStatistics = self.multiPlayer.currentStatistics
+            let listener = self.h5EventListener
             self.h5EventListener = nil
+            if !finalStatistics.isEmpty {
+                DispatchQueue.main.async { listener?.onStatistics?(finalStatistics) }
+            }
         }
     }
     

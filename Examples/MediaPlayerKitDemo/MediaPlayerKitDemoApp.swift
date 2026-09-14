@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 public struct MediaPlayerKitDemoApp: App {
-    public init() {}
+    public init() { _ = DemoPlaybackStatisticsStore.shared }
 
     public var body: some Scene {
         WindowGroup {

@@ -44,7 +44,7 @@ window.vzPlayerBridge.request = function (method, params = {}) {
             } catch (error) { reject(error); }
             return;
         }
-        const aliases = {Play:'play', Pause:'pause', Resume:'resume', Destroy:'destroy', getCurrentTime:'get_currentTime', setCurrentTime:'set_currentTime',
+        const aliases = {getStatistics:'get_statistics', Play:'play', Pause:'pause', Resume:'resume', Destroy:'destroy', getCurrentTime:'get_currentTime', setCurrentTime:'set_currentTime',
             getDuration:'get_duration', getPause:'get_pause', getVolume:'get_volume', setVolume:'set_volume',
             getMuted:'get_muted', setMuted:'set_muted', getLoop:'get_loop', setLoop:'set_loop',
             getSpeed:'get_speed', setSpeed:'set_speed', getVideoWidth:'get_videoWidth',
