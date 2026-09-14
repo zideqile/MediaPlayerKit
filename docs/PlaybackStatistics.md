@@ -49,6 +49,14 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 0 关闭周期快照，但保留创建、首帧、恢复、错误、切换及销毁等事件快照。
 该参数控制统计记录生成，ES 实际发送节奏仍由 logConfig.uploadIntervalSeconds 控制。
 
+### 静默优先与非必要不上报（对标 vplayer）
+
+严格遵循 vplayer `StalledSummaryInfoStatistics` 的“非必要不上报”设计哲学，将**内存状态刷新**与**日志/网络上报**彻底解耦：
+- **内存快照（持续供给）**：周期到达时始终更新内存快照 `latest`，触发 `onStatistics` 代理与 `PlayerStatisticsEvents.didUpdate` 通知，供本地 UI/大盘和 JS Bridge（`get_statistics`）随时零开销读取；
+- **上报门禁（`reportable` / `isReportable`）**：只有满足以下条件时，才向 Logger 写入 `playback_statistics:` 并触发 ES 上传：
+  1. **关键里程碑**：`created`、`firstFrame`、`error`、`recovered`、`ended`、`sourceEnded`、`sessionEnded:*` 等非周期性事件；
+  2. **周期性检查（`periodic`）**：严格对标 vplayer，**仅当该周期窗口内发生卡顿（`stalledCount > 0` 或 `stalledTotalDuration > 0`）时才输出日志上报**。若该窗口内平稳播放且零卡顿，坚决不写 Logger、不上报 ES，实现平稳期零日志打扰、零网络开销。
+
 运行状态与可用性能指标按 runtimeStateCollect.collectIntervalSeconds 采样，默认 3 秒。
 定时采样不依赖进度回调，卡顿时仍工作；metricsSampleTime 标识 metrics 最后采样时刻。
 内核和源切换时清空旧性能样本，避免跨内核累计计数器相减。
