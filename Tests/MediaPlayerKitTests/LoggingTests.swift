@@ -375,17 +375,25 @@ extension LoggingTests {
         diagnostics.firstFrame(size: .zero)
         XCTAssertEqual(recorder.values["first_frame_time"], [250])
         XCTAssertEqual(recorder.values["source_hls_hevc"], [1])
+        XCTAssertEqual(recorder.values["current_source_hls_hevc"], [1])
+        XCTAssertEqual(recorder.values["player_type"], [Double(PlayerEngineType.mePlayer.rawValue)])
         time = 11; diagnostics.state(.buffering)
         time = 11.5; diagnostics.state(.buffering) // duplicate must not reset the start
         time = 12; diagnostics.state(.playing)
-        XCTAssertEqual(recorder.values["ios_stall_episode_ms"], [1000])
+        XCTAssertEqual(recorder.values["stall_duration"], [1000])
+        XCTAssertEqual(recorder.values["stall_count"], [1])
         let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
         diagnostics.failed(PlaybackAttemptFailure(sourceIndex: 0, sourceURL: source.url, engine: .mePlayer,
             category: .timeout, error: error, action: .nextEngine))
         XCTAssertEqual(recorder.values["player_time"], [2000])
-        XCTAssertEqual(recorder.values["ios_player_ksmeplayer_error_code"], [Double(NSURLErrorTimedOut)])
-        XCTAssertNil(recorder.values["player_type"])
+        XCTAssertEqual(recorder.values["player_ksmeplayer_error_code"], [Double(NSURLErrorTimedOut)])
+        XCTAssertEqual(recorder.values["internal_error"], [1])
         diagnostics.finish(); diagnostics.finish()
+        XCTAssertEqual(recorder.values["close_normal"], [1])
+        XCTAssertEqual(recorder.values["player_ksmeplayer_close_normal"], [1])
+        XCTAssertEqual(recorder.values["total_stall"], [1000])
+        XCTAssertEqual(recorder.values["on_waiting"], [1])
+        XCTAssertEqual(recorder.values["on_playing"], [1])
         XCTAssertEqual(recorder.finishes, 1)
     }
     func testPlayerGroupsKeepSourcesSeparate() {

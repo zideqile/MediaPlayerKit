@@ -68,10 +68,26 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
 每个 MultiSourcePlayer 实例使用独立分组，避免多个播放器的 srcUrl 相互覆盖。export.Init 按 InitConfig 写入用户、topic、设备信息并生成会话 userIdUuid；日志初始化失败可通过 export.lastLoggingError 检查，播放仍可继续。
 
 - 文本：播放、暂停、恢复、seek、源列表、尝试创建、状态变化、首帧、单次错误、内核回退、换源、最终错误、结束和销毁。
-- 与 Android 同含义的统计：source_hls / source_hls_hevc 等源类型计数、first_frame_time（毫秒）、失败尝试的 player_time（毫秒）、有明确视频尺寸时的 has_video=1。
-- iOS 专属字段：ios_player_avplayer_error_code / ios_player_ksmeplayer_error_code，避免复用 Android Exo/IJK/Agora 的编号；ios_stall_episode_ms 是单次缓冲事件时长，不是 Android 滑动窗口 stall_duration。
-- 运行指标：KSPlayer 的实际显示 FPS 使用 fps，轨道标称帧率使用 frame_rate。引擎读取字节、AVPlayer 网络传输字节、丢帧、丢包、请求数使用 ios_ 前缀区分口径；详见下表。
-- 尚未采集：TS/M3U8 每请求的耗时、字节、状态码和 TCP 层速度；累计读取/传输字节的采样速率不等同于 TCP 速度。
+- 与 Android 同含义的统计（字段名称 100% 严格同名对标 Android vzplayer）：
+  - `source_<type>` / `current_source_<type>`：添加源与当前起播源类型打点
+  - `first_frame_time`：首帧渲染耗时（毫秒）
+  - `has_video`：是否有有效视频画面尺寸（1/0）
+  - `frame_rate`：标称视频帧率
+  - `player_time`：起播到就绪/报错的时长（毫秒）
+  - `player_type`：内核类型枚举值
+  - `player_<engine>_error_code`：内核错误码（对标 Android `player_<type>_error_code`）
+  - `internal_error`：内部非致命重试与故障计数
+  - `stall_duration`：单次卡顿时长（毫秒）
+  - `stall_count`：卡顿次数计数
+  - `total_stall`：累计卡顿总时长（毫秒）
+  - `on_waiting`：进入缓冲态计数
+  - `on_playing`：进入播放态计数
+  - `current_time`：退出实例时播放进度时间戳（毫秒）
+  - `close_normal` / `player_<engine>_close_normal`：正常退出为 1，异常为 0
+  - `drop`：采样周期丢帧数（对标 Android `drop`）
+  - `drop_count`：累计丢帧总数（对标 Android `drop_count`）
+- 聚合网络与平台指标：KSPlayer 的实际显示 FPS 使用 fps，轨道标称帧率使用 frame_rate。引擎读取字节、AVPlayer 网络传输字节、丢包、请求数因属于 iOS 平台聚合观测值，使用 ios_ 前缀；详见下表。
+- 尚未采集：TS/M3U8 细粒度逐切片请求的耗时、字节、HTTP 状态码（AVPlayer 守护进程接管下载，不提供切片级网络拦截）。
 - 未调用 export.Init 时，播放器仍可运行；也可由宿主先调用 Logger.configure / initialize 设置自定义日志输出。
 
 
@@ -96,9 +112,10 @@ Logger.logI("play", typeName: String(describing: Self.self))
 | --- | --- |
 | fps | KSPlayer DynamicInfo.displayFPS，实际显示帧/秒；AVPlayer 不提供时省略 |
 | frame_rate | 当前视频轨道标称帧率，帧/秒 |
+| drop | 采样周期期间丢弃的视频帧数（对标 Android vzplayer statLogs.drop） |
+| drop_count | 累计丢弃的视频帧数（对标 Android vzplayer statLogs.drop_count） |
 | ios_bytes_read_delta / ios_bytes_read_per_second | KSPlayer 读取字节的采样增量 / 字节每秒，可包含本地读取 |
 | ios_network_bytes_delta / ios_network_bytes_per_second | AVPlayer access log 累计传输字节的采样增量 / 字节每秒 |
-| ios_dropped_video_frames_delta | 采样期间丢弃的视频帧数 |
 | ios_dropped_video_packets_delta | KSPlayer 采样期间丢弃的视频包数 |
 | ios_media_requests_delta | AVPlayer 采样期间媒体请求数 |
 | ios_observed_bitrate_bps | AVPlayer 最近 access log 事件的 observedBitrate，bit/s |
