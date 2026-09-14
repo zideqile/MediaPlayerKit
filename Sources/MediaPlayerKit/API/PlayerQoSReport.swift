@@ -53,16 +53,17 @@ import Foundation
     @objc public func toDictionary() -> [String: Any] {
         func measured(_ value: Double) -> Any { value.isFinite && value >= 0 ? value as Any : NSNull() }
         return [
+            "schemaVersion": 2,
             "session_id": sessionID,
             "media_url": mediaURL.absoluteString,
             "engine": engineName,
-            "dns_duration_ms": measured(dnsDuration),
-            "tcp_duration_ms": measured(tcpConnectDuration),
-            "first_packet_duration_ms": measured(firstPacketDuration),
-            "first_frame_duration_ms": measured(firstFrameDuration),
-            "play_duration_sec": totalPlayDuration,
+            "dns_ms": measured(dnsDuration),
+            "tcp_ms": measured(tcpConnectDuration),
+            "first_packet_ms": measured(firstPacketDuration),
+            "first_frame_time": measured(firstFrameDuration),
+            "play_sec": totalPlayDuration,
             "stutter_count": stutterCount,
-            "stutter_duration_sec": totalStutterDuration,
+            "stall_sec": totalStutterDuration,
             "dropped_frames": droppedFrames >= 0 ? droppedFrames as Any : NSNull(),
             "resolution": videoWidth > 0 && videoHeight > 0 ? "\(videoWidth)x\(videoHeight)" as Any : NSNull(),
             "video_codec": videoCodec,

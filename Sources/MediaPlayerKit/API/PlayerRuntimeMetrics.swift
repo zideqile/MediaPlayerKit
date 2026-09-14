@@ -21,7 +21,7 @@ struct RuntimeMetricsSampler {
         guard time.isFinite else { return [:] }
         var result: [String: Double] = [:]
         for (key, value) in [("fps", metrics.displayFPS), ("frame_rate", metrics.nominalFrameRate),
-                             ("bitrate", metrics.observedBitrate)] {
+                             ("bandwidth", metrics.observedBitrate)] {
             if let value = value, value.isFinite, value >= 0,
                key == "fps" || value > 0 { result[key] = value }
         }

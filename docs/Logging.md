@@ -86,7 +86,7 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
   - `close_normal` / `player_<engine>_close_normal`：正常退出为 1，异常为 0
   - `drop`：采样周期丢帧数（对标 Android `drop`）
   - `drop_count`：累计丢帧总数（对标 Android `drop_count`）
-- 聚合网络与质量指标：除对标 Android vzplayer 的既有字段（`fps`、`frame_rate`、`drop`、`drop_count`、`bitrate` 等）严格同名外，其余运行时网络、读取、丢包与请求指标均遵循“言简意赅”原则，消除冗余的平台特异前缀（如 `ios_`）与过度修饰（如 `_delta`、`_per_second`、`_bps`）：
+- 聚合网络与质量指标：除对标 Android vzplayer 的既有字段（`fps`、`frame_rate`、`drop`、`drop_count` 等）严格同名外，其余运行时网络、读取、丢包与请求指标均遵循“言简意赅”原则，消除冗余的平台特异前缀（如 `ios_`）与过度修饰（如 `_delta`、`_per_second`、`_bps`）：
   - `net_bytes`：采样周期网络传输增量字节数
   - `net_speed`：采样周期网络下载速率（字节/秒）
   - `read_bytes`：采样周期引擎读取增量字节数
@@ -120,13 +120,13 @@ Logger.logI("play", typeName: String(describing: Self.self))
 | frame_rate | 当前视频轨道标称帧率，帧/秒 | 对标 Android vzplayer `frame_rate` |
 | drop | 采样周期内丢弃的视频帧数 | 对标 Android vzplayer `drop` |
 | drop_count | 累计丢弃的视频帧数 | 对标 Android vzplayer `drop_count` |
-| bitrate | AVPlayer access log 观测码率，bit/s | 对标 Android vzplayer 标准字段，言简意赅 |
+| bandwidth | AVPlayer access log 观测吞吐率，bit/s | 沿用 vplayer bandwidth 的吞吐率含义；观测来源与估算方法不同 |
 | net_bytes / net_speed | 采样周期内网络下行增量字节 / 网络下载速率（字节/秒） | 简化命名，言简意赅 |
 | read_bytes / read_speed | KSPlayer 采样周期内读取增量字节 / 读取速率（字节/秒） | 简化命名，言简意赅 |
 | drop_packet | KSPlayer 采样周期内丢弃的视频数据包数 | 对称 `drop`，言简意赅 |
 | media_requests | AVPlayer 采样周期内媒体请求增量数 | 简化命名，言简意赅 |
 
-引擎只返回可获取的指标，未知值为 nil；无效数值不上传。首个样本只建立计数基线，之后使用单调时钟计算增量和速度。切源、切引擎、暂停后重置基线，计数回退或指标缺失时重新建立基线，不输出负增量。播放或缓冲状态下采样，暂停不采样；时间回调停止时不会额外轮询。统计字段写入 logSI，并将该次指标写入受 stateCountLimit 限制的附加日志。
+引擎只返回可获取的指标，未知值为 nil；无效数值不上传。首个样本只建立计数基线，之后使用单调时钟计算增量和速度。切源、切引擎、暂停后重置基线，计数回退或指标缺失时重新建立基线，不输出负增量。播放或缓冲状态下采样，暂停不采样；定时采样不依赖进度回调。统计字段写入 logSI，并将该次指标写入受 stateCountLimit 限制的附加日志。
 
 AVPlayer 字段来自 [Apple AVPlayerItemAccessLogEvent 文档](https://developer.apple.com/documentation/avfoundation/avplayeritemaccesslogevent)。这些聚合观测值并非逐请求网络埋点，也不能替代 Android 所有底层指标。
 
