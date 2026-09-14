@@ -21,7 +21,7 @@ public struct PlayerViewRepresentable: UIViewRepresentable {
 
     public func updateUIView(_ uiView: MediaPlayerView, context: Context) {
         uiView.setNeedsLayout()
-        uiView.layoutIfNeeded()
+        // Let UIKit coalesce layout instead of re-entering it during SwiftUI updates.
     }
 }
 

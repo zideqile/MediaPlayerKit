@@ -58,12 +58,10 @@ public struct ShortVideoFeedView: View {
             ZStack {
                 Color.black
                 
-                PlayerViewRepresentable(playerView: playerView)
+                DemoPlayerSurface(playerView: playerView, onVideoTap: { togglePlayPause() })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
-                    .onTapGesture {
-                        togglePlayPause()
-                    }
+
                 
                 // 加载状态指示器
                 if isLoading || isBuffering {
@@ -345,6 +343,7 @@ public struct ShortVideoFeedView: View {
             }
         }
         .onDisappear {
+            DemoPlayerSurface.exitFullScreen(for: playerView)
             vzPlayer?.destroy()
             vzPlayer = nil
             coordinator = nil

@@ -492,7 +492,7 @@ public struct WebViewHybridPlayerView: View {
         VStack(spacing: 0) {
             // MARK: - 1. 顶部原生视频渲染窗口 (PlayerView)
             ZStack(alignment: .topLeading) {
-                PlayerViewRepresentable(playerView: viewModel.playerView)
+                DemoPlayerSurface(playerView: viewModel.playerView)
                     .frame(height: 220)
                     .background(Color.black)
                 
@@ -502,7 +502,7 @@ public struct WebViewHybridPlayerView: View {
                         Circle()
                             .fill(Color.green)
                             .frame(width: 7, height: 7)
-                        Text("🖥 iOS 原生 Metal 渲染层")
+                        Text("iOS 原生播放")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.white)
                     }
@@ -576,6 +576,7 @@ public struct WebViewHybridPlayerView: View {
             viewModel.coordinator?.syncNodeStreamsToH5()
         }
         .onDisappear {
+            DemoPlayerSurface.exitFullScreen(for: viewModel.playerView)
             viewModel.teardown()
         }
     }

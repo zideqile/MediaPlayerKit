@@ -18,7 +18,7 @@ public final class KSMEPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     #if canImport(UIKit)
-    private let playerView = IOSVideoPlayerView()
+    private let playerView = EmbeddedKSVideoPlayerView()
     #elseif canImport(AppKit)
     private let playerView = MacVideoPlayerView()
     #endif
@@ -270,3 +270,20 @@ private final class KSMEControllerDelegate: PlayerControllerDelegate {
     func playerController(bufferedCount: Int, consumeTime: TimeInterval) {}
     func playerController(seek: TimeInterval) {}
 }
+
+#if canImport(UIKit)
+/// The SDK host owns fullscreen. KS must never reparent this embedded render view
+/// or present a controller that makes the business page disappear and destroy playback.
+private final class EmbeddedKSVideoPlayerView: IOSVideoPlayerView {
+    override func customizeUIComponents() {
+        super.customizeUIComponents()
+        landscapeButton.isHidden = true
+        landscapeButton.isEnabled = false
+        backButton.isHidden = true
+    }
+
+    override func updateUI(isFullScreen: Bool) {
+        // Deliberately bypass KS's full-screen presentation/reparenting in embedded mode.
+    }
+}
+#endif
