@@ -160,6 +160,15 @@ final class PlaybackStatisticsTracker {
         recoveryCount = 0; recoverySuccessCount = 0; recoveryFailureCount = 0; recoveryCancelledCount = 0
         recoveryDurationMs = nil; latest = [:]; lastWindow = (0, 0, 0)
     }
+    static func isReportable(_ record: [String: Any]) -> Bool {
+        guard let reason = record["reason"] as? String else { return true }
+        if reason != "periodic" { return true }
+        let window = record["window"] as? [String: Any]
+        let stalledCount = (window?["stalledCount"] as? NSNumber)?.intValue ?? 0
+        let stalledDuration = (window?["stalledTotalDuration"] as? NSNumber)?.doubleValue ?? 0
+        return stalledCount > 0 || stalledDuration > 0
+    }
+
     func publish(reason: String = "periodic") {
         guard sessionStarted else { return }
         let time = clock()
@@ -169,7 +178,7 @@ final class PlaybackStatisticsTracker {
             "stalledCount": max(0, cumulative.count - lastWindow.count)]
         lastWindow = cumulative
         sequence += 1
-        let record: [String: Any] = ["schemaVersion": 1, "sessionId": sessionID,
+        var record: [String: Any] = ["schemaVersion": 1, "sessionId": sessionID,
             "sourceId": sourceID, "attemptId": attemptID, "sequence": sequence,
             "time": Int64(Date().timeIntervalSince1970 * 1000), "reason": reason,
             "sourceUrl": sourceURL, "sourceType": sourceType, "sourceIndex": sourceIndex,
@@ -186,6 +195,7 @@ final class PlaybackStatisticsTracker {
             "error": lastError.map { $0 as Any } ?? NSNull(), "metrics": metrics,
             "metricsSampleTime": metricsSampleTime.map { $0 as Any } ?? NSNull(),
             "requestMetricsScope": "engineAggregate", "requestDetailsAvailable": false]
+        record["reportable"] = Self.isReportable(record)
         latest = record; emit?(record)
     }
 }

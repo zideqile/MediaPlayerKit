@@ -90,7 +90,9 @@ final class PlaybackDiagnostics {
         self.statistics = PlaybackStatisticsTracker(clock: clock)
         self.statistics.emit = { [weak self] record in
             guard let self = self else { return }
-            self.logger.logI("playback_statistics:", record)
+            if PlaybackStatisticsTracker.isReportable(record) {
+                self.logger.logI("playback_statistics:", record)
+            }
             self.onStatistics?(record)
         }
     }

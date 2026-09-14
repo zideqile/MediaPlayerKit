@@ -146,4 +146,48 @@ extension PlaybackStatisticsTests {
         time = 10; diagnostics.finish()
         XCTAssertEqual(records.count, count)
     }
+
+    func testPeriodicStatisticsIsQuietUnlessStallsOccur() {
+        var time: Double = 0
+        let stats = PlaybackStatisticsTracker(clock: { time })
+        var publishedRecords: [[String: Any]] = []
+        stats.emit = { publishedRecords.append($0) }
+
+        stats.begin(sourceURL: "https://example.com/live.m3u8", sourceType: "hls", sourceIndex: 0, engine: "avplayer")
+        stats.created()
+        XCTAssertEqual(publishedRecords.last?["reason"] as? String, "created")
+        XCTAssertEqual(publishedRecords.last?["reportable"] as? Bool, true)
+        XCTAssertTrue(PlaybackStatisticsTracker.isReportable(publishedRecords.last ?? [:]))
+
+        time = 1
+        stats.firstFrame()
+        XCTAssertEqual(publishedRecords.last?["reason"] as? String, "firstFrame")
+        XCTAssertEqual(publishedRecords.last?["reportable"] as? Bool, true)
+
+        stats.state(.playing)
+
+        // 10s passes: healthy steady playback, no stall in window
+        time = 11
+        stats.publish()
+        XCTAssertEqual(publishedRecords.last?["reason"] as? String, "periodic")
+        XCTAssertEqual(publishedRecords.last?["reportable"] as? Bool, false)
+        XCTAssertFalse(PlaybackStatisticsTracker.isReportable(publishedRecords.last ?? [:]))
+
+        // 20s passes: still smooth, no stall
+        time = 21
+        stats.publish()
+        XCTAssertEqual(publishedRecords.last?["reportable"] as? Bool, false)
+        XCTAssertFalse(PlaybackStatisticsTracker.isReportable(publishedRecords.last ?? [:]))
+
+        // Stall occurs in window
+        time = 25
+        stats.state(.buffering)
+        time = 27
+        stats.state(.playing)
+        time = 31
+        stats.publish()
+        XCTAssertEqual(publishedRecords.last?["reason"] as? String, "periodic")
+        XCTAssertEqual(publishedRecords.last?["reportable"] as? Bool, true)
+        XCTAssertTrue(PlaybackStatisticsTracker.isReportable(publishedRecords.last ?? [:]))
+    }
 }
