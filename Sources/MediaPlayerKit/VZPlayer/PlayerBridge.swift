@@ -45,6 +45,16 @@ public final class PlayerBridge: NSObject, H5EventListener {
     
     // MARK: - H5EventListener 原生向 H5 派发事件回调
     
+    public func onStatistics(_ statistics: [String: Any]) {
+        #if canImport(WebKit)
+        guard let data = try? JSONSerialization.data(withJSONObject: statistics),
+              let json = String(data: data, encoding: .utf8) else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.webView?.evaluateJavaScript("window.vzPlayerBridge?.onStatistics?.(\(json));", completionHandler: nil)
+        }
+        #endif
+    }
+
     public func onEvent(_ eventName: String) {
         #if canImport(WebKit)
         DispatchQueue.main.async { [weak self] in
@@ -114,6 +124,8 @@ public final class PlayerBridge: NSObject, H5EventListener {
             return nil
         case "setCurrentTime", "set_currentTime":
             return player.set_currentTime(paramsJson) ? "true" : "false"
+        case "getStatistics", "get_statistics":
+            return player.get_statistics?() ?? "{}"
         case "getCurrentTime", "get_currentTime":
             return player.get_currentTime()
         case "getDuration", "get_duration":
@@ -168,7 +180,7 @@ public final class PlayerBridge: NSObject, H5EventListener {
     
     /// Result acknowledgement means the command was handled, not that playback has completed.
     public func handleRequest(method: String, paramsJson: String = "{}", requestId: String) -> [String: Any] {
-        let supported: Set<String> = ["play", "Play", "pause", "Pause", "resume", "Resume", "destroy", "Destroy",
+        let supported: Set<String> = ["getStatistics", "get_statistics", "play", "Play", "pause", "Pause", "resume", "Resume", "destroy", "Destroy",
             "setCurrentTime", "set_currentTime", "getCurrentTime", "get_currentTime", "getDuration", "get_duration",
             "getPause", "get_pause", "getVolume", "get_volume", "setVolume", "set_volume", "getMuted", "get_muted",
             "setMuted", "set_muted", "getVideoWidth", "get_videoWidth", "getVideoHeight", "get_videoHeight",

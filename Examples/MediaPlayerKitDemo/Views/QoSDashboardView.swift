@@ -1,53 +1,72 @@
 import SwiftUI
 import MediaPlayerKit
 
-public struct QoSDashboardView: View {
-    public init() {}
-
-    public var body: some View {
-        List {
-            Section(header: Text("核心起播度量指标 (SLO)")) {
-                MetricRow(title: "平均首帧耗时 (P95)", value: "48.2 ms", status: "优秀 (<100ms)", color: .green)
-                MetricRow(title: "DNS 预解析耗时", value: "12.4 ms", status: "正常", color: .blue)
-                MetricRow(title: "TCP 建连耗时", value: "24.1 ms", status: "正常", color: .blue)
-                MetricRow(title: "首包响应耗时 (TTFB)", value: "32.0 ms", status: "正常", color: .blue)
-            }
-            
-            Section(header: Text("播放稳定性度量")) {
-                MetricRow(title: "百秒卡顿次数", value: "0.02 次/100s", status: "极佳", color: .green)
-                MetricRow(title: "百秒卡顿总时长", value: "0.15 s/100s", status: "极佳", color: .green)
-                MetricRow(title: "硬解丢帧率", value: "0.01%", status: "极佳 (<0.1%)", color: .green)
-                MetricRow(title: "崩溃率 (Crash Rate)", value: "0.00%", status: "零崩溃", color: .green)
-            }
-            
-            Section(header: Text("硬件能耗与渲染")) {
-                MetricRow(title: "解码器类型", value: "VideoToolbox (NV12)", status: "硬件加速", color: .green)
-                MetricRow(title: "渲染管线", value: "MetalKit (Zero-Copy)", status: "GPU 显存直通", color: .green)
-                MetricRow(title: "平均 CPU 占用率", value: "7.8% (1080P60)", status: "低能耗", color: .green)
-            }
+/// Keep the latest real snapshot even after leaving a playback tab destroys its player.
+final class DemoPlaybackStatisticsStore: ObservableObject {
+    static let shared = DemoPlaybackStatisticsStore()
+    @Published private(set) var latest: [String: Any] = [:]
+    private var observer: NSObjectProtocol?
+    private init() {
+        observer = NotificationCenter.default.addObserver(forName: PlayerStatisticsEvents.didUpdate,
+                                                         object: nil, queue: .main) { [weak self] event in
+            self?.latest = event.userInfo as? [String: Any] ?? [:]
         }
-        #if os(iOS)
-        .listStyle(InsetGroupedListStyle())
-        #endif
-        .navigationTitle("QoS 质量大盘")
     }
+    deinit { if let observer = observer { NotificationCenter.default.removeObserver(observer) } }
 }
 
-struct MetricRow: View {
-    let title: String
-    let value: String
-    let status: String
-    let color: Color
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline)
-                Text(status).font(.caption2).foregroundColor(color)
+public struct QoSDashboardView: View {
+    @ObservedObject private var store = DemoPlaybackStatisticsStore.shared
+    public init() {}
+    private func number(_ value: Any?, unit: String = "", scale: Double = 1) -> String {
+        guard let n = value as? NSNumber, n.doubleValue.isFinite else { return "未采集" }
+        return String(format: "%.2f", n.doubleValue * scale) + unit
+    }
+    public var body: some View {
+        let data = store.latest
+        let session = data["session"] as? [String: Any] ?? [:]
+        let metrics = data["metrics"] as? [String: Any] ?? [:]
+        return List {
+            if data.isEmpty {
+                Text("暂无统计。播放视频后可查看实际采集结果。")
+            } else {
+                Section(header: Text("最近播放会话")) {
+                    Text("内核：\(data["engine"] as? String ?? "未创建")")
+                    Text("来源：\(data["sourceUrl"] as? String ?? "")").font(.caption)
+                    Text("更新原因：\(data["reason"] as? String ?? "")").font(.caption)
+                    Text("会话：\(data["sessionId"] as? String ?? "")").font(.caption2)
+                }
+                Section(header: Text("播放质量 · 会话累计")) {
+                    row("有效播放时长", number(session["playDurationMs"], unit: " s", scale: 0.001))
+                    row("卡顿总时长", number(session["stalledTotalDuration"], unit: " s", scale: 0.001))
+                    row("卡顿次数", number(session["stalledCount"]))
+                    row("卡顿占比", number(session["stallRatio"], unit: "%", scale: 100))
+                    row("当前尝试首帧耗时", number(data["firstFrameDurationMs"], unit: " ms"))
+                    row("当前内核创建耗时", number(data["creationDurationMs"], unit: " ms"))
+                }
+                Section(header: Text("切源与恢复 · 会话累计")) {
+                    row("播放尝试", number(data["attemptCount"]))
+                    row("切换播放源", number(data["sourceSwitchCount"]))
+                    row("同源切换内核", number(data["engineSwitchCount"]))
+                    row("尝试失败", number(data["errorCount"]))
+                    row("恢复成功", number(data["recoverySuccessCount"]))
+                    row("恢复失败", number(data["recoveryFailureCount"]))
+                    row("恢复取消", number(data["recoveryCancelledCount"]))
+                    row("最近恢复耗时", number(data["recoveryDurationMs"], unit: " ms"))
+                }
+                Section(header: Text("最近内核采样 · 非逐请求统计")) {
+                    row("显示帧率", number(metrics["fps"], unit: " fps"))
+                    row("视频标称帧率", number(metrics["frame_rate"], unit: " fps"))
+                    row("观测码率", number(metrics["ios_observed_bitrate_bps"], unit: " bps"))
+                    row("网络下载速度", number(metrics["ios_network_bytes_per_second"], unit: " B/s"))
+                    Text("DNS、TCP、首包耗时和分片请求明细暂未采集，不以 0 代替。")
+                        .font(.caption).foregroundColor(.secondary)
+                }
             }
-            Spacer()
-            Text(value).font(.system(size: 15, weight: .semibold, design: .monospaced))
         }
-        .padding(.vertical, 2)
+        .navigationTitle("QoS 质量大盘")
+    }
+    private func row(_ title: String, _ value: String) -> some View {
+        HStack { Text(title).font(.subheadline); Spacer(); Text(value).font(.system(.caption, design: .monospaced)) }
     }
 }

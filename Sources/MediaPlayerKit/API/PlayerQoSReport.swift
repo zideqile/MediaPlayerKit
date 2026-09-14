@@ -11,13 +11,13 @@ import Foundation
     
     // --- 耗时度量 (毫秒) ---
     /// DNS 解析耗时 (ms)
-    @objc public var dnsDuration: Double = 0
+    @objc public var dnsDuration: Double = .nan
     /// TCP 建连耗时 (ms)
-    @objc public var tcpConnectDuration: Double = 0
+    @objc public var tcpConnectDuration: Double = .nan
     /// HTTP 响应首包到达耗时 (ms)
-    @objc public var firstPacketDuration: Double = 0
+    @objc public var firstPacketDuration: Double = .nan
     /// 首帧渲染总耗时 (First Frame Latency, ms)
-    @objc public var firstFrameDuration: Double = 0
+    @objc public var firstFrameDuration: Double = .nan
     
     // --- 播放稳定性度量 ---
     /// 总播放时长 (秒)
@@ -27,14 +27,16 @@ import Foundation
     /// 卡顿总耗时 (秒)
     @objc public var totalStutterDuration: Double = 0
     /// 解码丢帧总数
-    @objc public var droppedFrames: Int = 0
+    @objc public var droppedFrames: Int = -1
     
     // --- 视频元信息 ---
     @objc public var videoWidth: Int = 0
     @objc public var videoHeight: Int = 0
     @objc public var videoCodec: String = ""
     @objc public var audioCodec: String = ""
-    @objc public var isHardwareAccelerated: Bool = true
+    /// Requested/known acceleration state; omitted from serialization until explicitly supplied.
+    @objc public var isHardwareAccelerated: Bool = true { didSet { hardwareAccelerationKnown = true } }
+    private var hardwareAccelerationKnown = false
     
     // --- 错误信息 (如有) ---
     @objc public var errorCode: Int = 0
@@ -49,22 +51,23 @@ import Foundation
 
     /// 转换为可用于上报数据大盘的字典格式
     @objc public func toDictionary() -> [String: Any] {
+        func measured(_ value: Double) -> Any { value.isFinite && value >= 0 ? value as Any : NSNull() }
         return [
             "session_id": sessionID,
             "media_url": mediaURL.absoluteString,
             "engine": engineName,
-            "dns_duration_ms": dnsDuration,
-            "tcp_duration_ms": tcpConnectDuration,
-            "first_packet_duration_ms": firstPacketDuration,
-            "first_frame_duration_ms": firstFrameDuration,
+            "dns_duration_ms": measured(dnsDuration),
+            "tcp_duration_ms": measured(tcpConnectDuration),
+            "first_packet_duration_ms": measured(firstPacketDuration),
+            "first_frame_duration_ms": measured(firstFrameDuration),
             "play_duration_sec": totalPlayDuration,
             "stutter_count": stutterCount,
             "stutter_duration_sec": totalStutterDuration,
-            "dropped_frames": droppedFrames,
-            "resolution": "\(videoWidth)x\(videoHeight)",
+            "dropped_frames": droppedFrames >= 0 ? droppedFrames as Any : NSNull(),
+            "resolution": videoWidth > 0 && videoHeight > 0 ? "\(videoWidth)x\(videoHeight)" as Any : NSNull(),
             "video_codec": videoCodec,
             "audio_codec": audioCodec,
-            "hw_accel": isHardwareAccelerated,
+            "hw_accel": hardwareAccelerationKnown ? isHardwareAccelerated as Any : NSNull(),
             "error_code": errorCode,
             "error_message": errorMessage
         ]

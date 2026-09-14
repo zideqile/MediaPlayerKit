@@ -29,6 +29,8 @@ public final class BufferRange: NSObject {
 
 /// 内部 Native 播放器状态事件回调监听器 (1:1 严格对标 Android PlayerEventListener)
 @objc public protocol PlayerEventListener: AnyObject {
+    /// Cumulative session/source/attempt QoE snapshot; timing values use milliseconds.
+    @objc optional func onStatistics(_ statistics: [String: Any])
     func onStateChanged(state: PlayerState)
     func onFirstFrameRendered()
     func onTimeUpdate(currentTime: Int64, totalDuration: Int64)

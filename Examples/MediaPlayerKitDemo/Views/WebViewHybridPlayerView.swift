@@ -366,6 +366,12 @@ final class PlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, H5Event
     }
     
     // MARK: - VZH5EventListener (Native ➔ H5 实时广播)
+    func onStatistics(_ statistics: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: statistics),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("window.vzPlayerBridge?.onStatistics?.(\(json));", completionHandler: nil)
+    }
+
     func onEvent(_ eventName: String) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let webView = self.webView else { return }

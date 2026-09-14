@@ -150,12 +150,12 @@ import CoreGraphics
     
     /// 开始播放
     @objc public func play() {
-        apmTracker?.markPlayStart()
         engine.play()
     }
     
     /// 暂停播放
     @objc public func pause() {
+        apmTracker?.markState(.paused)
         engine.pause()
     }
     
@@ -166,6 +166,7 @@ import CoreGraphics
     
     /// 停止播放并释放解码资源
     @objc public func stop() {
+        apmTracker?.updateMetrics(engine.runtimeMetrics, size: engine.naturalSize)
         if let report = apmTracker?.finish() {
             delegate?.player?(self, didGenerateQoSReport: report)
         }
@@ -174,6 +175,7 @@ import CoreGraphics
     
     /// 针对短视频 Feed 列表滑动时的轻量化重置 (不销毁实例，保留预热)
     @objc public func reset() {
+        _ = apmTracker?.finish()
         engine.reset()
     }
     
@@ -209,40 +211,44 @@ import CoreGraphics
     
     /// 获取当前播放会话的 QoS 度量报告
     @objc public func currentQoSReport() -> PlayerQoSReport? {
-        return apmTracker?.finish() ?? engine.getQoSReport()
+        apmTracker?.updateMetrics(engine.runtimeMetrics, size: engine.naturalSize)
+        return apmTracker?.snapshot() ?? engine.getQoSReport()
     }
     
     // MARK: - 引擎回调内部路由 (PlayerEngineOutputDelegate)
     
     public func engine(_ engine: MediaPlayerProtocol, stateDidChange state: PlayerState) {
-        if state == .buffering {
-            apmTracker?.markBufferingStart()
-        } else if state == .playing {
-            apmTracker?.markPlayStart()
-            apmTracker?.markBufferingEnd()
-        }
+        guard engine === self.engine else { return }
+        apmTracker?.markState(state)
         delegate?.player(self, stateDidChange: state)
     }
     
     public func engine(_ engine: MediaPlayerProtocol, currentTimeDidChange currentTime: TimeInterval, duration: TimeInterval) {
+        guard engine === self.engine else { return }
         delegate?.player(self, currentTime: currentTime, totalDuration: duration)
     }
     
     public func engineDidRenderFirstFrame(_ engine: MediaPlayerProtocol) {
+        guard engine === self.engine else { return }
+        apmTracker?.updateMetrics(engine.runtimeMetrics, size: engine.naturalSize)
         apmTracker?.markFirstFrameRendered()
         delegate?.playerDidRenderFirstFrame(self)
     }
     
     public func engine(_ engine: MediaPlayerProtocol, didOccurError error: NSError) {
+        guard engine === self.engine else { return }
         apmTracker?.markError(code: error.code, message: error.localizedDescription)
         delegate?.player(self, didOccurError: error)
     }
     
     public func engine(_ engine: MediaPlayerProtocol, bufferedDurationDidChange duration: TimeInterval) {
+        guard engine === self.engine else { return }
         delegate?.player?(self, bufferedDuration: duration)
     }
     
     public func engineDidPlayToEnd(_ engine: MediaPlayerProtocol) {
+        guard engine === self.engine else { return }
+        apmTracker?.markState(.completed)
         delegate?.playerDidPlayToEndTime?(self)
     }
 }

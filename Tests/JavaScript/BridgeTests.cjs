@@ -14,6 +14,10 @@ function setup(native) {
     return {bridge: window.vzPlayerBridge, messages, timers, events, reinstall: () => vm.runInContext(code, context)};
 }
 (async () => {
+    const statisticsNative = setup({get_statistics: () => JSON.stringify({sessionId: 's', session: {playDurationMs: 1200}})});
+    const statistics = await statisticsNative.bridge.request('getStatistics');
+    assert.equal(statistics.sessionId, 's');
+    assert.equal(statistics.session.playDurationMs, 1200);
     const ios = setup();
     const first = ios.bridge.request('getVolume');
     const request = ios.bridge.request;
