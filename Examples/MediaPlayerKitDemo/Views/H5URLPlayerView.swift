@@ -102,7 +102,7 @@ struct H5URLPlayerView: View {
     @StateObject private var model = H5URLPlayerModel()
     var body: some View {
         VStack(spacing: 0) {
-            PlayerViewRepresentable(playerView: model.playerView)
+            DemoPlayerSurface(playerView: model.playerView)
                 .frame(height: 220)
                 .background(Color.black)
             if let webView = model.webView {
@@ -116,7 +116,10 @@ struct H5URLPlayerView: View {
             }
         }
         .onAppear { model.setup() }
-        .onDisappear { model.teardown() }
+        .onDisappear {
+            DemoPlayerSurface.exitFullScreen(for: model.playerView)
+            model.teardown()
+        }
     }
 }
 

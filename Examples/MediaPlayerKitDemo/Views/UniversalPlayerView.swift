@@ -73,7 +73,7 @@ public struct UniversalPlayerView: View {
                 
                 // MARK: - 2. 视频渲染窗口 (PlayerView)
                 ZStack(alignment: .topTrailing) {
-                    PlayerViewRepresentable(playerView: viewModel.playerView)
+                    DemoPlayerSurface(playerView: viewModel.playerView)
                         .frame(height: 220)
                         .background(Color.black)
                     
@@ -350,6 +350,7 @@ public struct UniversalPlayerView: View {
             viewModel.setupVZPlayer()
         }
         .onDisappear {
+            DemoPlayerSurface.exitFullScreen(for: viewModel.playerView)
             viewModel.teardown()
         }
     }

@@ -8,6 +8,21 @@ import AppKit
 /// 播放器承载视图 (支持 iOS, macOS, tvOS, visionOS 全平台)
 @objc public final class MediaPlayerView: PlatformView {
     private weak var currentEngineRenderView: PlatformView?
+    var engineDisplayName: String?
+
+    /// Actual instantiated engine, including a nested controller view after source fallback.
+    /// Read on the main thread. nil means no engine is attached.
+    public var currentEngineName: String? {
+        guard let renderView = currentEngineRenderView else { return nil }
+        if let nested = renderView as? MediaPlayerView { return nested.currentEngineName }
+        return engineDisplayName
+    }
+
+    private func layoutEngineView() {
+        guard let renderView = currentEngineRenderView, renderView.superview === self,
+              renderView.frame != bounds else { return }
+        renderView.frame = bounds
+    }
     
     #if canImport(UIKit)
     public override init(frame: CGRect) {
@@ -22,7 +37,7 @@ import AppKit
     
     public override func layoutSubviews() {
         super.layoutSubviews()
-        currentEngineRenderView?.frame = self.bounds
+        layoutEngineView()
     }
     #elseif canImport(AppKit)
     public override init(frame frameRect: NSRect) {
@@ -39,7 +54,7 @@ import AppKit
     
     public override func layout() {
         super.layout()
-        currentEngineRenderView?.frame = self.bounds
+        layoutEngineView()
     }
     #endif
     

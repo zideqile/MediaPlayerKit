@@ -71,6 +71,7 @@ import CoreGraphics
     }
     
     private func setupEngine() {
+        self.playerView.engineDisplayName = engine is KSAVPlayerEngine ? "AVPlayer" : "KSPlayer / FFmpeg"
         self.engine.outputDelegate = self
         self.playerView.attachRenderView(self.engine.renderView)
     }
