@@ -27,7 +27,7 @@ struct RuntimeMetricsSampler {
         }
         let counters: [(String, Int64?)] = [
             ("ios_bytes_read", metrics.bytesRead), ("ios_network_bytes", metrics.networkBytes),
-            ("ios_dropped_video_frames", metrics.droppedVideoFrames),
+            ("drop", metrics.droppedVideoFrames),
             ("ios_dropped_video_packets", metrics.droppedVideoPackets),
             ("ios_media_requests", metrics.mediaRequests)
         ]
@@ -39,7 +39,11 @@ struct RuntimeMetricsSampler {
             guard let elapsed = elapsed, elapsed > 0,
                   let old = previous[key], value >= old else { continue }
             let delta = Double(value - old)
-            result[key + "_delta"] = delta
+            if key == "drop" {
+                result["drop"] = delta
+            } else {
+                result[key + "_delta"] = delta
+            }
             if key == "ios_bytes_read" || key == "ios_network_bytes" {
                 let rate = delta / elapsed
                 if rate.isFinite { result[key + "_per_second"] = rate }

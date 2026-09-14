@@ -31,6 +31,8 @@ final class PlaybackDiagnostics {
         endBuffering()
         statistics.reset()
         playingSince = nil; totalPlayTime = 0; lastState = nil
+        onWaitingCount = 0; onPlayingCount = 0; internalErrorCount = 0
+        totalStallCount = 0; totalStallDurationMs = 0; totalDropCount = 0
         stateTimer?.invalidate(); stateTimer = nil; stateProvider = nil; metricsProvider = nil
         statisticsTimer?.invalidate(); statisticsTimer = nil; attemptStarted = nil
     }
@@ -55,6 +57,13 @@ final class PlaybackDiagnostics {
     private var lastEvent: [String: String] = [:]
     private var playingSince: TimeInterval?
     private var totalPlayTime: TimeInterval = 0
+    private var currentEngineName: String = ""
+    private var onWaitingCount = 0
+    private var onPlayingCount = 0
+    private var internalErrorCount = 0
+    private var totalStallCount = 0
+    private var totalStallDurationMs: Double = 0
+    private var totalDropCount: Int64 = 0
 
     /// Main-run-loop sampling continues even when buffering stops time callbacks.
     func startStateCollection(interval: TimeInterval, metrics: (() -> PlayerRuntimeMetrics?)? = nil,
@@ -116,7 +125,9 @@ final class PlaybackDiagnostics {
     }
     func begin(source: PlayerSource, engine: PlayerEngineType, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
-        statistics.begin(sourceURL: source.url, sourceType: source.type, sourceIndex: source.sourceIndex, engine: engineName(engine))
+        let engineStr = engineName(engine)
+        currentEngineName = engineStr
+        statistics.begin(sourceURL: source.url, sourceType: source.type, sourceIndex: source.sourceIndex, engine: engineStr)
         stateTimer?.invalidate(); stateTimer = nil; stateProvider = nil; lastEvent = [:]
         endBuffering()
         logger.onSourceChanged(srcUrl: source.url, srcType: source.type)
@@ -124,7 +135,11 @@ final class PlaybackDiagnostics {
         attemptStarted = clock(); firstFrameRecorded = false; lastState = nil
         metricsSampler = RuntimeMetricsSampler(); lastMetricsTime = nil
         restartStatisticsTimer()
-        logger.logI("create player", "engine:", engineName(engine), "source:", source.toKeyValueString(), fileID: fileID, function: function, line: line, typeName: typeName)
+        let type = source.type.lowercased()
+        let fullType = type == "hls" && source.videoCodec == PlayerSource.CODEC_H265 ? "hls_hevc" : type
+        logger.logSI("current_source_" + fullType, 1)
+        logger.logSI("player_type", Double(engine.rawValue))
+        logger.logI("create player", "engine:", engineStr, "source:", source.toKeyValueString(), fileID: fileID, function: function, line: line, typeName: typeName)
     }
     func state(_ state: PlayerState, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed, state != lastState else { return }
@@ -137,8 +152,12 @@ final class PlaybackDiagnostics {
             metricsSampler = RuntimeMetricsSampler(); lastMetricsTime = nil
         }
         if state == .buffering {
+            onWaitingCount += 1
             if bufferingStarted == nil { bufferingStarted = clock() }
-        } else { endBuffering() }
+        } else {
+            if state == .playing { onPlayingCount += 1 }
+            endBuffering()
+        }
         logger.logI("playState is:", state.description, fileID: fileID, function: function, line: line, typeName: typeName)
     }
     func firstFrame(size: CGSize, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
@@ -173,6 +192,10 @@ final class PlaybackDiagnostics {
         }
         statistics.updateMetrics(summary)
         for (name, value) in fields { logger.logSI(name, value) }
+        if let dropTotal = metrics.droppedVideoFrames, dropTotal >= 0 {
+            totalDropCount = dropTotal
+            logger.logSI("drop_count", Double(dropTotal))
+        }
         if !fields.isEmpty {
             let message = fields.keys.sorted().map { "\($0)=\(fields[$0] ?? 0)" }.joined(separator: " ")
             logger.logAI("runtime metrics:", message, fileID: fileID, function: function, line: line, typeName: typeName)
@@ -187,11 +210,13 @@ final class PlaybackDiagnostics {
         endBuffering()
         collectState(event: "error")
         let engine = engineName(failure.engine)
+        internalErrorCount += 1
+        logger.logSI("internal_error", Double(internalErrorCount))
+        logger.logSI("player_" + engine + "_error_code", Double(failure.error.code))
+        if let start = attemptStarted { logger.logSI("player_time", max(0, (clock() - start) * 1000)) }
         logger.logE("player error", "source:", failure.sourceURL, "engine:", engine,
                     "domain:", failure.error.domain, "code:", failure.error.code,
                     "category:", failure.category.rawValue, "message:", failure.error.localizedDescription, fileID: fileID, function: function, line: line, typeName: typeName)
-        logger.logSI("ios_player_" + engine + "_error_code", Double(failure.error.code))
-        if let start = attemptStarted { logger.logSI("player_time", max(0, (clock() - start) * 1000)) }
         switch failure.action {
         case .nextEngine: logger.logW("retry with fallback engine", fileID: fileID, function: function, line: line, typeName: typeName)
         case .nextSource: logger.logW("switch to nextSource", fileID: fileID, function: function, line: line, typeName: typeName)
@@ -205,6 +230,14 @@ final class PlaybackDiagnostics {
         stateTimer?.invalidate(); stateTimer = nil
         metricsProvider = nil; stateProvider = nil
         endBuffering()
+        let engine = currentEngineName.isEmpty ? "avplayer" : currentEngineName
+        logger.logSI("close_normal", 0)
+        logger.logSI("player_" + engine + "_close_normal", 0)
+        logger.logSI("total_stall", totalStallDurationMs)
+        logger.logSI("stall_count", Double(totalStallCount))
+        logger.logSI("on_waiting", Double(onWaitingCount))
+        logger.logSI("on_playing", Double(onPlayingCount))
+        if totalDropCount > 0 { logger.logSI("drop_count", Double(totalDropCount)) }
         logger.logE("player is error", "code:", error.code, "message:", error.localizedDescription, fileID: fileID, function: function, line: line, typeName: typeName)
         logger.flushLog()
     }
@@ -213,6 +246,17 @@ final class PlaybackDiagnostics {
         statistics.finish(reason: "destroy")
         statisticsTimer?.invalidate(); statisticsTimer = nil; metricsProvider = nil
         endBuffering()
+        let engine = currentEngineName.isEmpty ? "avplayer" : currentEngineName
+        logger.logSI("close_normal", 1)
+        logger.logSI("player_" + engine + "_close_normal", 1)
+        logger.logSI("total_stall", totalStallDurationMs)
+        logger.logSI("stall_count", Double(totalStallCount))
+        logger.logSI("on_waiting", Double(onWaitingCount))
+        logger.logSI("on_playing", Double(onPlayingCount))
+        if totalDropCount > 0 { logger.logSI("drop_count", Double(totalDropCount)) }
+        if let start = playingSince { totalPlayTime += max(0, clock() - start) }
+        playingSince = nil
+        logger.logSI("current_time", totalPlayTime * 1000)
         collectState(event: "destroy")
         stateTimer?.invalidate(); stateTimer = nil; stateProvider = nil
         logger.logI("destroy player", fileID: fileID, function: function, line: line, typeName: typeName)
@@ -222,8 +266,11 @@ final class PlaybackDiagnostics {
     private func endBuffering() {
         guard let start = bufferingStarted else { return }
         bufferingStarted = nil
-        // Per-episode measurement, not Android's sliding-window stall_duration.
-        logger.logSI("ios_stall_episode_ms", max(0, (clock() - start) * 1000))
+        let duration = max(0, (clock() - start) * 1000)
+        totalStallCount += 1
+        totalStallDurationMs += duration
+        logger.logSI("stall_duration", duration)
+        logger.logSI("stall_count", Double(totalStallCount))
     }
     private func engineName(_ engine: PlayerEngineType) -> String {
         switch engine {
