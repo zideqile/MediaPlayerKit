@@ -74,11 +74,13 @@ public final class ESUploadAppender: Appender {
     }
     private func record(_ chunk: [(LogLevel, String)], index: Int) -> [String: Any] {
         var global: [String: Any] = ["userIdUuid": context.userIdUuid, "deviceInfo": context.deviceInfo,
-                                     "customInfo": context.customInfo, "version": context.version]
+                                     "customInfo": context.customInfo]
         if index % 10 == 0 {
+            let ver = context.version.isEmpty ? SDKVersion.version : context.version
             global["optionInfo"] = ["timezone": TimeZone.current.secondsFromGMT() / 3600, "UA": "MediaPlayerKit",
                                     "vendor": "Apple", "platform": ProcessInfo.processInfo.operatingSystemVersionString,
-                                    "feature": "native", "playerConfig": context.playerConfig] as [String: Any]
+                                    "feature": "native", "playerConfig": context.playerConfig,
+                                    "version": ver] as [String: Any]
         }
         var fields: [String: Any] = ["userId": context.userId, "topicId": context.topicId, "streamId": context.streamId,
             "globalPlayerInfo": global, "innerDrop": dropped + uploadTask.innerDrop, "index": index,

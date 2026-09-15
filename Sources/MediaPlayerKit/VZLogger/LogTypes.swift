@@ -320,7 +320,8 @@ public struct LogContext {
                 indexCounter: ESUploadIndexCounter = ESUploadIndexCounter()) {
         userId = config.userId; topicId = config.topicId; streamId = config.streamId
         userIdUuid = config.userIdUuid; self.deviceInfo = deviceInfo
-        self.customInfo = customInfo; self.version = version
+        self.customInfo = customInfo
+        self.version = version.isEmpty ? SDKVersion.version : version
         playerConfig = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(config))) as? [String: Any] ?? [:]
         self.indexCounter = indexCounter
     }
