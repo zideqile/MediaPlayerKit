@@ -260,19 +260,29 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         if #available(iOS 18, macOS 15, tvOS 18, visionOS 2, *) {
             let events = item.allMetrics()
             requestTask = Task { @MainActor [weak self, weak item] in
-                for await event in events {
-                    guard !Task.isCancelled, let self = self, let item = item,
-                          self.playerItem === item else { break }
-                    if let segment = event as? AVMetricHLSMediaSegmentRequestEvent,
-                       let resource = segment.mediaResourceRequestEvent {
-                        self.collectRequest(resource, kind: "segment")
-                    } else if let playlist = event as? AVMetricHLSPlaylistRequestEvent,
-                              let resource = playlist.mediaResourceRequestEvent {
-                        self.collectRequest(resource, kind: "playlist")
-                    } else if let key = event as? AVMetricContentKeyRequestEvent,
-                              let resource = key.mediaResourceRequestEvent {
-                        self.collectRequest(resource, kind: "key")
+                do {
+                    for try await event in events {
+                        guard !Task.isCancelled, let self = self, let item = item,
+                              self.playerItem === item else { break }
+                        if let segment = event as? AVMetricHLSMediaSegmentRequestEvent,
+                           let resource = segment.mediaResourceRequestEvent {
+                            self.collectRequest(resource, kind: "segment")
+                        } else if let playlist = event as? AVMetricHLSPlaylistRequestEvent,
+                                  let resource = playlist.mediaResourceRequestEvent {
+                            self.collectRequest(resource, kind: "playlist")
+                        } else if let key = event as? AVMetricContentKeyRequestEvent,
+                                  let resource = key.mediaResourceRequestEvent {
+                            self.collectRequest(resource, kind: "key")
+                        }
                     }
+                } catch is CancellationError {
+                    // Reset/stop cancels metric collection without affecting playback.
+                } catch {
+                    guard !Task.isCancelled, let self = self, let item = item,
+                          self.playerItem === item else { return }
+                    let failure = error as NSError
+                    // Metrics stream failures are not media request or playback errors.
+                    Logger.logW("request_metrics_failed", ["code": failure.code, "domain": failure.domain])
                 }
             }
             return
