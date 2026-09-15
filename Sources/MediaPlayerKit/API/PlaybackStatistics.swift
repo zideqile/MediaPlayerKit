@@ -49,6 +49,9 @@ final class PlaybackStatisticsTracker {
     private var sourceType = ""
     private var sourceIndex = 0
     private var engine = ""
+    private var lifetime = PlaybackTimeAccumulator()
+    private var lifetimeAttempts = 0
+    private var finished = false
     private var session = PlaybackTimeAccumulator()
     private var source = PlaybackTimeAccumulator()
     private var attempt = PlaybackTimeAccumulator()
@@ -79,6 +82,7 @@ final class PlaybackStatisticsTracker {
     init(clock: @escaping () -> TimeInterval) { self.clock = clock }
 
     func begin(sourceURL: String, sourceType: String, sourceIndex: Int, engine: String) {
+        guard !finished else { return }
         endAttempt(reason: "replaced")
         let key = "\(sourceIndex):\(sourceURL)"
         if key != sourceKey || sourceID.isEmpty {
@@ -93,7 +97,7 @@ final class PlaybackStatisticsTracker {
         self.sourceKey = key; self.sourceURL = sourceURL; self.sourceType = sourceType
         self.sourceIndex = sourceIndex; self.engine = engine
         attempt = PlaybackTimeAccumulator(); attemptID = UUID().uuidString
-        attemptStarted = clock(); active = true; sessionStarted = true; attemptCount += 1
+        attemptStarted = clock(); active = true; sessionStarted = true; attemptCount += 1; lifetimeAttempts += 1
         firstFrameMs = nil; creationMs = nil; creationOK = false; metrics = [:]; metricsSampleTime = nil; lastError = nil
     }
     func created() {
@@ -106,6 +110,7 @@ final class PlaybackStatisticsTracker {
         let time = clock()
         attempt.transition(to: state, at: time); source.transition(to: state, at: time)
         session.transition(to: state, at: time)
+        lifetime.transition(to: state, at: time)
         if state == .playing, let start = recoveryStarted {
             recoveryDurationMs = max(0, time - start) * 1000
             recoverySuccessCount += 1; recoveryStarted = nil
@@ -142,15 +147,22 @@ final class PlaybackStatisticsTracker {
         let time = clock()
         attempt.transition(to: .stopped, at: time); source.transition(to: .stopped, at: time)
         session.transition(to: .stopped, at: time)
+        lifetime.transition(to: .stopped, at: time)
         active = false
-        publish(reason: reason)
+        publish(reason: reason, attemptEnded: true)
     }
     func finish(reason: String) {
-        guard sessionStarted else { return }
-        cancelRecovery()
-        endAttempt(reason: reason)
-        publish(reason: "sessionEnded:" + reason)
-        sessionStarted = false
+        guard !finished else { return }
+        if sessionStarted {
+            cancelRecovery()
+            endAttempt(reason: reason)
+            publish(reason: "sessionEnded:" + reason)
+            sessionStarted = false
+        }
+        if reason == "destroy" {
+            publish(reason: "lifetimeEnded")
+            finished = true
+        }
     }
     func reset() {
         finish(reason: "newSources")
@@ -169,8 +181,8 @@ final class PlaybackStatisticsTracker {
         return stalledCount > 0 || stalledDuration > 0
     }
 
-    func publish(reason: String = "periodic") {
-        guard sessionStarted else { return }
+    func publish(reason: String = "periodic", attemptEnded: Bool = false) {
+        guard !finished, sessionStarted || (reason == "lifetimeEnded" && lifetimeAttempts > 0) else { return }
         let time = clock()
         let cumulative = session.values(at: time)
         let window: [String: Any] = ["play_ms": max(0, cumulative.play - lastWindow.play) * 1000,
@@ -185,6 +197,8 @@ final class PlaybackStatisticsTracker {
             "sourceDomain": URL(string: sourceURL)?.host ?? "", "engine": engine,
             "session": session.fields(at: time), "source": source.fields(at: time),
             "attempt": attempt.fields(at: time), "window": window,
+            "attemptEnded": attemptEnded,
+            "lifetime": lifetime.fields(at: time).merging(["attempts": lifetimeAttempts]) { _, new in new },
             "attempts": attemptCount, "source_switches": sourceSwitchCount,
             "engine_switches": engineSwitchCount, "errors": errorCount,
             "recoveries": recoveryCount, "recover_ok": recoverySuccessCount,

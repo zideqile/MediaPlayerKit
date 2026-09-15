@@ -139,7 +139,8 @@ extension PlaybackStatisticsTests {
         diagnostics.state(.playing)
         time = 2; diagnostics.state(.buffering)
         time = 5; diagnostics.finish()
-        XCTAssertEqual(records.last?["reason"] as? String, "sessionEnded:destroy")
+        XCTAssertTrue(records.contains { $0["reason"] as? String == "sessionEnded:destroy" })
+        XCTAssertEqual(records.last?["reason"] as? String, "lifetimeEnded")
         XCTAssertEqual(number(records.last ?? [:], "session", "play_ms"), 2000)
         XCTAssertEqual(number(records.last ?? [:], "session", "stalledTotalDuration"), 3000)
         let count = records.count
@@ -213,7 +214,7 @@ extension PlaybackStatisticsTests {
 
 extension PlaybackStatisticsTests {
     func testWebStyleLogsSeparateSummariesAndKeepQuietDuringSmoothPlayback() {
-        let record: [String: Any] = ["reason": "switch", "sourceIndex": 0, "engine": "ksmeplayer",
+        let record: [String: Any] = ["reason": "switch", "attemptEnded": true, "sourceIndex": 0, "engine": "ksmeplayer",
             "attempt": ["play_ms": 1043266.6, "stall_ratio": 0.000632],
             "window": ["stalledCount": 0, "stalledTotalDuration": 0.0]]
         let logs = PlaybackStatisticsLog.records(from: record)
@@ -223,12 +224,69 @@ extension PlaybackStatisticsTests {
         XCTAssertEqual(LogFormatter.formatValue(logs.first?.fields["stall_pct"] ?? NSNull()), "0.06")
         XCTAssertNil(logs.first?.fields["session"])
         XCTAssertNil(logs.first?.fields["metrics"])
-        var periodic = record; periodic["reason"] = "periodic"
+        var periodic = record; periodic["reason"] = "periodic"; periodic["attemptEnded"] = false
         XCTAssertTrue(PlaybackStatisticsLog.records(from: periodic).isEmpty)
         periodic["window"] = ["stalledCount": 1, "stalledTotalDuration": 100.25]
         let stall = PlaybackStatisticsLog.records(from: periodic)
         XCTAssertEqual(stall.count, 1)
         XCTAssertEqual(stall.first?.name, "StalledSummaryInfoStatistics.summarize")
         XCTAssertEqual(stall.first?.fields["stalledTotalDuration"] as? Double, 100.25)
+    }
+}
+
+
+extension PlaybackStatisticsTests {
+    func testLifetimeAcrossSessionsAndExactlyOnceAttemptSettlement() {
+        var now: Double = 0
+        let tracker = PlaybackStatisticsTracker(clock: { now })
+        var logs: [PlaybackStatisticsLog] = []
+        tracker.emit = { logs += PlaybackStatisticsLog.records(from: $0) }
+        tracker.begin(sourceURL: "a", sourceType: "hls", sourceIndex: 0, engine: "avplayer")
+        tracker.state(.playing)
+        now = 2; tracker.state(.completed)
+        tracker.state(.playing)
+        now = 3; tracker.reset()
+        tracker.begin(sourceURL: "b", sourceType: "hls", sourceIndex: 0, engine: "ksmeplayer")
+        tracker.state(.playing)
+        now = 7; tracker.state(.paused)
+        now = 10; tracker.finish(reason: "destroy")
+        tracker.finish(reason: "destroy")
+        let attempts = logs.filter { $0.fields["scope"] as? String == "attempt" }
+        XCTAssertEqual(attempts.count, 2)
+        XCTAssertEqual(attempts.map { $0.fields["totalPlayTime"] as? Double }, [3000, 4000])
+        let totals = logs.filter { $0.fields["scope"] as? String == "lifetime" }
+        XCTAssertEqual(totals.count, 1)
+        XCTAssertEqual(totals.first?.fields["totalPlayTime"] as? Double, 7000)
+        XCTAssertEqual(totals.first?.fields["attempts"] as? Int, 2)
+    }
+
+    func testDestroyAfterResetWithoutNewPlayerKeepsLifetime() {
+        var now: Double = 0
+        let tracker = PlaybackStatisticsTracker(clock: { now })
+        tracker.begin(sourceURL: "a", sourceType: "hls", sourceIndex: 0, engine: "avplayer")
+        tracker.state(.playing)
+        now = 2; tracker.reset()
+        now = 10; tracker.finish(reason: "destroy")
+        let lifetime = tracker.latest["lifetime"] as? [String: Any]
+        XCTAssertEqual(lifetime?["play_ms"] as? Double, 2000)
+        XCTAssertEqual(tracker.latest["reason"] as? String, "lifetimeEnded")
+    }
+}
+
+
+extension PlaybackStatisticsTests {
+    func testTerminalAttemptLogsOnceBeforeDestroy() {
+        var now: Double = 0
+        let tracker = PlaybackStatisticsTracker(clock: { now })
+        var logs: [PlaybackStatisticsLog] = []
+        tracker.emit = { logs += PlaybackStatisticsLog.records(from: $0) }
+        tracker.begin(sourceURL: "a", sourceType: "hls", sourceIndex: 0, engine: "avplayer")
+        tracker.state(.playing)
+        now = 1; tracker.endAttempt(reason: "terminalError")
+        now = 4; tracker.finish(reason: "destroy")
+        let attempts = logs.filter { $0.fields["scope"] as? String == "attempt" }
+        XCTAssertEqual(attempts.count, 1)
+        XCTAssertEqual(attempts.first?.fields["reason"] as? String, "terminalError")
+        XCTAssertEqual(attempts.first?.fields["totalPlayTime"] as? Double, 1000)
     }
 }

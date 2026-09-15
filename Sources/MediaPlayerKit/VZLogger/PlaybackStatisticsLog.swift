@@ -27,10 +27,14 @@ struct PlaybackStatisticsLog {
         }
         // Source/attempt transitions already produce command and failure logs. Do not
         // repeat those, their metrics, and all three cumulative scopes in one record.
-        if ["switch", "replaced", "error", "ended"].contains(reason) {
-            result.append(playtime(snapshot, scope: "attempt", reason: reason, context: context))
+        if snapshot["attemptEnded"] as? Bool == true {
+            result.append(playtime(snapshot, scope: "attempt", reason: reason, context: context.merging(
+                ["attemptId": snapshot["attemptId"] ?? ""]) { _, new in new }))
         } else if reason.hasPrefix("sessionEnded:") {
             result.append(playtime(snapshot, scope: "session", reason: reason, context: [:]))
+        }
+        if reason == "lifetimeEnded" {
+            result.append(playtime(snapshot, scope: "lifetime", reason: reason, context: [:]))
         }
         return result
     }
@@ -42,6 +46,7 @@ struct PlaybackStatisticsLog {
         fields["scope"] = scope
         fields["reason"] = reason
         fields["totalPlayTime"] = stats["play_ms"]
+        if scope == "lifetime" { fields["attempts"] = stats["attempts"] }
         // Percentage preserves readable small ratios at the two-decimal log precision.
         if let ratio = stats["stall_ratio"] as? NSNumber { fields["stall_pct"] = ratio.doubleValue * 100 }
         return Self(name: "playtime", level: .info, fields: fields)
