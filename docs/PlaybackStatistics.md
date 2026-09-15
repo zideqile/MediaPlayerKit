@@ -57,10 +57,15 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 | --- | --- |
 | `StalledSummaryInfoStatistics.summarize` | 窗口存在卡顿次数或时长时输出 error 日志；沿用 vplayer 的 `stalledCount`、`stalledTotalDuration`（毫秒） |
 | `playerCreation` | 创建完成时输出 `elapsedMs`、`createOK` |
-| `playtime` | 切换、替换、错误、播放结束时输出 attempt 累计播放时长；会话结束时输出 session 累计播放时长 |
+| `playtime` | 内部尝试结束（切换、替换、错误、重设源、销毁）时输出 attempt 累计时长；会话结束输出 session 累计时长；实例销毁输出 lifetime 总时长和 attempts |
 
-`playtime.totalPlayTime` 单位为毫秒；`scope` 区分 attempt/session，`reason` 标识结算原因。
-这些是累计值，不应逐条相加；播放结束后再切源也可能再次输出同一尝试的累计时长。
+`playtime.totalPlayTime` 单位为毫秒；`scope` 区分 attempt/session/lifetime，`reason` 标识结算原因。
+每个 attempt 只在该次尝试结束时输出一次，携带 attemptId；自然播放结束仍保留快照，
+允许同一内部播放器重播，之后统一结算。不同 scope 有包含关系，不能混合相加。
+新增 `lifetime` 快照包含实例整个生命周期的时长、卡顿和 `attempts`（内部播放器尝试数，含失败尝试），
+不随 setSources 重置；`session` 仍在 setSources 时重置。`attemptEnded` 表示本条快照是尝试最终结算。
+实例销毁在原 sessionEnded:destroy 快照之后追加 lifetimeEnded 快照，重复销毁不重复输出。
+这里的实例指一个 MultiSourcePlayer，不汇总 App 中多个独立播放器实例。
 `stall_pct` 为百分比，两位小数，例如 `0.06` 表示 0.06%；业务快照中的 `stall_ratio` 仍为原始比例。
 首帧、恢复与错误沿用已有专项日志；性能采样沿用 statLogs，不重复附带整份 metrics。
 
