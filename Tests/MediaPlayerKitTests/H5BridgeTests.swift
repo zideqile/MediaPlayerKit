@@ -15,7 +15,7 @@ final class H5BridgeTests: XCTestCase {
         XCTAssertTrue(player.set_volume("{\"volume\":0.5}"))
         XCTAssertFalse(player.set_volume("{}"))
         XCTAssertEqual(Set(recorder.entries.map { $0.0 }).count, 1)
-        XCTAssertTrue(recorder.entries.contains { $0.1.contains("H5Player.set_volume(_:):") && $0.1.contains("invalid parameters") })
+        XCTAssertTrue(recorder.entries.contains { $0.1.contains("H5Player.set_volume:") && $0.1.contains("invalid parameters") })
         XCTAssertTrue(recorder.entries.contains { $0.1.contains("set_volume: 0.5") })
     }
 
