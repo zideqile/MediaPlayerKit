@@ -57,11 +57,11 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 | --- | --- |
 | `StalledSummaryInfoStatistics.summarize` | 窗口存在卡顿次数或时长时输出 error 日志；沿用 vplayer 的 `stalledCount`、`stalledTotalDuration`（毫秒） |
 | `playerCreation` | 创建完成时输出 `elapsed`（带 ms 单位）、`createOK` |
-| `playtime` | 内部尝试结束（切换、替换、错误、重设源、销毁）时输出 attempt 累计时长；会话结束输出 session 累计时长；实例销毁输出 lifetime 总时长和 attempts |
+| `playtime` | 关键动作与事件（暂停、跳转、停止、卡顿、恢复、播放结束、切源、重试错误等）及尝试/会话结束时，结算并输出各类维度（attempt 内核+地址、source 当前地址、session 当前会话）的累计时长；实例销毁输出 lifetime 总时长和 attempts |
 
-`playtime.totalPlayTime` 单位为毫秒；`scope` 区分 attempt/session/lifetime，`reason` 标识结算原因。
-每个 attempt 只在该次尝试结束时输出一次，携带 attemptId；自然播放结束仍保留快照，
-允许同一内部播放器重播，之后统一结算。不同 scope 有包含关系，不能混合相加。
+`playtime.totalPlayTime` 单位为毫秒（带 ms 单位）；`scope` 区分 attempt/source/session/lifetime，`reason` 标识结算原因。
+不同 scope 有包含关系，不能混合相加。
+新增关键动作与事件实时结算，便于在会话进行中随时从日志检索各维度播放时长。
 新增 `lifetime` 快照包含实例整个生命周期的时长、卡顿和 `attempts`（内部播放器尝试数，含失败尝试），
 不随 setSources 重置；`session` 仍在 setSources 时重置。`attemptEnded` 表示本条快照是尝试最终结算。
 实例销毁在原 sessionEnded:destroy 快照之后追加 lifetimeEnded 快照，重复销毁不重复输出。

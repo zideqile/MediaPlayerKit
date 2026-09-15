@@ -123,8 +123,14 @@ final class PlaybackDiagnostics {
         }
     }
 
+    func seek(to seconds: Int64, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
+        guard !closed else { return }
+        statistics.seek()
+        command("seek to \(seconds)s", fileID: fileID, function: function, line: line, typeName: typeName)
+    }
     func command(_ name: String, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
+        if name.hasPrefix("seek") { statistics.seek() }
         collectState(event: name)
         logger.logI(name, fileID: fileID, function: function, line: line, typeName: typeName)
     }
@@ -240,7 +246,9 @@ final class PlaybackDiagnostics {
                     "domain:", failure.error.domain, "code:", failure.error.code,
                     "category:", failure.category.rawValue, "message:", failure.error.localizedDescription, fileID: fileID, function: function, line: line, typeName: typeName)
         switch failure.action {
-        case .nextEngine: logger.logW("retry with fallback engine", fileID: fileID, function: function, line: line, typeName: typeName)
+        case .nextEngine:
+            let nextEngine = failure.fallbackEngine != .auto ? failure.fallbackEngine : (failure.engine == .avPlayer ? .mePlayer : .avPlayer)
+            logger.logW("retry with fallback engine, engine: " + engineName(nextEngine), fileID: fileID, function: function, line: line, typeName: typeName)
         case .nextSource: logger.logW("switch to nextSource", fileID: fileID, function: function, line: line, typeName: typeName)
         case .stop: logger.logE("all candidates exhausted or recovery stopped", fileID: fileID, function: function, line: line, typeName: typeName)
         }
