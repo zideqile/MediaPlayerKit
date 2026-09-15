@@ -169,3 +169,68 @@ net_speed 为本采样周期网络字节增量除以单调时钟间隔（B/s）�
 | `play_duration_sec` | `play_sec` |
 | `stutter_duration_sec` | `stall_sec` |
 | `bitrate`（原 observedBitrate） | `bandwidth` |
+
+## 起播、缓冲和进度停滞保护
+
+MultiSourcePlayer（包括 H5 混合接入）新增主线程独立定时检查，约每 500ms 检查一次，
+不依赖内核报错或进度回调。配置可通过 VPlayerConfig 或其 JSON 传入：
+
+| 配置 | 默认值 | 含义 |
+| --- | --- | --- |
+| startupTimeoutMs | 15000 | 每次内部播放器尝试起播，尚无首帧或有效播放进度时的超时 |
+| bufferingTimeoutMs | 15000 | 已起播后的持续缓冲，或 playing 状态下播放进度持续不动的超时 |
+
+单位毫秒，值 <= 0 关闭相应检测。阈值是 SDK 默认值，并非 vplayer 原有配置名或默认值。
+使用单调时钟；用户暂停、App 非活跃期间不累计，恢复后重新给予完整等待预算。
+Seek 发起时重置等待预算；自然播放结束、替换源列表、切换、终止失败和销毁时取消旧检测。
+重播可通过进度推进结束起播等待，不要求内核再次发出首帧事件。
+
+超时生成 NSURLErrorTimedOut，附带 phase（startup/buffering/frozen）和 timeout_ms，
+复用 onPlayAttemptFailed、onRecoveryStarted、failureHistory 及既有失败日志。
+有后备内核时先切内核，再切下一个地址；候选耗尽后发出最终错误，不循环重试。
+每次尝试只处理一次失败，generation 和控制器身份阻止旧定时器操作新的播放源。
+此保护属于 MultiSourcePlayer 的恢复层，不修改 KSPlayer/FFmpeg 底层采集或网络参数；
+单独使用 MediaPlayerController 不带多源恢复策略。
+
+与 vplayer 对照：FreezeDetector 检查进度冻结、暂停/后台豁免的思路相同；
+vplayer 每 8 秒检测，直播/点播起始宽限分别为 8/16 秒，普通冻结请求 restart，
+H.265 或 24 秒内反复冻结请求 switchNextSource。SDK 本次继续使用自身的内核/地址候选顺序。
+vplayer 另有默认关闭、只用于直播的滑动窗口卡顿策略（默认 60 秒内超过 6 秒或 3 次，
+忽略小于 200ms 的卡顿），SDK 通过下面的同名策略提供这项能力。
+
+
+## 直播滑动窗口卡顿策略
+
+`stalledSourceSwitchPolicy` 与 vplayer 同名，默认配置：
+
+```json
+{
+  "isLive": true,
+  "stalledSourceSwitchPolicy": {
+    "enable": false,
+    "slidingWindowInMs": 60000,
+    "maxStalledDurationInMsInSlidingWindowInMs": 6000,
+    "maxStalledCountInSlidingWindowInMs": 3,
+    "minStalledDurationThreshold": 200
+  }
+}
+```
+
+业务需将 enable 设为 true 才启用；点播不启用。各数值配置 <= 0 时使用对应默认值。
+buffering → playing 结算一次完整卡顿；小于 200ms 忽略，重复 buffering 通知不重置开始时间。
+以卡顿结束时间判断是否在窗口内，在下一次进入 buffering 时检查：累计时长严格大于 6000ms，
+或次数严格大于 3 次时触发；恰好等于阈值不触发。超长单次未结束缓冲仍由独立 watchdog 处理。
+
+触发后记录 `StallDetector.onWaiting`，沿用 vplayer 的字段：
+`stalledDurationInMsInSlidingWindowInMs`、`stalledCountInSlidingWindowInMs`、
+`totalStalledDuration`、`totalStalledCount`。累计字段归属于当前内部播放器尝试。
+恢复错误分类新增 `stalled`（追加枚举值，既有值不变），错误 domain 为 MediaPlayerKit.Stall、code 为 1。
+通过既有失败/恢复事件链直接尝试下一地址，不先换内核；没有下一地址时结束恢复并报告错误。
+同一尝试只处理一次失败，与 watchdog 或内核错误共享防重复和旧任务隔离保护。
+
+暂停、后台、Seek 期间不采集新的卡顿，丢弃跨越这些操作的未完成区间；已经结算的样本按窗口自然过期。
+Seek 完成回调按控制器、播放 generation 和 seek generation 隔离，旧回调不影响新源。
+切换、销毁或重设配置清空检测状态，不混合两个策略配置或两个内部播放器的样本。
+这只影响恢复策略的卡顿样本，现有播放统计的累计口径不变。
+
+watchdog 的过期 Timer 会主动 invalidate；仅当它仍是当前 Timer 时清空引用，避免误清理新任务。

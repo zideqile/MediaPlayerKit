@@ -1,5 +1,25 @@
 import Foundation
 
+/// vplayer-compatible live stall window policy. Durations are milliseconds.
+@objc(StalledSourceSwitchPolicy)
+public final class StalledSourceSwitchPolicy: NSObject, Codable {
+    @objc public var enable = false
+    @objc public var slidingWindowInMs = 60000
+    @objc public var maxStalledDurationInMsInSlidingWindowInMs = 6000
+    @objc public var maxStalledCountInSlidingWindowInMs = 3
+    @objc public var minStalledDurationThreshold = 200
+    public override init() { super.init() }
+    public required init(from decoder: Decoder) throws {
+        super.init()
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        enable = try values.decodeIfPresent(Bool.self, forKey: .enable) ?? enable
+        slidingWindowInMs = try values.decodeIfPresent(Int.self, forKey: .slidingWindowInMs) ?? slidingWindowInMs
+        maxStalledDurationInMsInSlidingWindowInMs = try values.decodeIfPresent(Int.self, forKey: .maxStalledDurationInMsInSlidingWindowInMs) ?? maxStalledDurationInMsInSlidingWindowInMs
+        maxStalledCountInSlidingWindowInMs = try values.decodeIfPresent(Int.self, forKey: .maxStalledCountInSlidingWindowInMs) ?? maxStalledCountInSlidingWindowInMs
+        minStalledDurationThreshold = try values.decodeIfPresent(Int.self, forKey: .minStalledDurationThreshold) ?? minStalledDurationThreshold
+    }
+}
+
 /// 日志与上报服务器配置 (1:1 对标 Android vzplayer 的 LogServerConfig.java)
 @objc(LogServerConfig)
 public final class LogServerConfig: NSObject, Codable {
@@ -78,6 +98,10 @@ public final class VPlayerConfig: NSObject, Codable {
     @objc public var generalStatisticsUploadInterval: Int = 10000
     /// Slow resource request threshold in milliseconds, matching vplayer.
     @objc public var slowRequestThreshold: Int = 600
+    /// Facade watchdog deadlines in milliseconds. Non-positive values disable that phase.
+    @objc public var stalledSourceSwitchPolicy = StalledSourceSwitchPolicy()
+    @objc public var startupTimeoutMs: Int = 15000
+    @objc public var bufferingTimeoutMs: Int = 15000
     
     @objc public var appVZPlayerConfigJsonString: String = ""
     
@@ -86,6 +110,8 @@ public final class VPlayerConfig: NSObject, Codable {
         case topicId, streamId, userId, userIdUuid
         case isLive, env, isHardwareDecode, headers
         case logConfig, logServerConfig, runtimeStateCollect, generalStatisticsUploadInterval
+        case stalledSourceSwitchPolicy
+        case startupTimeoutMs, bufferingTimeoutMs
         case slowRequestThreshold
         case appVZPlayerConfigJsonString
     }
@@ -111,6 +137,9 @@ public final class VPlayerConfig: NSObject, Codable {
         logConfig = try values.decodeIfPresent(LogConfig.self, forKey: .logConfig) ?? logConfig
         logServerConfig = try values.decodeIfPresent(LogServerConfig.self, forKey: .logServerConfig) ?? logServerConfig
         generalStatisticsUploadInterval = try values.decodeIfPresent(Int.self, forKey: .generalStatisticsUploadInterval) ?? generalStatisticsUploadInterval
+        stalledSourceSwitchPolicy = try values.decodeIfPresent(StalledSourceSwitchPolicy.self, forKey: .stalledSourceSwitchPolicy) ?? stalledSourceSwitchPolicy
+        startupTimeoutMs = try values.decodeIfPresent(Int.self, forKey: .startupTimeoutMs) ?? startupTimeoutMs
+        bufferingTimeoutMs = try values.decodeIfPresent(Int.self, forKey: .bufferingTimeoutMs) ?? bufferingTimeoutMs
         slowRequestThreshold = try values.decodeIfPresent(Int.self, forKey: .slowRequestThreshold) ?? slowRequestThreshold
         runtimeStateCollect = try values.decodeIfPresent(RuntimeStateCollectConfig.self, forKey: .runtimeStateCollect) ?? runtimeStateCollect
         appVZPlayerConfigJsonString = try values.decodeIfPresent(String.self, forKey: .appVZPlayerConfigJsonString) ?? appVZPlayerConfigJsonString

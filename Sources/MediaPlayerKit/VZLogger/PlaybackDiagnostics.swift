@@ -128,6 +128,11 @@ final class PlaybackDiagnostics {
         statistics.seek()
         command("seek to \(seconds)s", fileID: fileID, function: function, line: line, typeName: typeName)
     }
+    func stallThreshold(_ fields: [String: Any]) {
+        guard !closed else { return }
+        logger.logW("StallDetector.onWaiting", fields)
+    }
+
     func command(_ name: String, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
         if name.hasPrefix("seek") { statistics.seek() }
