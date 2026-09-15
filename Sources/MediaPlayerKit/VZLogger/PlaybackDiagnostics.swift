@@ -220,7 +220,7 @@ final class PlaybackDiagnostics {
             logger.logSI("drop_count", Double(dropTotal))
         }
         if !fields.isEmpty {
-            let message = fields.keys.sorted().map { "\($0)=\(LogFormatter.formatValue(fields[$0] ?? 0))" }.joined(separator: " ")
+            let message = LogFormatter.formatRuntimeMetrics(fields)
             logger.logAI("runtime metrics:", message, fileID: fileID, function: function, line: line, typeName: typeName)
         }
     }

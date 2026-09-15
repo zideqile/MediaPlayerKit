@@ -211,7 +211,7 @@ SDK 的 10 条，可配置为 100；0 表示不保留）。上传后保留该滚
 
 ## 数值显示精度
 
-日志中带小数部分的数值四舍五入到两位小数（例如 `net_speed=244747.43`），包括
+日志中带小数部分的数值四舍五入到两位小数（例如普通数值 `244747.43`），包括
 结构化字典、JSON、数组、附加状态及运行指标日志。整数计数、错误码、时间戳、布尔值
 保持原样；浮点类型的整数值也不补小数（例如 `795428.0` 显示为 `795428`）。
 不通过 Double 转换大整数。普通字符串与 URL 不做数字正则替换。
@@ -223,3 +223,11 @@ statLogs 在序列化时保留最多两位小数；JSON 数字不会强制补零
 播放统计按 vplayer 的用途拆分为 `playtime`、`StalledSummaryInfoStatistics.summarize` 和 `playerCreation`，
 不再输出包含 session/source/attempt 和 metrics 的整包 `playback_statistics:`。
 完整业务快照保持兼容；触发条件、单位及累计口径见 [播放统计](PlaybackStatistics.md)。
+
+### 运行指标日志的单位
+
+`runtime metrics:` 文本按量级显示单位：bandwidth 使用 bps/Kbps/Mbps（1000 进制）；
+net_bytes/read_bytes 及其 total 使用 B/KiB/MiB（1024 进制）；net_speed/read_speed 使用对应字节单位每秒。
+帧率使用 fps，丢帧使用“帧”，丢包使用“包”，请求数使用“次”。
+例如 `bandwidth=19.49Mbps net_bytes=1.46MiB net_speed=461.19KiB/s`。
+单位换算仅用于日志文本；statLogs、metrics 和业务回调仍使用原始数值和既有单位。
