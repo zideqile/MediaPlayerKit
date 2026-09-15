@@ -301,7 +301,7 @@ extension PlaybackStatisticsTests {
         tracker.begin(sourceURL: "https://example.com/1.m3u8", sourceType: "hls", sourceIndex: 0, engine: "avplayer")
         tracker.state(.playing)
 
-        now = 5; tracker.pause()
+        now = 5; tracker.state(.paused); tracker.pause()
         let pauseLogs = logs.filter { $0.fields["reason"] as? String == "paused" }
         XCTAssertEqual(pauseLogs.count, 3)
         XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "5000ms")
