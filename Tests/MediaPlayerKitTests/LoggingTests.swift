@@ -312,12 +312,21 @@ extension LoggingTests {
             let list = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [[String: Any]])
             allRecords.append(contentsOf: list)
         }
-        allRecords.sort { (($0["index"] as? Int) ?? 0) < (($1["index"] as? Int) ?? 0) }
         XCTAssertEqual(allRecords.count, 2)
-        XCTAssertEqual(allRecords[0]["index"] as? Int, 0)
-        XCTAssertEqual(allRecords[0]["logGroup"] as? String, "")
-        XCTAssertEqual(allRecords[1]["index"] as? Int, 1)
-        XCTAssertEqual(allRecords[1]["logGroup"] as? String, "player-12345")
+        // Groups flush independently: indices are global and unique, but are not
+        // ordered by the original log calls or by a particular group name.
+        let indices = try allRecords.map { try XCTUnwrap($0["index"] as? Int) }
+        XCTAssertEqual(indices.sorted(), [0, 1])
+        let globals = allRecords.filter { $0["logGroup"] as? String == "" }
+        let players = allRecords.filter { $0["logGroup"] as? String == "player-12345" }
+        XCTAssertEqual(globals.count, 1)
+        XCTAssertEqual(players.count, 1)
+        let globalLogs = try XCTUnwrap(globals.first?["logs"] as? String)
+        let playerLogs = try XCTUnwrap(players.first?["logs"] as? String)
+        XCTAssertTrue(globalLogs.contains("first global message"))
+        XCTAssertFalse(globalLogs.contains("second player message"))
+        XCTAssertTrue(playerLogs.contains("second player message"))
+        XCTAssertFalse(playerLogs.contains("first global message"))
     }
 
     func testPlayerCreationLogFormatting() {
