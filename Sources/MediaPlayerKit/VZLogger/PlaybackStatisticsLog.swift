@@ -16,12 +16,18 @@ struct PlaybackStatisticsLog {
         if count > 0 || duration > 0 {
             var fields = context
             fields["stalledCount"] = count
-            fields["stalledTotalDuration"] = duration
+            fields["stalledTotalDuration"] = "\(LogFormatter.formatValue(duration))ms"
             result.append(Self(name: "StalledSummaryInfoStatistics.summarize", level: .error, fields: fields))
         }
         if reason == "created" {
             var fields = context
-            fields["elapsedMs"] = snapshot["create_ms"]
+            if let ms = (snapshot["create_ms"] as? NSNumber)?.doubleValue, ms.isFinite {
+                fields["elapsed"] = "\(LogFormatter.formatValue(ms))ms"
+            } else if let ms = snapshot["create_ms"] as? Double, ms.isFinite {
+                fields["elapsed"] = "\(LogFormatter.formatValue(ms))ms"
+            } else {
+                fields["elapsed"] = NSNull()
+            }
             fields["createOK"] = snapshot["createOK"]
             result.append(Self(name: "playerCreation", level: .info, fields: fields))
         }
@@ -45,7 +51,15 @@ struct PlaybackStatisticsLog {
         var fields = context
         fields["scope"] = scope
         fields["reason"] = reason
-        fields["totalPlayTime"] = stats["play_ms"]
+        if let ms = (stats["play_ms"] as? NSNumber)?.doubleValue, ms.isFinite {
+            fields["totalPlayTime"] = "\(LogFormatter.formatValue(ms))ms"
+        } else if let ms = stats["play_ms"] as? Double, ms.isFinite {
+            fields["totalPlayTime"] = "\(LogFormatter.formatValue(ms))ms"
+        } else if let playMs = stats["play_ms"], !(playMs is NSNull) {
+            fields["totalPlayTime"] = "\(LogFormatter.formatValue(playMs))ms"
+        } else {
+            fields["totalPlayTime"] = NSNull()
+        }
         if scope == "lifetime" { fields["attempts"] = stats["attempts"] }
         // Percentage preserves readable small ratios at the two-decimal log precision.
         if let ratio = stats["stall_ratio"] as? NSNumber { fields["stall_pct"] = ratio.doubleValue * 100 }

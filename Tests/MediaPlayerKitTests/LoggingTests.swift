@@ -317,6 +317,28 @@ extension LoggingTests {
         XCTAssertEqual(records1.first?["logGroup"] as? String, "player-12345")
     }
 
+    func testPlayerCreationLogFormatting() {
+        let snapshot: [String: Any] = [
+            "reason": "created",
+            "sourceIndex": 2,
+            "engine": "avplayer",
+            "create_ms": 3.4,
+            "createOK": true
+        ]
+        let records = PlaybackStatisticsLog.records(from: snapshot)
+        XCTAssertEqual(records.count, 1)
+        let record = records[0]
+        XCTAssertEqual(record.name, "playerCreation")
+        XCTAssertEqual(record.fields["elapsed"] as? String, "3.40ms")
+        XCTAssertEqual(record.fields["createOK"] as? Bool, true)
+        XCTAssertEqual(record.fields["engine"] as? String, "avplayer")
+        XCTAssertEqual(record.fields["sourceIndex"] as? Int, 2)
+        XCTAssertNil(record.fields["elapsedMs"])
+
+        let formatted = LogFormatter.formatValue(record.fields)
+        XCTAssertEqual(formatted, "createOK: true, elapsed: 3.40ms, engine: avplayer, sourceIndex: 2")
+    }
+
     func testStatisticsRetainEntireUploadPeriod() {
         let uploader = RecordingUploader()
         var policy = LogUploadPolicy(); policy.uploadIntervalSeconds = 600
@@ -397,6 +419,7 @@ extension LoggingTests {
         time = 10.25
         diagnostics.firstFrame(size: CGSize(width: 100, height: 100))
         diagnostics.firstFrame(size: .zero)
+        XCTAssertTrue(recorder.messages.contains { $0.contains("firstFrameTime: 250ms, width: 100, height: 100") })
         XCTAssertEqual(recorder.values["first_frame_time"], [250])
         XCTAssertEqual(recorder.values["source_hls_hevc"], [1])
         XCTAssertEqual(recorder.values["current_source_hls_hevc"], [1])

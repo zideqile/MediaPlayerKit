@@ -220,7 +220,7 @@ extension PlaybackStatisticsTests {
         let logs = PlaybackStatisticsLog.records(from: record)
         XCTAssertEqual(logs.count, 1)
         XCTAssertEqual(logs.first?.name, "playtime")
-        XCTAssertEqual(logs.first?.fields["totalPlayTime"] as? Double, 1043266.6)
+        XCTAssertEqual(logs.first?.fields["totalPlayTime"] as? String, "1043266.60ms")
         XCTAssertEqual(LogFormatter.formatValue(logs.first?.fields["stall_pct"] ?? NSNull()), "0.06")
         XCTAssertNil(logs.first?.fields["session"])
         XCTAssertNil(logs.first?.fields["metrics"])
@@ -230,7 +230,7 @@ extension PlaybackStatisticsTests {
         let stall = PlaybackStatisticsLog.records(from: periodic)
         XCTAssertEqual(stall.count, 1)
         XCTAssertEqual(stall.first?.name, "StalledSummaryInfoStatistics.summarize")
-        XCTAssertEqual(stall.first?.fields["stalledTotalDuration"] as? Double, 100.25)
+        XCTAssertEqual(stall.first?.fields["stalledTotalDuration"] as? String, "100.25ms")
     }
 }
 
