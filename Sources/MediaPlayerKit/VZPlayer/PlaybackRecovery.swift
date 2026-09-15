@@ -15,10 +15,13 @@ import Foundation
     @objc public let category: PlaybackErrorCategory
     @objc public let error: NSError
     @objc public let action: PlaybackRecoveryAction
+    @objc public let fallbackEngine: PlayerEngineType
     public init(sourceIndex: Int, sourceURL: String, engine: PlayerEngineType,
-                category: PlaybackErrorCategory, error: NSError, action: PlaybackRecoveryAction) {
+                category: PlaybackErrorCategory, error: NSError, action: PlaybackRecoveryAction,
+                fallbackEngine: PlayerEngineType = .auto) {
         self.sourceIndex = sourceIndex; self.sourceURL = sourceURL; self.engine = engine
         self.category = category; self.error = error; self.action = action
+        self.fallbackEngine = fallbackEngine
         super.init()
     }
 }

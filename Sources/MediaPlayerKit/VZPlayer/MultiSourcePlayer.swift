@@ -169,7 +169,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     // MARK: - IPlayer: 进度与状态
     
     public func Seek(_ seconds: Int64) {
-        diagnostics.command("seek to \(seconds)s")
+        diagnostics.seek(to: seconds)
         controller?.seek(to: TimeInterval(seconds))
     }
     
@@ -439,9 +439,11 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         let action = PlaybackRecoveryPolicy.action(for: category,
             hasNextEngine: currentEngineIndex + 1 < engineOrder.count,
             hasNextSource: currentSourceIndex + 1 < sources.count)
+        let fallbackEngine = (action == .nextEngine && currentEngineIndex + 1 < engineOrder.count) ? engineOrder[currentEngineIndex + 1] : .auto
         let failure = PlaybackAttemptFailure(sourceIndex: currentSourceIndex,
             sourceURL: currentSource?.url ?? "", engine: engineOrder[currentEngineIndex],
-            category: category, error: error, action: action)
+            category: category, error: error, action: action,
+            fallbackEngine: fallbackEngine)
         failureHistory.append(failure)
         diagnostics.failed(failure)
         notifyListeners { $0.onPlayAttemptFailed?(failure) }

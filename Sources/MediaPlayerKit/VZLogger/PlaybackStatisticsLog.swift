@@ -31,15 +31,38 @@ struct PlaybackStatisticsLog {
             fields["createOK"] = snapshot["createOK"]
             result.append(Self(name: "playerCreation", level: .info, fields: fields))
         }
-        // Source/attempt transitions already produce command and failure logs. Do not
-        // repeat those, their metrics, and all three cumulative scopes in one record.
-        if snapshot["attemptEnded"] as? Bool == true {
-            result.append(playtime(snapshot, scope: "attempt", reason: reason, context: context.merging(
-                ["attemptId": snapshot["attemptId"] ?? ""]) { _, new in new }))
-        } else if reason.hasPrefix("sessionEnded:") {
+        let keyReasons: Set<String> = [
+            "paused", "stopped", "seek", "buffering", "recovered", "ended", "sourceEnded"
+        ]
+        let isKeyActionOrEvent = keyReasons.contains(reason)
+        let isAttemptEnded = snapshot["attemptEnded"] as? Bool == true
+        let isSessionEnded = reason.hasPrefix("sessionEnded:")
+        let isLifetimeEnded = reason == "lifetimeEnded"
+
+        if isAttemptEnded || isKeyActionOrEvent {
+            if snapshot["attempt"] != nil {
+                var attemptContext = context
+                if let attemptId = snapshot["attemptId"] as? String, !attemptId.isEmpty {
+                    attemptContext["attemptId"] = attemptId
+                }
+                result.append(playtime(snapshot, scope: "attempt", reason: reason, context: attemptContext))
+            }
+            if snapshot["source"] != nil {
+                var sourceContext: [String: Any] = [:]
+                if let idx = snapshot["sourceIndex"] as? Int { sourceContext["sourceIndex"] = idx }
+                if let sourceId = snapshot["sourceId"] as? String, !sourceId.isEmpty { sourceContext["sourceId"] = sourceId }
+                result.append(playtime(snapshot, scope: "source", reason: reason, context: sourceContext))
+            }
+            if snapshot["session"] != nil {
+                var sessionContext: [String: Any] = [:]
+                if let sessionId = snapshot["sessionId"] as? String, !sessionId.isEmpty { sessionContext["sessionId"] = sessionId }
+                result.append(playtime(snapshot, scope: "session", reason: reason, context: sessionContext))
+            }
+        } else if isSessionEnded {
             result.append(playtime(snapshot, scope: "session", reason: reason, context: [:]))
         }
-        if reason == "lifetimeEnded" {
+
+        if isLifetimeEnded {
             result.append(playtime(snapshot, scope: "lifetime", reason: reason, context: [:]))
         }
         return result
