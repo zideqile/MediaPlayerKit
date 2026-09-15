@@ -38,6 +38,10 @@ final class PlayerRequestStatistics {
             var entry = item; entry["code"] = code; entry["domain"] = event.errorDomain
             append(entry, to: &errors)
         }
+        // Playlist reloads are expected in HLS. Exclude them only from repeat
+        // detection, retaining their slow-request and HTTP/network-error records.
+        if event.kind.lowercased() == "playlist" ||
+            URL(string: event.url)?.pathExtension.lowercased() == "m3u8" { return }
         // Error-log entries do not prove a new request was started.
         guard let start = event.startAt, start.isFinite else { return }
         if let first = seen[event.url] {

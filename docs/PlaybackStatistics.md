@@ -91,7 +91,7 @@ SDK 通过真实请求事件生成以下 error 级别汇总，复用 ES 和 Demo
 | 日志后缀（前缀均为 `PlayerSourceRequestStatistics.`） | 内容 |
 | --- | --- |
 | `logSlowRequests` | 超过 `slowRequestThreshold` 的请求；默认 600ms，沿用 url/endAt/elapsed/size，未知字段省略 |
-| `logAbnormalRequests` | 按 URL 统计重复访问；沿用 count/startAt，这不是“访问必然失败”的判定 |
+| `logAbnormalRequests` | 按 URL 统计重复访问，排除 playlist 类型和 URL 路径以 .m3u8 结尾的请求（忽略大小写、查询参数和片段）；沿用 count/startAt，这不是“访问必然失败”的判定 |
 | `logUnexpectedStatusRequests` | 实际 HTTP 4xx/5xx；保留 url/status/endAt |
 | `logNetworkErrors` | 有错误码但无可信 HTTP 状态的事件，使用 code/domain，属于原生扩展 |
 
@@ -116,7 +116,7 @@ SDK 通过真实请求事件生成以下 error 级别汇总，复用 ES 和 Demo
 重复汇总不会在下个窗口再次计入第一次访问；切源时清空检测缓存。
 
 与 vplayer 的区别：206/304 等有效响应不当作异常；缓存命中不算网络请求；
-按完成事件回填实际开始时间，统计受缓存上限约束；重复 URL 可能来自正常直播轮询或 Range 请求。
+按完成事件回填实际开始时间，统计受缓存上限约束；播放列表重复加载不计异常，但慢请求和 HTTP 错误仍统计；其余重复 URL 仍可能来自正常 Range 请求。
 没有通过重发探测请求、修改媒体地址或代理下载来生成数据。
 
 接口依据：[Apple AVMetrics 介绍](https://developer.apple.com/videos/play/wwdc2024/10113/)、

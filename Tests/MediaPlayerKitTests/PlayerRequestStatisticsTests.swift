@@ -79,3 +79,29 @@ extension PlayerRequestStatisticsTests {
         XCTAssertEqual(appender.messages.filter { $0.contains("logSlowRequests") }.count, 1)
     }
 }
+
+
+extension PlayerRequestStatisticsTests {
+    func testPlaylistReloadsAreNotAbnormalButKeepSlowAndHTTPFailures() {
+        let stats = collector()
+        let playlists = [
+            ("https://example.com/live.m3u8", "media"),
+            ("https://example.com/LIVE.M3U8?token=x#fragment", "media"),
+            ("https://example.com/playlist?id=1", "playlist")
+        ]
+        for (url, kind) in playlists {
+            for time in 1...3 {
+                stats.record(PlayerRequestEvent(url: url, startAt: Double(time), elapsed: 700,
+                                                status: 503, kind: kind))
+            }
+        }
+        let names = stats.drain().map { $0.0 }
+        XCTAssertEqual(names, ["PlayerSourceRequestStatistics.logSlowRequests",
+                               "PlayerSourceRequestStatistics.logUnexpectedStatusRequests"])
+        // Query text mentioning m3u8 must not exempt a media segment.
+        let segment = "https://example.com/segment.ts?source=live.m3u8"
+        stats.record(PlayerRequestEvent(url: segment, startAt: 4, kind: "segment"))
+        stats.record(PlayerRequestEvent(url: segment, startAt: 5, kind: "segment"))
+        XCTAssertEqual(stats.drain().map { $0.0 }, ["PlayerSourceRequestStatistics.logAbnormalRequests"])
+    }
+}
