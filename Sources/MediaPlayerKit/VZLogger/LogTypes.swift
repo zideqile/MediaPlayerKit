@@ -15,7 +15,10 @@ public struct LogLocation {
         self.fileID = fileID; self.function = function; self.line = line
         self.typeName = typeName ?? URL(fileURLWithPath: fileID).deletingPathExtension().lastPathComponent
     }
-    public var prefix: String { "[\(typeName).\(function):\(line)] " }
+    public var prefix: String {
+        let method = function.prefix { $0 != "(" }
+        return "[\(typeName).\(method):\(line)] "
+    }
 }
 
 /// 格式化日志参数：当参数为 JSON 字符串、字典或数据时，以键值对形式输出。
