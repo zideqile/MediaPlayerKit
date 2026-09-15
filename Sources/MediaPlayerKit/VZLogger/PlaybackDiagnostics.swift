@@ -189,7 +189,7 @@ final class PlaybackDiagnostics {
         logger.logSI("first_frame_time", elapsed)
         // Unknown dimensions do not prove that the source is audio-only.
         if size.width > 0 && size.height > 0 { logger.logSI("has_video", 1) }
-        logger.logI("firstFrameTime:", elapsed, "width:", size.width, "height:", size.height, fileID: fileID, function: function, line: line, typeName: typeName)
+        logger.logI("firstFrameTime: \(LogFormatter.formatValue(elapsed))ms, width: \(LogFormatter.formatValue(size.width)), height: \(LogFormatter.formatValue(size.height))", fileID: fileID, function: function, line: line, typeName: typeName)
     }
     func sampleMetrics(interval: TimeInterval, provider: () -> PlayerRuntimeMetrics?,
                        fileID: String = #fileID, function: String = #function,

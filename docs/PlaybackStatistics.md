@@ -56,7 +56,7 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 | 日志 | 触发与字段 |
 | --- | --- |
 | `StalledSummaryInfoStatistics.summarize` | 窗口存在卡顿次数或时长时输出 error 日志；沿用 vplayer 的 `stalledCount`、`stalledTotalDuration`（毫秒） |
-| `playerCreation` | 创建完成时输出 `elapsedMs`、`createOK` |
+| `playerCreation` | 创建完成时输出 `elapsed`（带 ms 单位）、`createOK` |
 | `playtime` | 内部尝试结束（切换、替换、错误、重设源、销毁）时输出 attempt 累计时长；会话结束输出 session 累计时长；实例销毁输出 lifetime 总时长和 attempts |
 
 `playtime.totalPlayTime` 单位为毫秒；`scope` 区分 attempt/session/lifetime，`reason` 标识结算原因。

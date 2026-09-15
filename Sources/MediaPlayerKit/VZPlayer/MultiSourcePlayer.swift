@@ -169,7 +169,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     // MARK: - IPlayer: 进度与状态
     
     public func Seek(_ seconds: Int64) {
-        diagnostics.command("seek to \(seconds)")
+        diagnostics.command("seek to \(seconds)s")
         controller?.seek(to: TimeInterval(seconds))
     }
     
