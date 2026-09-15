@@ -91,7 +91,11 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         var metrics = PlayerRuntimeMetrics()
         if let track = item.tracks.compactMap({ $0.assetTrack }).first(where: { $0.mediaType == .video }),
            track.nominalFrameRate > 0 {
-            metrics.nominalFrameRate = Double(track.nominalFrameRate)
+            let fps = Double(track.nominalFrameRate)
+            metrics.nominalFrameRate = fps
+            if isPlaying {
+                metrics.displayFPS = fps
+            }
         }
         if let events = item.accessLog()?.events, !events.isEmpty {
             // Access-log totals span events; they are not TS/M3U8 request-level timings.
@@ -109,6 +113,8 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
             metrics.droppedVideoFrames = sum(events.map { Int64($0.numberOfDroppedVideoFrames) })
             metrics.mediaRequests = sum(events.map { Int64($0.numberOfMediaRequests) })
             metrics.observedBitrate = events.last?.observedBitrate
+        } else if isPlaying || isFirstFrameRendered {
+            metrics.droppedVideoFrames = 0
         }
         return metrics
     }
