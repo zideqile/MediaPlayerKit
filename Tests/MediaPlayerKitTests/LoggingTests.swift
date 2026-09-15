@@ -705,6 +705,16 @@ extension LoggingTests {
 extension LoggingTests {
     func testNumericLogFormattingPreservesTypesAndRoundsDecimals() {
         XCTAssertEqual(LogFormatter.formatArgument(244747.42835211314), "244747.43")
+        XCTAssertEqual(LogFormatter.formatArgument(795428), "795428")
+        XCTAssertEqual(LogFormatter.formatArgument(795428.0), "795428")
+        XCTAssertEqual(LogFormatter.formatArgument(Float(24)), "24")
+        XCTAssertEqual(LogFormatter.formatArgument(-2.0), "-2")
+        XCTAssertEqual(LogFormatter.formatArgument(-0.0), "0")
+        XCTAssertEqual(LogFormatter.formatArgument(1.2), "1.20")
+        XCTAssertEqual(LogFormatter.formatArgument(1.999), "2.00")
+        XCTAssertEqual(LogFormatter.formatArgument("{\"count\":1,\"fps\":24.0,\"speed\":1.234}"),
+                       "count: 1, fps: 24, speed: 1.23")
+        XCTAssertEqual(LogFormatter.roundedSample(795428.0), 795428.0)
         XCTAssertEqual(LogFormatter.formatArgument(-0.0001), "0.00")
         XCTAssertEqual(LogFormatter.formatArgument(Int64.max), String(Int64.max))
         XCTAssertEqual(LogFormatter.formatArgument(true), "true")

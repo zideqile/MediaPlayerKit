@@ -22,7 +22,8 @@ public struct LogLocation {
 public enum LogFormatter {
     /// Round only serialized samples, preserving full-precision accumulation.
     static func roundedSample(_ value: Double) -> Double {
-        guard value.isFinite, abs(value) <= Double.greatestFiniteMagnitude / 100 else { return value }
+        guard value.isFinite, value.rounded(.towardZero) != value,
+              abs(value) <= Double.greatestFiniteMagnitude / 100 else { return value }
         let result = (value * 100).rounded() / 100
         return result == 0 ? 0 : result
     }
@@ -91,6 +92,11 @@ public enum LogFormatter {
             if kind == "f" || kind == "d" {
                 let value = number.doubleValue
                 guard value.isFinite else { return number.stringValue }
+                // Integral floating-point metrics should not acquire a ".00" suffix.
+                if value.rounded(.towardZero) == value {
+                    return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"),
+                                  value == 0 ? 0 : value)
+                }
                 // Avoid negative zero; never convert integer IDs through Double.
                 return String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"),
                               abs(value) < 0.005 ? 0 : value)
