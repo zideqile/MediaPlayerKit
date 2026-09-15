@@ -79,7 +79,11 @@ final class LoggingTests: XCTestCase {
         XCTAssertTrue((record["logs"] as? String)?.contains("warn old message") == true)
         XCTAssertEqual(record["logLevels"] as? String, "WARN,")
         XCTAssertEqual((record["statLogs"] as? [String: [Double]])?["fps"], [30])
-        XCTAssertNotNil((record["globalPlayerInfo"] as? [String: Any])?["optionInfo"])
+        let globalPlayerInfo = record["globalPlayerInfo"] as? [String: Any]
+        let optionInfo = globalPlayerInfo?["optionInfo"] as? [String: Any]
+        XCTAssertNotNil(optionInfo)
+        XCTAssertEqual(optionInfo?["version"] as? String, SDKVersion.version)
+        XCTAssertNil(globalPlayerInfo?["version"])
         appender.destroy()
     }
     func testOldUploadContract() throws {
