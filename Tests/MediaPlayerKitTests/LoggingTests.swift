@@ -293,6 +293,30 @@ extension LoggingTests {
         XCTAssertTrue(attached.contains("third"))
     }
 
+    func testIndexIncrementsAcrossLoggerGroups() throws {
+        let config = VPlayerConfig()
+        let options = InitConfig(); options.appenders = ["ESAppender"]
+        let transport = MockLogTransport()
+        try Logger.initialize(config: config, initConfig: options, transport: transport)
+        defer { Logger.destroy() }
+
+        Logger.logI("first global message")
+        let playerLogger = Logger.getLogger("player-12345")
+        playerLogger.logI("second player message")
+        Logger.flushLog()
+
+        XCTAssertEqual(transport.requests.count, 2)
+        let body0 = try XCTUnwrap(transport.requests.first?.httpBody)
+        let records0 = try XCTUnwrap(JSONSerialization.jsonObject(with: body0) as? [[String: Any]])
+        XCTAssertEqual(records0.first?["index"] as? Int, 0)
+        XCTAssertEqual(records0.first?["logGroup"] as? String, "")
+
+        let body1 = try XCTUnwrap(transport.requests.last?.httpBody)
+        let records1 = try XCTUnwrap(JSONSerialization.jsonObject(with: body1) as? [[String: Any]])
+        XCTAssertEqual(records1.first?["index"] as? Int, 1)
+        XCTAssertEqual(records1.first?["logGroup"] as? String, "player-12345")
+    }
+
     func testStatisticsRetainEntireUploadPeriod() {
         let uploader = RecordingUploader()
         var policy = LogUploadPolicy(); policy.uploadIntervalSeconds = 600
