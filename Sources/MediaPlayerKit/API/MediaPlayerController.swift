@@ -41,6 +41,11 @@ import CoreGraphics
     
     /// Available engine measurements; read on the main thread.
     public var runtimeMetrics: PlayerRuntimeMetrics? { engine.runtimeMetrics }
+    public var requestScope: String { engine.requestScope }
+    /// Resource observations on the main thread; not every engine supports them.
+    public var requestEventHandler: ((PlayerRequestEvent) -> Void)? {
+        didSet { engine.requestEventHandler = requestEventHandler }
+    }
 
     /// 当前配置
     @objc public var config: PlayerConfig
@@ -73,6 +78,7 @@ import CoreGraphics
     private func setupEngine() {
         self.playerView.engineDisplayName = engine is KSAVPlayerEngine ? "AVPlayer" : "KSPlayer / FFmpeg"
         self.engine.outputDelegate = self
+        self.engine.requestEventHandler = requestEventHandler
         self.playerView.attachRenderView(self.engine.renderView)
     }
     

@@ -35,6 +35,15 @@ public final class KSAVPlayerView: NSView {
 /// 原生 AVFoundation / AVPlayer 工业级高性能引擎实现
 public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     public weak var outputDelegate: PlayerEngineOutputDelegate?
+    public var requestEventHandler: ((PlayerRequestEvent) -> Void)?
+    private var requestTask: Task<Void, Never>?
+    private var errorEventCount = 0
+    public var requestScope: String {
+        #if compiler(>=6.0)
+        if #available(iOS 18, macOS 15, tvOS 18, visionOS 2, *) { return "hlsRequests" }
+        #endif
+        return "errorLog"
+    }
     
     public var renderView: PlatformView {
         return playerView
@@ -146,6 +155,7 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": config.customHeaders])
         let item = AVPlayerItem(asset: asset)
         self.playerItem = item
+        observeRequests(item)
         
         let player = AVPlayer(playerItem: item)
         self.player = player
@@ -202,6 +212,8 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
     }
     
     public func reset() {
+        requestTask?.cancel(); requestTask = nil
+        errorEventCount = 0
         removeKVO()
         player?.pause()
         #if canImport(UIKit)
@@ -242,10 +254,82 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         return qosReport
     }
     
+
+    private func observeRequests(_ item: AVPlayerItem) {
+        #if compiler(>=6.0)
+        if #available(iOS 18, macOS 15, tvOS 18, visionOS 2, *) {
+            let events = item.allMetrics()
+            requestTask = Task { @MainActor [weak self, weak item] in
+                for await (event, _) in events {
+                    guard !Task.isCancelled, let self = self, let item = item,
+                          self.playerItem === item else { break }
+                    if let segment = event as? AVMetricHLSMediaSegmentRequestEvent,
+                       let resource = segment.mediaResourceRequestEvent {
+                        self.collectRequest(resource, kind: "segment")
+                    } else if let playlist = event as? AVMetricHLSPlaylistRequestEvent,
+                              let resource = playlist.mediaResourceRequestEvent {
+                        self.collectRequest(resource, kind: "playlist")
+                    } else if let key = event as? AVMetricContentKeyRequestEvent,
+                              let resource = key.mediaResourceRequestEvent {
+                        self.collectRequest(resource, kind: "key")
+                    }
+                }
+            }
+            return
+        }
+        #endif
+        NotificationCenter.default.addObserver(self, selector: #selector(requestErrorLogChanged(_:)),
+                                              name: .AVPlayerItemNewErrorLogEntry, object: item)
+    }
+
+    @objc private func requestErrorLogChanged(_ notification: Notification) {
+        guard let item = notification.object as? AVPlayerItem else { return }
+        DispatchQueue.main.async { [weak self, weak item] in
+            guard let self = self, let item = item, self.playerItem === item else { return }
+            self.collectRequestErrors(item)
+        }
+    }
+
+    private func collectRequestErrors(_ item: AVPlayerItem) {
+        guard playerItem === item else { return }
+        let events = item.errorLog()?.events ?? []
+        if events.count < errorEventCount { errorEventCount = 0 }
+        let fresh = events.dropFirst(errorEventCount)
+        errorEventCount = events.count
+        for event in fresh {
+            guard let url = event.uri else { continue }
+            // An AV error code is not necessarily an HTTP response status.
+            requestEventHandler?(PlayerRequestEvent(url: url,
+                endAt: event.date.map { $0.timeIntervalSince1970 * 1000 },
+                errorCode: event.errorStatusCode, errorDomain: event.errorDomain))
+        }
+    }
+
+    #if compiler(>=6.0)
+    @available(iOS 18, macOS 15, tvOS 18, visionOS 2, *)
+    private func collectRequest(_ resource: AVMetricMediaResourceRequestEvent, kind: String) {
+        guard let url = resource.url else { return }
+        let transactions = resource.networkTransactionMetrics?.transactionMetrics ?? []
+        let last = transactions.last
+        let error = resource.errorEvent.map { $0.error as NSError }
+        let start = resource.requestStartTime.timeIntervalSince1970 * 1000
+        let end = resource.responseEndTime.timeIntervalSince1970 * 1000
+        requestEventHandler?(PlayerRequestEvent(url: url.absoluteString,
+            startAt: start, endAt: end, elapsed: end >= start ? end - start : nil,
+            size: last.map { $0.countOfResponseBodyBytesReceived },
+            status: (last?.response as? HTTPURLResponse)?.statusCode,
+            kind: kind, cached: resource.wasReadFromCache,
+            errorCode: error?.code, errorDomain: error?.domain))
+    }
+    #endif
+
+    deinit { requestTask?.cancel(); NotificationCenter.default.removeObserver(self) }
+
     private func setupKVO(for item: AVPlayerItem, player: AVPlayer) {
         itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             guard let self = self else { return }
             DispatchQueue.main.async {
+                guard self.playerItem === item else { return }
                 switch item.status {
                 case .readyToPlay:
                     if self.state == .preparing {
@@ -258,6 +342,7 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
                         }
                     }
                 case .failed:
+                    if self.requestScope == "errorLog" { self.collectRequestErrors(item) }
                     self.state = .error
                     let err = item.error as NSError? ?? NSError(domain: "MediaPlayerKit", code: -1, userInfo: [NSLocalizedDescriptionKey: "播放加载失败"])
                     var info = err.userInfo

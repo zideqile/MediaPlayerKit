@@ -78,6 +78,7 @@ final class PlaybackStatisticsTracker {
     private var lastWindow: (play: Double, stall: Double, count: Int) = (0, 0, 0)
     private(set) var latest: [String: Any] = [:]
     var emit: (([String: Any]) -> Void)?
+    var requestScope = "engineAggregate"
 
     init(clock: @escaping () -> TimeInterval) { self.clock = clock }
 
@@ -208,7 +209,7 @@ final class PlaybackStatisticsTracker {
             "create_ms": creationMs.map { $0 as Any } ?? NSNull(), "createOK": creationOK,
             "error": lastError.map { $0 as Any } ?? NSNull(), "metrics": metrics,
             "metrics_time": metricsSampleTime.map { $0 as Any } ?? NSNull(),
-            "request_scope": "engineAggregate", "request_details": false]
+            "request_scope": requestScope, "request_details": requestScope == "hlsRequests"]
         record["reportable"] = Self.isReportable(record)
         latest = record; emit?(record)
     }

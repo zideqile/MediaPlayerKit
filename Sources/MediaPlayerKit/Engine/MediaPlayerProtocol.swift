@@ -30,6 +30,8 @@ public protocol MediaPlayerProtocol: AnyObject {
     var isPlaying: Bool { get }
     var naturalSize: CGSize { get }
     var runtimeMetrics: PlayerRuntimeMetrics? { get }
+    var requestEventHandler: ((PlayerRequestEvent) -> Void)? { get set }
+    var requestScope: String { get }
     
     func prepare(with url: URL, config: PlayerConfig)
     func play()
@@ -49,4 +51,6 @@ public protocol MediaPlayerProtocol: AnyObject {
 
 public extension MediaPlayerProtocol {
     var runtimeMetrics: PlayerRuntimeMetrics? { nil }
+    var requestEventHandler: ((PlayerRequestEvent) -> Void)? { get { nil } set {} }
+    var requestScope: String { "engineAggregate" }
 }

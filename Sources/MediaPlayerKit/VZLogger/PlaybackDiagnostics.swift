@@ -5,12 +5,25 @@ import Foundation
 final class PlaybackDiagnostics {
     let group: String
     private let statistics: PlaybackStatisticsTracker
+    private let requests = PlayerRequestStatistics()
     private var statisticsTimer: Timer?
     private var statisticsInterval: TimeInterval = 10
     var onStatistics: (([String: Any]) -> Void)?
     var currentStatistics: [String: Any] { statistics.latest }
     private var metricsProvider: (() -> PlayerRuntimeMetrics?)?
     private var metricsInterval: TimeInterval = 3
+
+    func configureRequests(threshold: Double, isLive: Bool) {
+        requests.threshold = threshold; requests.isLive = isLive
+    }
+    func setRequestScope(_ scope: String) { statistics.requestScope = scope }
+    func request(_ event: PlayerRequestEvent) {
+        guard !closed else { return }
+        requests.record(event)
+    }
+    private func flushRequests() {
+        for (name, fields) in requests.drain() { logger.logE(name, fields) }
+    }
 
     func configureStatistics(interval: TimeInterval) {
         statisticsInterval = interval.isFinite ? max(0, interval) : 10
@@ -23,11 +36,13 @@ final class PlaybackDiagnostics {
             guard let self = self else { return }
             self.sampleMetrics(interval: self.metricsInterval) { self.metricsProvider?() }
             self.statistics.publish()
+            self.flushRequests()
         }
         statisticsTimer = timer; RunLoop.main.add(timer, forMode: .common)
     }
     func created() { statistics.created() }
     func newSources() {
+        flushRequests(); requests.clear()
         endBuffering()
         statistics.reset()
         playingSince = nil; totalPlayTime = 0; lastState = nil
@@ -38,6 +53,7 @@ final class PlaybackDiagnostics {
     }
     func manualSwitch() { statistics.cancelRecovery() }
     func endAttempt(reason: String) {
+        flushRequests(); requests.clear()
         if let start = playingSince { totalPlayTime += max(0, clock() - start) }
         playingSince = nil
         endBuffering()
@@ -129,6 +145,9 @@ final class PlaybackDiagnostics {
     }
     func begin(source: PlayerSource, engine: PlayerEngineType, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
+        flushRequests()
+        requests.begin(source: source.url, type: source.type)
+        statistics.requestScope = "engineAggregate"
         let engineStr = engineName(engine)
         currentEngineName = engineStr
         statistics.begin(sourceURL: source.url, sourceType: source.type, sourceIndex: source.sourceIndex, engine: engineStr)
@@ -208,6 +227,7 @@ final class PlaybackDiagnostics {
 
     func failed(_ failure: PlaybackAttemptFailure, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
+        flushRequests()
         statistics.failed(error: failure.error, willRecover: failure.action != .stop)
         if let start = playingSince { totalPlayTime += max(0, clock() - start) }
         playingSince = nil; lastState = .error
@@ -229,6 +249,7 @@ final class PlaybackDiagnostics {
     }
     func terminal(_ error: NSError, fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
+        flushRequests(); requests.clear()
         statistics.endAttempt(reason: "terminalError")
         statisticsTimer?.invalidate(); statisticsTimer = nil
         stateTimer?.invalidate(); stateTimer = nil
@@ -247,6 +268,7 @@ final class PlaybackDiagnostics {
     }
     func finish(fileID: String = #fileID, function: String = #function, line: UInt = #line, typeName: String = "MultiSourcePlayer") {
         guard !closed else { return }
+        flushRequests(); requests.clear()
         statistics.finish(reason: "destroy")
         statisticsTimer?.invalidate(); statisticsTimer = nil; metricsProvider = nil
         endBuffering()

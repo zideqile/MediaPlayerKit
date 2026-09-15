@@ -84,10 +84,44 @@ ES 实际发送仍由现有上传策略控制，本次没有增加独立上报�
 
 metrics 只包含内核实际返回的有效指标：显示帧率（`fps`）、标称帧率（`frame_rate`）、观测吞吐率（`bandwidth`）、网络增量与速率（`net_bytes`、`net_speed`、`net_bytes_total`）、读取增量与速率（`read_bytes`、`read_speed`、`read_bytes_total`）、丢帧与丢包（`drop`、`drop_count`、`drop_packet`、`drop_packet_count`）以及媒体请求（`media_requests`、`media_requests_total`）。所有字段除既有对标字段外均遵循言简意赅原则，首次采样和计数器重置后不伪造差值。
 
-request_scope 固定为 engineAggregate，request_details 为 false。
-AVPlayer access log 的汇总数据不能充当每个 m3u8/TS 请求的 URL、耗时、大小和 HTTP 状态。
-本次未改造 FFmpeg 网络层、未增加代理，也未伪造慢请求/重复请求明细。
-这些逐请求指标仍需底层提供可靠回调后单独扩展。
+### 请求统计
+
+SDK 通过真实请求事件生成以下 error 级别汇总，复用 ES 和 Demo SDK 日志：
+
+| 日志后缀（前缀均为 `PlayerSourceRequestStatistics.`） | 内容 |
+| --- | --- |
+| `logSlowRequests` | 超过 `slowRequestThreshold` 的请求；默认 600ms，沿用 url/endAt/elapsed/size，未知字段省略 |
+| `logAbnormalRequests` | 按 URL 统计重复访问；沿用 count/startAt，这不是“访问必然失败”的判定 |
+| `logUnexpectedStatusRequests` | 实际 HTTP 4xx/5xx；保留 url/status/endAt |
+| `logNetworkErrors` | 有错误码但无可信 HTTP 状态的事件，使用 code/domain，属于原生扩展 |
+
+包络沿用 playerInstance/sourceType/sourceUrl/sourceDomain/requestInfo；kind 区分 playlist/segment/key。
+`elapsed`、`endAt`、`startAt` 为毫秒，size 为最后一次网络事务实际收到的响应正文大小（字节），
+不是整条流的大小；小数格式使用现有日志规则，业务事件保留原精度。
+
+支持范围：
+- Xcode 16/Swift 6 及以上编译，iOS/tvOS 18、macOS 15、visionOS 2 及以上运行：
+  AVPlayer 订阅 HLS playlist/segment/key 的 AVMetrics，`request_scope=hlsRequests`、`request_details=true`。
+  此标记表示 HLS 明细接口可用，不保证系统为每次请求提供全部字段；非 HLS 源不宣称明细能力。
+- 旧系统或旧编译器：AVPlayer 采集 errorLog，`request_scope=errorLog`、`request_details=false`。
+  错误码携带其原始 domain，不直接当作 HTTP 状态，也不推算请求耗时或次数。
+- 当前 KSPlayer/FFmpeg：`request_scope=engineAggregate`、`request_details=false`。
+  上游公开接口没有完整逐请求生命周期回调，尚未接入慢请求或重复请求自动采集。
+  保留统一的 PlayerRequestEvent / MediaPlayerProtocol.requestEventHandler 扩展入口，不能将此视为 KS 已支持。
+
+周期沿用 generalStatisticsUploadInterval；0 关闭周期汇总，切换、错误、重设源和销毁仍提交已收到的记录。
+异步请求事件按控制器实例隔离；旧播放器停用后到达的事件丢弃，未完成/未交付事件不伪造结算。
+慢请求和异常状态各保留最近 5 条；重复 URL 检测缓存直播 10 个、点播 100 个，
+汇总最多 100 个 URL、每个 URL 最多 30 个时间样本，count 为窗口内纳入的次数，可能大于时间样本数。
+重复汇总不会在下个窗口再次计入第一次访问；切源时清空检测缓存。
+
+与 vplayer 的区别：206/304 等有效响应不当作异常；缓存命中不算网络请求；
+按完成事件回填实际开始时间，统计受缓存上限约束；重复 URL 可能来自正常直播轮询或 Range 请求。
+没有通过重发探测请求、修改媒体地址或代理下载来生成数据。
+
+接口依据：[Apple AVMetrics 介绍](https://developer.apple.com/videos/play/wwdc2024/10113/)、
+[资源请求事件](https://developer.apple.com/documentation/avfoundation/avmetricmediaresourcerequestevent)、
+[错误事件](https://developer.apple.com/documentation/avfoundation/avplayeritemerrorlogevent)。
 
 PlayerQoSReport 的 DNS、TCP、首包、未到达的首帧默认值改为 NaN，未采集的 droppedFrames 为 -1；
 对外 Swift/Objective-C 属性类型保持不变。toDictionary 将这些未采集值输出为 JSON null，
