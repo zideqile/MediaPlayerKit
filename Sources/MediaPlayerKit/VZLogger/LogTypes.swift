@@ -30,6 +30,45 @@ public enum LogFormatter {
         let result = (value * 100).rounded() / 100
         return result == 0 ? 0 : result
     }
+    /// Human-readable units only for runtime log text; metric samples remain numeric.
+    static func formatRuntimeMetrics(_ fields: [String: Double]) -> String {
+        fields.keys.sorted().compactMap { name in
+            guard let value = fields[name] else { return nil }
+            let text: String
+            switch name {
+            case "bandwidth", "bitrate", "observed_bitrate", "video_bitrate", "audio_bitrate":
+                text = scaled(value, base: 1000, units: ["bps", "Kbps", "Mbps", "Gbps", "Tbps"])
+            case "net_bytes", "read_bytes", "net_bytes_total", "read_bytes_total", "bytes_read", "network_bytes":
+                text = scaled(value, base: 1024, units: ["B", "KiB", "MiB", "GiB", "TiB"])
+            case "net_speed", "read_speed":
+                text = scaled(value, base: 1024, units: ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s"])
+            case "fps", "frame_rate", "nominal_frame_rate", "display_fps":
+                text = formatValue(value) + "fps"
+            case "drop", "drop_count", "dropped_frames":
+                text = formatValue(value) + "帧"
+            case "drop_packet", "drop_packet_count", "dropped_packets":
+                text = formatValue(value) + "包"
+            case "media_requests", "media_requests_total":
+                text = formatValue(value) + "次"
+            default:
+                text = formatValue(value)
+            }
+            return "\(name)=\(text)"
+        }.joined(separator: " ")
+    }
+
+    private static func scaled(_ value: Double, base: Double, units: [String]) -> String {
+        var amount = value
+        var index = 0
+        if amount.isFinite {
+            while (abs(amount) >= base || roundedSample(abs(amount)) >= base) && index < units.count - 1 {
+                amount /= base
+                index += 1
+            }
+        }
+        return formatValue(roundedSample(amount)) + units[index]
+    }
+
     /// 将日志消息中的参数转换为易读的文本。若为 JSON 字典/字符串/数据，转为键值对形式。
     public static func formatArgument(_ item: Any) -> String {
         if let source = item as? PlayerSource {

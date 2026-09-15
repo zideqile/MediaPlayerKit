@@ -738,3 +738,23 @@ extension LoggingTests {
                        "[Player.currentPosition:20] ")
     }
 }
+
+
+extension LoggingTests {
+    func testRuntimeLogUnitsAndScaling() {
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics([
+            "bandwidth": 19488186, "drop": 0, "media_requests": 2,
+            "net_bytes": 1534832, "net_speed": 472257.16
+        ]), "bandwidth=19.49Mbps drop=0帧 media_requests=2次 net_bytes=1.46MiB net_speed=461.19KiB/s")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics([
+            "read_bytes": 1024, "read_speed": 0, "fps": 24, "drop_packet": 1
+        ]), "drop_packet=1包 fps=24fps read_bytes=1KiB read_speed=0B/s")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bandwidth": 1000]), "bandwidth=1Kbps")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["net_bytes": 1023]), "net_bytes=1023B")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["net_bytes": 1023.999]), "net_bytes=1KiB")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bandwidth": 999.999]), "bandwidth=1Kbps")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bitrate": 500_000]), "bitrate=500Kbps")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["display_fps": 60]), "display_fps=60fps")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["dropped_frames": 3]), "dropped_frames=3帧")
+    }
+}
