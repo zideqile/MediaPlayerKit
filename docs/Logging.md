@@ -196,7 +196,7 @@ await window.vzPlayerBridge.request('SendEvent', {
 
 状态通过 `logAI` 写入附加日志，包含 `videoCurrentTime`、`duration`、`playbackRate`、
 `bufferedEnd`、`playState`、`paused`、`muted`、视频尺寸、`lastEvent` 和本次内核尝试的
-`totalPlayTime`（秒，仅累计 playing 状态）。不可用的非有限数值输出 null。
+`totalPlayTime`。时间相关字段（`videoCurrentTime`、`duration`、`bufferedEnd`、`totalPlayTime`）带 `s`（秒）单位（例如 `bufferedEnd: 49.88s, duration: 0s, totalPlayTime: 16.82s, videoCurrentTime: 16.52s`）。不可用的非有限数值输出 null。
 原生 SDK 没有 HTML readyState；bufferedEnd 是媒体时间轴上的缓冲终点，不伪造浏览器缓冲区间。
 
 ESAppender 按 `runtimeStateCollect.stateCountLimit` 保留最近 N 条附加日志（默认沿用
@@ -228,6 +228,6 @@ statLogs 在序列化时保留最多两位小数；JSON 数字不会强制补零
 
 `runtime metrics:` 文本按量级显示单位：bandwidth 使用 bps/Kbps/Mbps（1000 进制）；
 net_bytes/read_bytes 及其 total 使用 B/KiB/MiB（1024 进制）；net_speed/read_speed 使用对应字节单位每秒。
-帧率使用 fps，丢帧使用“帧”，丢包使用“包”，请求数使用“次”。
-例如 `bandwidth=19.49Mbps net_bytes=1.46MiB net_speed=461.19KiB/s`。
+帧率使用 fps，丢帧（drop）、丢包（drop_packet）与媒体请求数（media_requests）保持纯数字计数，不附加单位。
+例如 `bandwidth=19.49Mbps drop=0 media_requests=2 net_bytes=1.46MiB net_speed=461.19KiB/s`。
 单位换算仅用于日志文本；statLogs、metrics 和业务回调仍使用原始数值和既有单位。
