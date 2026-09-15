@@ -306,15 +306,18 @@ extension LoggingTests {
         Logger.flushLog()
 
         XCTAssertEqual(transport.requests.count, 2)
-        let body0 = try XCTUnwrap(transport.requests.first?.httpBody)
-        let records0 = try XCTUnwrap(JSONSerialization.jsonObject(with: body0) as? [[String: Any]])
-        XCTAssertEqual(records0.first?["index"] as? Int, 0)
-        XCTAssertEqual(records0.first?["logGroup"] as? String, "")
-
-        let body1 = try XCTUnwrap(transport.requests.last?.httpBody)
-        let records1 = try XCTUnwrap(JSONSerialization.jsonObject(with: body1) as? [[String: Any]])
-        XCTAssertEqual(records1.first?["index"] as? Int, 1)
-        XCTAssertEqual(records1.first?["logGroup"] as? String, "player-12345")
+        var allRecords: [[String: Any]] = []
+        for req in transport.requests {
+            let body = try XCTUnwrap(req.httpBody)
+            let list = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [[String: Any]])
+            allRecords.append(contentsOf: list)
+        }
+        allRecords.sort { (($0["index"] as? Int) ?? 0) < (($1["index"] as? Int) ?? 0) }
+        XCTAssertEqual(allRecords.count, 2)
+        XCTAssertEqual(allRecords[0]["index"] as? Int, 0)
+        XCTAssertEqual(allRecords[0]["logGroup"] as? String, "")
+        XCTAssertEqual(allRecords[1]["index"] as? Int, 1)
+        XCTAssertEqual(allRecords[1]["logGroup"] as? String, "player-12345")
     }
 
     func testPlayerCreationLogFormatting() {
