@@ -124,9 +124,6 @@ public enum LogFormatter {
         if val is NSNull {
             return "null"
         }
-        if let b = val as? Bool {
-            return b ? "true" : "false"
-        }
         if let subDict = val as? [String: Any] {
             return "[\(formatDictionary(subDict))]"
         }
