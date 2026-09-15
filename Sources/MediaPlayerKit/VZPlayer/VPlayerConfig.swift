@@ -76,6 +76,8 @@ public final class VPlayerConfig: NSObject, Codable {
     @objc public var runtimeStateCollect = RuntimeStateCollectConfig()
     /// vplayer-compatible statistics publication interval, milliseconds. 0 disables periodic snapshots.
     @objc public var generalStatisticsUploadInterval: Int = 10000
+    /// Slow resource request threshold in milliseconds, matching vplayer.
+    @objc public var slowRequestThreshold: Int = 600
     
     @objc public var appVZPlayerConfigJsonString: String = ""
     
@@ -84,6 +86,7 @@ public final class VPlayerConfig: NSObject, Codable {
         case topicId, streamId, userId, userIdUuid
         case isLive, env, isHardwareDecode, headers
         case logConfig, logServerConfig, runtimeStateCollect, generalStatisticsUploadInterval
+        case slowRequestThreshold
         case appVZPlayerConfigJsonString
     }
 
@@ -108,6 +111,7 @@ public final class VPlayerConfig: NSObject, Codable {
         logConfig = try values.decodeIfPresent(LogConfig.self, forKey: .logConfig) ?? logConfig
         logServerConfig = try values.decodeIfPresent(LogServerConfig.self, forKey: .logServerConfig) ?? logServerConfig
         generalStatisticsUploadInterval = try values.decodeIfPresent(Int.self, forKey: .generalStatisticsUploadInterval) ?? generalStatisticsUploadInterval
+        slowRequestThreshold = try values.decodeIfPresent(Int.self, forKey: .slowRequestThreshold) ?? slowRequestThreshold
         runtimeStateCollect = try values.decodeIfPresent(RuntimeStateCollectConfig.self, forKey: .runtimeStateCollect) ?? runtimeStateCollect
         appVZPlayerConfigJsonString = try values.decodeIfPresent(String.self, forKey: .appVZPlayerConfigJsonString) ?? appVZPlayerConfigJsonString
     }

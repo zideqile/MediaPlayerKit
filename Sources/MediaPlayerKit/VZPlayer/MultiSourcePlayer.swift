@@ -65,6 +65,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         self.savedLoop = config.loop
         self.savedSpeed = config.speed
         super.init()
+        diagnostics.configureRequests(threshold: Double(config.slowRequestThreshold), isLive: config.isLive)
         diagnostics.configureStatistics(interval: Double(config.generalStatisticsUploadInterval) / 1000)
         diagnostics.onStatistics = { [weak self] record in
             guard let self = self else { return }
@@ -290,6 +291,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func setConfig(_ config: VPlayerConfig) {
+        diagnostics.configureRequests(threshold: Double(config.slowRequestThreshold), isLive: config.isLive)
         diagnostics.configureStatistics(interval: Double(config.generalStatisticsUploadInterval) / 1000)
         self.playerConfig = config
         self.savedVolume = config.volume
@@ -394,6 +396,13 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         let ctrl = MediaPlayerController(config: config)
         ctrl.delegate = self
         self.controller = ctrl
+        diagnostics.setRequestScope(ctrl.requestScope == "hlsRequests" && source.type.lowercased() != "hls"
+                                    ? "engineAggregate" : ctrl.requestScope)
+        ctrl.requestEventHandler = { [weak self, weak ctrl] event in
+            guard let self = self, let ctrl = ctrl, self.controller === ctrl,
+                  !self.isDestroyed, !self.attemptHandled else { return }
+            self.diagnostics.request(event)
+        }
         diagnostics.created()
         diagnostics.startStateCollection(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds), metrics: { [weak ctrl] in ctrl?.runtimeMetrics }) { [weak self, weak ctrl] in
             guard let self = self, let ctrl = ctrl, self.controller === ctrl,
