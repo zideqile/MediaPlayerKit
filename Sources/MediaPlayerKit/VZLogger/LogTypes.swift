@@ -44,17 +44,31 @@ public enum LogFormatter {
                 text = scaled(value, base: 1024, units: ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s"])
             case "fps", "frame_rate", "nominal_frame_rate", "display_fps":
                 text = formatValue(value) + "fps"
-            case "drop", "drop_count", "dropped_frames":
-                text = formatValue(value) + "帧"
-            case "drop_packet", "drop_packet_count", "dropped_packets":
-                text = formatValue(value) + "包"
-            case "media_requests", "media_requests_total":
-                text = formatValue(value) + "次"
             default:
                 text = formatValue(value)
             }
             return "\(name)=\(text)"
         }.joined(separator: " ")
+    }
+
+    /// Human-readable runtime state text with seconds units for time metrics.
+    static func formatRuntimeState(_ fields: [String: Any]) -> String {
+        let timeKeys: Set<String> = ["bufferedEnd", "duration", "totalPlayTime", "videoCurrentTime", "currentTime"]
+        let sortedKeys = fields.keys.sorted()
+        return sortedKeys.map { key in
+            let val = fields[key]!
+            if timeKeys.contains(key) {
+                if let number = val as? NSNumber {
+                    let d = number.doubleValue
+                    if d.isFinite {
+                        return "\(key): \(formatValue(val))s"
+                    }
+                } else if let d = val as? Double, d.isFinite {
+                    return "\(key): \(formatValue(d))s"
+                }
+            }
+            return "\(key): \(formatValue(val))"
+        }.joined(separator: ", ")
     }
 
     private static func scaled(_ value: Double, base: Double, units: [String]) -> String {
@@ -107,6 +121,12 @@ public enum LogFormatter {
 
     /// 格式化单个值（递归支持字典、数组、布尔等）
     public static func formatValue(_ val: Any) -> String {
+        if val is NSNull {
+            return "null"
+        }
+        if let b = val as? Bool {
+            return b ? "true" : "false"
+        }
         if let subDict = val as? [String: Any] {
             return "[\(formatDictionary(subDict))]"
         }

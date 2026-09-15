@@ -103,10 +103,8 @@ final class PlaybackDiagnostics {
         if let event = event { lastEvent = ["name": event, "time": logTime()] }
         fields["lastEvent"] = lastEvent
         fields["totalPlayTime"] = totalPlayTime + (playingSince.map { max(0, clock() - $0) } ?? 0)
-        guard JSONSerialization.isValidJSONObject(fields),
-              let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),
-              let text = String(data: data, encoding: .utf8) else { return }
-        logger.logAI("runtime state:", text)
+        let message = LogFormatter.formatRuntimeState(fields)
+        logger.logAI("runtime state:", message)
     }
     private var logger: InternalLogger { Logger.getLogger(group) }
 
