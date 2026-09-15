@@ -78,8 +78,9 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
   - `player_type`：内核类型枚举值
   - `player_<engine>_error_code`：内核错误码（对标 Android `player_<type>_error_code`）
   - `internal_error`：内部非致命重试与故障计数
-  - `stall_duration`：单次卡顿时长（毫秒）
-  - `stall_count`：卡顿次数计数
+  - `stall_duration`：单次卡顿时长（毫秒，无卡顿默认 [0]）
+  - `stall_count`：卡顿次数计数（无卡顿默认 [0]）
+  - `stall_win_ms`：卡顿统计窗口时长（毫秒，默认 [180000]）
   - `total_stall`：累计卡顿总时长（毫秒）
   - `on_waiting`：进入缓冲态计数
   - `on_playing`：进入播放态计数
@@ -87,6 +88,10 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
   - `close_normal` / `player_<engine>_close_normal`：正常退出为 1，异常为 0
   - `drop`：采样周期丢帧数（对标 Android `drop`）
   - `drop_count`：累计丢帧总数（对标 Android `drop_count`）
+  - `ts_<status>`（如 `ts_200`）：TS/分片请求状态码计数打点（对标 Android `ts_<status>`）
+  - `ts_byte`：TS/分片请求下载传输字节数（对标 Android `ts_byte`）
+  - `ts_time`：TS/分片请求耗时毫秒数（对标 Android `ts_time`）
+  - `bitrate`：观测码率（对标 Android `bitrate`，同时保留 `bandwidth` 兼容 web）
 - 聚合网络与质量指标：除对标 Android vzplayer 的既有字段（`fps`、`frame_rate`、`drop`、`drop_count` 等）严格同名外，其余运行时网络、读取、丢包与请求指标均遵循“言简意赅”原则，消除冗余的平台特异前缀（如 `ios_`）与过度修饰（如 `_delta`、`_per_second`、`_bps`）：
   - `net_bytes`：采样周期网络传输增量字节数
   - `net_speed`：采样周期网络下载速率（字节/秒）
@@ -94,7 +99,6 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
   - `read_speed`：采样周期引擎读取速率（字节/秒）
   - `drop_packet`：采样周期丢弃的视频数据包数
   - `media_requests`：采样周期完成的媒体请求增量数
-- 尚未采集：TS/M3U8 细粒度逐切片请求的耗时、字节、HTTP 状态码（AVPlayer 守护进程接管下载，不提供切片级网络拦截）。
 - 未调用 export.Init 时，播放器仍可运行；也可由宿主先调用 Logger.configure / initialize 设置自定义日志输出。
 
 

@@ -88,7 +88,19 @@ public final class ESUploadAppender: Appender {
             "logs": chunk.map { $0.1 }.joined(), "attachedLogs": attached.joined(),
             "logLevels": LogLevel.allCases.filter { level in chunk.contains { $0.0 == level } }.map { $0.label.uppercased() + "," }.joined(),
             "currentPlayerInfo": ["srcUrl": sourceURL, "srcType": sourceType, "srcDomain": URL(string: sourceURL)?.host ?? ""]]
-        if !statistics.isEmpty { fields["statLogs"] = statistics.mapValues { $0.map(LogFormatter.roundedSample) } }
+        if !statistics.isEmpty {
+            var stats = statistics
+            if stats["stall_win_ms"] == nil {
+                stats["stall_win_ms"] = [Double(policy.statsMinUploadIntervalMs)]
+            }
+            if stats["stall_count"] == nil {
+                stats["stall_count"] = [0]
+            }
+            if stats["stall_duration"] == nil {
+                stats["stall_duration"] = [0]
+            }
+            fields["statLogs"] = stats.mapValues { $0.map(LogFormatter.roundedSample) }
+        }
         return fields
     }
     private func flushBuffered(force: Bool) {

@@ -20,6 +20,29 @@ final class PlaybackDiagnostics {
     func request(_ event: PlayerRequestEvent) {
         guard !closed else { return }
         requests.record(event)
+        let kind = event.kind.lowercased()
+        let isSegment: Bool
+        if kind == "segment" {
+            isSegment = true
+        } else if kind == "playlist" || kind == "key" {
+            isSegment = false
+        } else {
+            let lower = event.url.lowercased()
+            isSegment = lower.contains(".ts") || lower.contains(".m4s") ||
+                (!lower.contains(".m3u8") && !lower.isEmpty)
+        }
+        if isSegment {
+            let status = event.status ?? (event.errorCode != nil && event.errorCode! > 0 ? event.errorCode! : (event.errorCode == nil ? 200 : nil))
+            if let status = status {
+                logger.logSI("ts_\(status)", 1)
+            }
+            if let size = event.size, size >= 0 {
+                logger.logSI("ts_byte", Double(size))
+            }
+            if let elapsed = event.elapsed, elapsed >= 0 {
+                logger.logSI("ts_time", elapsed)
+            }
+        }
     }
     private func flushRequests() {
         for (name, fields) in requests.drain() { logger.logE(name, fields) }
@@ -276,6 +299,7 @@ final class PlaybackDiagnostics {
         logger.logSI("player_" + engine + "_close_normal", 0)
         logger.logSI("total_stall", totalStallDurationMs)
         logger.logSI("stall_count", Double(totalStallCount))
+        logger.logSI("stall_win_ms", 180000)
         logger.logSI("on_waiting", Double(onWaitingCount))
         logger.logSI("on_playing", Double(onPlayingCount))
         if totalDropCount > 0 { logger.logSI("drop_count", Double(totalDropCount)) }
@@ -293,6 +317,7 @@ final class PlaybackDiagnostics {
         logger.logSI("player_" + engine + "_close_normal", 1)
         logger.logSI("total_stall", totalStallDurationMs)
         logger.logSI("stall_count", Double(totalStallCount))
+        logger.logSI("stall_win_ms", 180000)
         logger.logSI("on_waiting", Double(onWaitingCount))
         logger.logSI("on_playing", Double(onPlayingCount))
         if totalDropCount > 0 { logger.logSI("drop_count", Double(totalDropCount)) }

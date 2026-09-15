@@ -839,4 +839,44 @@ extension LoggingTests {
         XCTAssertEqual(formatted, "bufferedEnd: 49.88s, duration: 0s, lastEvent: [name: playing, time: 12:23:24.247], muted: false, paused: false, playState: playing, playbackRate: 1, totalPlayTime: 16.82s, videoCurrentTime: 16.52s, videoHeight: 1080, videoWidth: 1920")
         XCTAssertEqual(LogFormatter.formatRuntimeState(["duration": NSNull()]), "duration: null")
     }
+
+    func testAndroidVzplayerStatLogsAlignment() {
+        let uploader = RecordingUploader()
+        var policy = LogUploadPolicy()
+        policy.statsMinUploadIntervalMs = 180000
+        let appender = ESUploadAppender(context: LogContext(config: VPlayerConfig()), policy: policy, uploader: uploader)
+        defer { appender.destroy() }
+
+        // 1. Stat log without stalls defaults stall_duration, stall_count, stall_win_ms
+        appender.appendStatLog(level: .info, tag: "test", name: "fps", data: 23.976)
+        appender.appendStatLog(level: .info, tag: "test", name: "drop", data: 0)
+        appender.flush()
+
+        guard let record = uploader.records.first,
+              let statLogs = record["statLogs"] as? [String: [Double]] else {
+            XCTFail("statLogs missing from uploaded record")
+            return
+        }
+        XCTAssertEqual(statLogs["fps"], [23.98])
+        XCTAssertEqual(statLogs["drop"], [0])
+        XCTAssertEqual(statLogs["stall_duration"], [0])
+        XCTAssertEqual(statLogs["stall_count"], [0])
+        XCTAssertEqual(statLogs["stall_win_ms"], [180000])
+
+        // 2. PlaybackDiagnostics emits ts_200, ts_byte, ts_time for segment requests
+        let recorder = DiagnosticsRecorder()
+        Logger.configure { _ in [recorder] }
+        let diagnostics = PlaybackDiagnostics(clock: { 0 })
+        diagnostics.request(PlayerRequestEvent(url: "https://example.com/segment_0.ts", elapsed: 70, size: 647284, status: 200, kind: "segment"))
+        XCTAssertEqual(recorder.values["ts_200"], [1])
+        XCTAssertEqual(recorder.values["ts_byte"], [647284])
+        XCTAssertEqual(recorder.values["ts_time"], [70])
+
+        // Playlist requests must not emit ts_* segment metrics
+        diagnostics.request(PlayerRequestEvent(url: "https://example.com/playlist.m3u8", elapsed: 50, size: 1024, status: 200, kind: "playlist"))
+        XCTAssertEqual(recorder.values["ts_200"], [1])
+        XCTAssertEqual(recorder.values["ts_byte"], [647284])
+        XCTAssertEqual(recorder.values["ts_time"], [70])
+    }
 }
+
