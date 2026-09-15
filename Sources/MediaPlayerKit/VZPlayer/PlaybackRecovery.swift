@@ -1,7 +1,7 @@
 import Foundation
 
 @objc public enum PlaybackErrorCategory: Int {
-    case unknown, sourceNotFound, invalidSource, network, timeout, authorization, decoding, cancelled
+    case unknown, sourceNotFound, invalidSource, network, timeout, authorization, decoding, cancelled, stalled
 }
 @objc public enum PlaybackRecoveryAction: Int {
     case nextEngine, nextSource, stop
@@ -29,6 +29,7 @@ import Foundation
 /// Pure decision logic; intentionally no network waits, timers, logging or player creation.
 public enum PlaybackRecoveryPolicy {
     public static func action(for category: PlaybackErrorCategory, hasNextEngine: Bool, hasNextSource: Bool) -> PlaybackRecoveryAction {
+        if category == .stalled { return hasNextSource ? .nextSource : .stop }
         if category == .cancelled { return .stop }
         if category != .sourceNotFound && category != .invalidSource && hasNextEngine { return .nextEngine }
         return hasNextSource ? .nextSource : .stop
@@ -44,6 +45,7 @@ public enum PlaybackErrorClassifier {
     }
     private static func classify(_ error: NSError, depth: Int) -> PlaybackErrorCategory {
         guard depth < 16 else { return .unknown }
+        if error.domain == "MediaPlayerKit.Stall" && error.code == 1 { return .stalled }
         if let status = error.userInfo[httpStatusKey] as? Int {
             switch status {
             case 404, 410: return .sourceNotFound

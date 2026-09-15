@@ -1,5 +1,10 @@
 import Foundation
 import CoreGraphics
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 public protocol MultiSourcePlayerDelegate: AnyObject {
     func multiSourcePlayer(_ player: MultiSourcePlayer, stateDidChange state: PlayerState)
@@ -51,6 +56,12 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     private var terminalFailure = false
     private var wantsToPlay = true
     private let diagnostics = PlaybackDiagnostics()
+    private var watchdog = PlaybackWatchdog()
+    private var stallDetector = StallDetector()
+    private var stallSeeking = false
+    private var seekGeneration: UInt64 = 0
+    private var watchdogTimer: Timer?
+    private var appActive = true
     func logH5Error(_ message: String, function: String = #function, line: UInt = #line) {
         diagnostics.inputError(message, function: function, line: line)
     }
@@ -65,6 +76,19 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         self.savedLoop = config.loop
         self.savedSpeed = config.speed
         super.init()
+        #if canImport(UIKit)
+        appActive = UIApplication.shared.applicationState == .active
+        NotificationCenter.default.addObserver(self, selector: #selector(suspendWatchdog),
+            name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(resumeWatchdog),
+            name: UIApplication.didBecomeActiveNotification, object: nil)
+        #elseif canImport(AppKit)
+        appActive = NSApplication.shared.isActive
+        NotificationCenter.default.addObserver(self, selector: #selector(suspendWatchdog),
+            name: NSApplication.didResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(resumeWatchdog),
+            name: NSApplication.didBecomeActiveNotification, object: nil)
+        #endif
         diagnostics.configureRequests(threshold: Double(config.slowRequestThreshold), isLive: config.isLive)
         diagnostics.configureStatistics(interval: Double(config.generalStatisticsUploadInterval) / 1000)
         diagnostics.onStatistics = { [weak self] record in
@@ -136,11 +160,14 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
                 controller?.seek(to: 0)
             }
             controller?.play()
+            ensureWatchdog()
         }
     }
     
     public func Pause() {
         wantsToPlay = false
+        stallDetector.suspend()
+        watchdog.suspend()
         controller?.config.autoPlay = false
         controller?.pause()
         diagnostics.state(.paused)
@@ -151,12 +178,15 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         wantsToPlay = true
         controller?.config.autoPlay = true
         controller?.play()
+        ensureWatchdog()
         diagnostics.command("resume player")
     }
     
     public func Destroy() {
         guard !isDestroyed else { return }
         diagnostics.collectState(event: "destroy")
+        stopWatchdog()
+        NotificationCenter.default.removeObserver(self)
         isDestroyed = true
         generation &+= 1
         diagnostics.finish()
@@ -169,8 +199,23 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     // MARK: - IPlayer: 进度与状态
     
     public func Seek(_ seconds: Int64) {
+        watchdog.suspend()
         diagnostics.seek(to: seconds)
-        controller?.seek(to: TimeInterval(seconds))
+        stallDetector.suspend()
+        guard let ctrl = controller else { return }
+        stallSeeking = true
+        seekGeneration &+= 1
+        let seekToken = seekGeneration
+        let token = generation
+        ctrl.seek(to: TimeInterval(seconds)) { [weak self, weak ctrl] _ in
+            DispatchQueue.main.async {
+                guard let self = self, let ctrl = ctrl, self.controller === ctrl,
+                      self.generation == token, self.seekGeneration == seekToken else { return }
+                self.stallSeeking = false
+                self.stallDetector.suspend()
+                self.watchdog.suspend()
+            }
+        }
     }
     
     public func GetCurrentTime() -> Int64 {
@@ -270,6 +315,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func setSources(_ sources: [PlayerSource]) {
         guard !isDestroyed else { return }
+        stopWatchdog()
         diagnostics.newSources()
         playerView.playbackStatistics = [:]
         generation &+= 1 // Cancel a queued retry, even before Play is called.
@@ -291,6 +337,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func setConfig(_ config: VPlayerConfig) {
+        stallDetector.reset()
         diagnostics.configureRequests(threshold: Double(config.slowRequestThreshold), isLive: config.isLive)
         diagnostics.configureStatistics(interval: Double(config.generalStatisticsUploadInterval) / 1000)
         self.playerConfig = config
@@ -341,6 +388,60 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func setSpeed(_ speed: Float) { SetSpeed(speed) }
     public func getSpeed() -> Float { return GetSpeed() }
     
+    @objc private func suspendWatchdog() {
+        appActive = false
+        stallDetector.suspend()
+        watchdog.suspend()
+    }
+    @objc private func resumeWatchdog() {
+        appActive = true
+        watchdog.suspend()
+    }
+    private func stopWatchdog() {
+        stallDetector.reset()
+        stallSeeking = false
+        seekGeneration &+= 1
+        watchdogTimer?.invalidate(); watchdogTimer = nil
+        watchdog.begin()
+    }
+    private func ensureWatchdog() {
+        guard watchdogTimer == nil, !isDestroyed, !needsReloadSource,
+              !attemptHandled, let ctrl = controller else { return }
+        watchdog.begin(position: ctrl.currentPosition)
+        let token = generation
+        // Arm before prepare; subsequent ticks do not extend the deadline.
+        _ = watchdog.check(at: ProcessInfo.processInfo.systemUptime, state: .preparing,
+            enabled: wantsToPlay && appActive, startupMs: playerConfig.startupTimeoutMs,
+            bufferingMs: playerConfig.bufferingTimeoutMs)
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self, weak ctrl] timer in
+            guard let self = self, let ctrl = ctrl, self.controller === ctrl,
+                  self.generation == token, !self.isDestroyed, !self.needsReloadSource,
+                  !self.attemptHandled else {
+                timer.invalidate()
+                if let owner = self, owner.watchdogTimer === timer { owner.watchdogTimer = nil }
+                return
+            }
+            if self.wantsToPlay && self.appActive && ctrl.state == .playing {
+                self.watchdog.progress(ctrl.currentPosition)
+            }
+            guard let phase = self.watchdog.check(at: ProcessInfo.processInfo.systemUptime,
+                state: ctrl.state, enabled: self.wantsToPlay && self.appActive,
+                startupMs: self.playerConfig.startupTimeoutMs,
+                bufferingMs: self.playerConfig.bufferingTimeoutMs) else { return }
+            let limit = phase == .startup ? self.playerConfig.startupTimeoutMs : self.playerConfig.bufferingTimeoutMs
+            self.handleRetry(error: NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut,
+                userInfo: [NSLocalizedDescriptionKey: "Playback \(phase.rawValue) timeout (\(limit)ms)",
+                           "phase": phase.rawValue, "timeout_ms": limit]))
+        }
+        watchdogTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    deinit {
+        watchdogTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+
     // MARK: - 内部容错调度
     
     func computeEngineOrder(for source: PlayerSource) -> [PlayerEngineType] {
@@ -366,6 +467,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     private func startPlaybackWithCurrentSourceAndEngine() {
         guard !isDestroyed else { return }
+        stopWatchdog()
         diagnostics.endAttempt(reason: "switch")
         generation &+= 1
         let token = generation
@@ -396,6 +498,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         let ctrl = MediaPlayerController(config: config)
         ctrl.delegate = self
         self.controller = ctrl
+        ensureWatchdog()
         diagnostics.setRequestScope(ctrl.requestScope == "hlsRequests" && source.type.lowercased() != "hls"
                                     ? "engineAggregate" : ctrl.requestScope)
         ctrl.requestEventHandler = { [weak self, weak ctrl] event in
@@ -432,6 +535,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     private func handleRetry(error: NSError) {
         guard !isDestroyed, !attemptHandled, !needsReloadSource else { return }
+        stopWatchdog()
         diagnostics.collectState(event: "error")
         attemptHandled = true
         let token = generation
@@ -474,6 +578,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
 
     private func finishFailure(_ error: NSError) {
         guard !terminalFailure, !isDestroyed else { return }
+        stopWatchdog()
         terminalFailure = true
         diagnostics.terminal(error)
         attemptHandled = true
@@ -496,6 +601,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     public func switchToSource(index: Int) -> Bool {
         guard !isDestroyed, index >= 0 && index < sources.count else { return false }
+        stopWatchdog()
         diagnostics.manualSwitch()
         generation &+= 1
         let token = generation
@@ -520,6 +626,16 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
         // An engine error is an attempt failure, not yet a terminal player error.
         guard state != .error else { return }
+        if state == .completed || state == .stopped { stopWatchdog() }
+        if let stalled = stallDetector.update(state: state, at: ProcessInfo.processInfo.systemUptime,
+            isLive: playerConfig.isLive, allowed: wantsToPlay && appActive && !stallSeeking,
+            policy: playerConfig.stalledSourceSwitchPolicy) {
+            diagnostics.stallThreshold(stalled)
+            var info = stalled
+            info[NSLocalizedDescriptionKey] = "Live stall window exceeded; switch to next source"
+            handleRetry(error: NSError(domain: "MediaPlayerKit.Stall", code: 1, userInfo: info))
+            return
+        }
         diagnostics.state(state)
         let token = generation
         delegate?.multiSourcePlayer(self, stateDidChange: state)
@@ -530,6 +646,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func playerDidRenderFirstFrame(_ player: MediaPlayerController) {
         guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
         let token = generation
+        watchdog.rendered()
         diagnostics.firstFrame(size: player.naturalSize)
         delegate?.multiSourcePlayer(self, didRenderFirstFrame: ())
         guard generation == token, !isDestroyed else { return }
@@ -539,6 +656,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     public func player(_ player: MediaPlayerController, currentTime: TimeInterval, totalDuration: TimeInterval) {
         guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
         let token = generation
+        if wantsToPlay && appActive && player.state == .playing { watchdog.progress(currentTime) }
         diagnostics.sampleMetrics(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds)) {
             player.runtimeMetrics
         }
