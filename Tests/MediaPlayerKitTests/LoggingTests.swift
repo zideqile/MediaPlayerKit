@@ -450,14 +450,14 @@ extension LoggingTests {
         Logger.configure { _ in [recorder] }
         let line = #line + 1
         Logger.logI("static", typeName: "LoggingTests")
-        XCTAssertEqual(recorder.messages.last, "[LoggingTests.\(#function):\(line)] static")
+        XCTAssertEqual(recorder.messages.last, "[LoggingTests.testCallerLocationSurvivesConvenienceWrappers:\(line)] static")
         let logger = Logger.getLogger("location")
         let instanceLine = #line + 1
         logger.logAI("attached", typeName: "LoggingTests")
-        XCTAssertEqual(recorder.messages.last, "[LoggingTests.\(#function):\(instanceLine)] attached")
+        XCTAssertEqual(recorder.messages.last, "[LoggingTests.testCallerLocationSurvivesConvenienceWrappers:\(instanceLine)] attached")
         let diagnostics = PlaybackDiagnostics(group: "forwarding")
         diagnostics.command("pause", fileID: "SDK/MultiSourcePlayer.swift", function: "pause()", line: 123)
-        XCTAssertEqual(recorder.messages.last, "[MultiSourcePlayer.pause():123] pause")
+        XCTAssertEqual(recorder.messages.last, "[MultiSourcePlayer.pause:123] pause")
         logger.logSI("fps", 25)
         XCTAssertEqual(recorder.values["fps"], [25])
     }
@@ -470,7 +470,7 @@ extension LoggingTests {
             logger.logMI(100, "frame {}", 1, fileID: "SDK/Player.swift", function: "render()", line: line)
         }
         logger.flushLog()
-        XCTAssertEqual(appender.messages, ["[Player.render():10] frame 1 [x2]", "[Player.render():20] frame 1"])
+        XCTAssertEqual(appender.messages, ["[Player.render:10] frame 1 [x2]", "[Player.render:20] frame 1"])
     }
 
     func testRuntimeCounterDeltasAndUnavailableMeasurements() {
@@ -594,14 +594,14 @@ extension LoggingTests {
 
         let source = PlayerSource(url: "https://example.com/live.m3u8", type: "hls", isLive: true)
         logger.logI("source info:", source, fileID: "Test.swift", function: "test()", line: 1)
-        XCTAssertEqual(appender.messages.last, "[Test.test():1] source info: " + source.toKeyValueString())
+        XCTAssertEqual(appender.messages.last, "[Test.test:1] source info: " + source.toKeyValueString())
 
         let jsonPayload = "{\"event\":\"seek\",\"target\":30}"
         logger.logI("payload:", jsonPayload, fileID: "Test.swift", function: "test()", line: 2)
-        XCTAssertEqual(appender.messages.last, "[Test.test():2] payload: event: seek, target: 30")
+        XCTAssertEqual(appender.messages.last, "[Test.test:2] payload: event: seek, target: 30")
 
         logger.merged(.info, similarity: 100, format: "data: {}", args: [jsonPayload], fileID: "Test.swift", function: "test()", line: 3)
-        XCTAssertEqual(appender.messages.last, "[Test.test():3] data: event: seek, target: 30")
+        XCTAssertEqual(appender.messages.last, "[Test.test:3] data: event: seek, target: 30")
     }
 }
 
@@ -722,5 +722,19 @@ extension LoggingTests {
         XCTAssertEqual(LogFormatter.formatArgument(["x": [1.23456, 2.34567]]), "x: [1.23, 2.35]")
         XCTAssertEqual(LogFormatter.roundedSample(244747.42835211314), 244747.43)
         XCTAssertTrue(LogFormatter.roundedSample(Double.greatestFiniteMagnitude).isFinite)
+    }
+}
+
+
+extension LoggingTests {
+    func testLocationOmitsParametersButPreservesOriginalSignature() {
+        let location = LogLocation(fileID: "SDK/MultiSourcePlayer.swift",
+                                   function: "player(_:stateDidChange:)", line: 521)
+        XCTAssertEqual(location.prefix, "[MultiSourcePlayer.player:521] ")
+        XCTAssertEqual(location.function, "player(_:stateDidChange:)")
+        XCTAssertEqual(LogLocation(fileID: "SDK/Player.swift", function: "init(config:)", line: 10).prefix,
+                       "[Player.init:10] ")
+        XCTAssertEqual(LogLocation(fileID: "SDK/Player.swift", function: "currentPosition", line: 20).prefix,
+                       "[Player.currentPosition:20] ")
     }
 }

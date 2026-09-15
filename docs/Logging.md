@@ -99,7 +99,7 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
 
 ## 类名、函数名和行号
 
-Android 的 LogLocationMethodVisitor 通过 ASM 注入位置；Swift 使用调用处的 `#fileID`、`#function`、`#line`，无需运行时解析调用栈。普通、附加、合并日志统一带 `[类型.函数:行号]` 前缀，控制台、文件和 ES 上传共用同一消息。统计名称保持原样。
+Android 的 LogLocationMethodVisitor 通过 ASM 注入位置；Swift 使用调用处的 `#fileID`、`#function`、`#line`，无需运行时解析调用栈。显示时去掉方法参数签名（例如 `player(_:stateDidChange:)` 显示为 `player`）。普通、附加、合并日志统一带 `[类型.函数:行号]` 前缀，控制台、文件和 ES 上传共用同一消息。统计名称保持原样。
 
 SDK 的 PlaybackDiagnostics 显式标注 MultiSourcePlayer 并逐层传递函数、行号，因此位置指向业务调用处。不同调用位置的消息不会互相合并。
 
@@ -107,7 +107,7 @@ Swift 没有自动获取封闭类型名的字面量；默认从文件名推导�
 
 ```swift
 Logger.logI("play", typeName: String(describing: Self.self))
-// 示例：[MultiSourcePlayer.play():123] play
+// 示例：[MultiSourcePlayer.play:123] play
 ```
 
 自定义日志包装函数也应声明上述位置参数的默认值，并显式向 Logger 转发；否则位置会指向包装函数。原有直接调用方式无需改动。
