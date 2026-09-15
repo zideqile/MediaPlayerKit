@@ -260,7 +260,7 @@ public final class KSAVPlayerEngine: NSObject, MediaPlayerProtocol {
         if #available(iOS 18, macOS 15, tvOS 18, visionOS 2, *) {
             let events = item.allMetrics()
             requestTask = Task { @MainActor [weak self, weak item] in
-                for await (event, _) in events {
+                for await event in events {
                     guard !Task.isCancelled, let self = self, let item = item,
                           self.playerItem === item else { break }
                     if let segment = event as? AVMetricHLSMediaSegmentRequestEvent,
