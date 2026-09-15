@@ -26,14 +26,15 @@ public final class ESUploadAppender: Appender {
     private var attached: [String] = []
     private var statistics: [String: [Double]] = [:]
     private var statisticsStarted: Date?
-    private var index = 0
+    private let indexCounter: ESUploadIndexCounter
     private var dropped = 0
     private var sourceURL = ""
     private var sourceType = ""
     private var closed = false
     var mergeDelayMs: Int { Int(min(3600, max(0.1, policy.uploadIntervalSeconds.isFinite ? policy.uploadIntervalSeconds : 30)) * 500) }
-    public init(context: LogContext, logGroup: String = "default", policy: LogUploadPolicy = LogUploadPolicy(), uploader: ESUploader) {
+    public init(context: LogContext, logGroup: String = "default", policy: LogUploadPolicy = LogUploadPolicy(), uploader: ESUploader, indexCounter: ESUploadIndexCounter? = nil) {
         self.context = context; group = logGroup; self.policy = policy
+        self.indexCounter = indexCounter ?? context.indexCounter
         uploadTask = StatisticsUploadTask(uploader: uploader)
         let timer = DispatchSource.makeTimerSource(queue: executor.queue)
         let interval = policy.uploadIntervalSeconds.isFinite ? max(0.1, policy.uploadIntervalSeconds) : 30
@@ -71,7 +72,7 @@ public final class ESUploadAppender: Appender {
             }
         }
     }
-    private func record(_ chunk: [(LogLevel, String)]) -> [String: Any] {
+    private func record(_ chunk: [(LogLevel, String)], index: Int) -> [String: Any] {
         var global: [String: Any] = ["userIdUuid": context.userIdUuid, "deviceInfo": context.deviceInfo,
                                      "customInfo": context.customInfo, "version": context.version]
         if index % 10 == 0 {
@@ -107,13 +108,14 @@ public final class ESUploadAppender: Appender {
             for line in attached { ConsoleAppender().append(level: .info, tag: group, message: line, messageType: .log) }
         }
         while !messages.isEmpty || !statistics.isEmpty {
+            let index = indexCounter.next()
             var chunk: [(LogLevel, String)] = []
-            var bytes = (try? JSONSerialization.data(withJSONObject: record([])).count) ?? 0
+            var bytes = (try? JSONSerialization.data(withJSONObject: record([], index: index)).count) ?? 0
             while let next = messages.first {
                 if !chunk.isEmpty && bytes + next.1.utf8.count > max(1, policy.maxChunkBytes) { break }
                 chunk.append(messages.removeFirst()); bytes += next.1.utf8.count
             }
-            uploadTask.upload(record(chunk)); index += 1
+            uploadTask.upload(record(chunk, index: index))
             statistics.removeAll(); statisticsStarted = nil
         }
     }

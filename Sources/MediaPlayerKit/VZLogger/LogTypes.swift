@@ -274,6 +274,36 @@ public final class FileAppender: Appender {
     deinit { try? handle?.close() }
 }
 
+/// Thread-safe monotonic sequence counter for ES log upload records within a logging session.
+public final class ESUploadIndexCounter {
+    private let lock = NSLock()
+    private var current: Int
+
+    public init(initialValue: Int = 0) {
+        current = initialValue
+    }
+
+    public func next() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        let value = current
+        current += 1
+        return value
+    }
+
+    public func reset(to value: Int = 0) {
+        lock.lock()
+        defer { lock.unlock() }
+        current = value
+    }
+
+    public var currentValue: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return current
+    }
+}
+
 /// Immutable snapshot: later mutation of VPlayerConfig cannot change an in-flight record.
 public struct LogContext {
     public var userId: Int64
@@ -284,10 +314,14 @@ public struct LogContext {
     public var customInfo: String
     public var version: String
     public var playerConfig: [String: Any]
-    public init(config: VPlayerConfig, deviceInfo: String = "", customInfo: String = "", version: String = "") {
+    public var indexCounter: ESUploadIndexCounter
+
+    public init(config: VPlayerConfig, deviceInfo: String = "", customInfo: String = "", version: String = "",
+                indexCounter: ESUploadIndexCounter = ESUploadIndexCounter()) {
         userId = config.userId; topicId = config.topicId; streamId = config.streamId
         userIdUuid = config.userIdUuid; self.deviceInfo = deviceInfo
         self.customInfo = customInfo; self.version = version
         playerConfig = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(config))) as? [String: Any] ?? [:]
+        self.indexCounter = indexCounter
     }
 }
