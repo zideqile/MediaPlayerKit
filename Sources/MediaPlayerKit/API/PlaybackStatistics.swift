@@ -116,15 +116,16 @@ final class PlaybackStatisticsTracker {
             recoveryDurationMs = max(0, time - start) * 1000
             recoverySuccessCount += 1; recoveryStarted = nil
             publish(reason: "recovered")
-        } else if state == .completed {
-            publish(reason: "ended")
-        } else if state == .paused {
-            publish(reason: "paused")
-        } else if state == .buffering {
-            publish(reason: "buffering")
-        } else if state == .stopped {
-            publish(reason: "stopped")
         }
+        if state == .completed { publish(reason: "ended") }
+    }
+    func pause() {
+        guard active else { return }
+        publish(reason: "paused")
+    }
+    func stop() {
+        guard active else { return }
+        publish(reason: "stopped")
     }
     func seek() {
         guard active else { return }

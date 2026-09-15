@@ -175,6 +175,11 @@ final class PlaybackDiagnostics {
         collectState(event: state.description)
         lastState = state
         statistics.state(state)
+        if state == .paused {
+            statistics.pause()
+        } else if state == .stopped {
+            statistics.stop()
+        }
         if state == .paused || state == .stopped || state == .completed {
             metricsSampler = RuntimeMetricsSampler(); lastMetricsTime = nil
         }

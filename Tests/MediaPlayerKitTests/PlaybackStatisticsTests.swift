@@ -252,7 +252,7 @@ extension PlaybackStatisticsTests {
         now = 10; tracker.finish(reason: "destroy")
         tracker.finish(reason: "destroy")
         let attempts = logs.filter { $0.fields["scope"] as? String == "attempt" }
-        XCTAssertEqual(attempts.count, 4)
+        XCTAssertEqual(attempts.count, 3)
         let finalAttempts = attempts.filter { ["newSources", "destroy"].contains($0.fields["reason"] as? String) }
         XCTAssertEqual(finalAttempts.count, 2)
         XCTAssertEqual(finalAttempts.map { $0.fields["totalPlayTime"] as? String }, ["3000ms", "4000ms"])
@@ -301,7 +301,7 @@ extension PlaybackStatisticsTests {
         tracker.begin(sourceURL: "https://example.com/1.m3u8", sourceType: "hls", sourceIndex: 0, engine: "avplayer")
         tracker.state(.playing)
 
-        now = 5; tracker.state(.paused)
+        now = 5; tracker.pause()
         let pauseLogs = logs.filter { $0.fields["reason"] as? String == "paused" }
         XCTAssertEqual(pauseLogs.count, 3)
         XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "5000ms")

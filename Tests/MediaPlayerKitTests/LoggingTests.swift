@@ -335,7 +335,7 @@ extension LoggingTests {
         XCTAssertEqual(record.fields["sourceIndex"] as? Int, 2)
         XCTAssertNil(record.fields["elapsedMs"])
 
-        let formatted = LogFormatter.formatValue(record.fields)
+        let formatted = LogFormatter.formatDictionary(record.fields)
         XCTAssertEqual(formatted, "createOK: true, elapsed: 3.40ms, engine: avplayer, sourceIndex: 2")
     }
 
