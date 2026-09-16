@@ -356,3 +356,28 @@ extension PlaybackStatisticsTests {
         XCTAssertEqual(log.fields["stall_pct"] as? String, "0.10%")
     }
 }
+
+
+extension PlaybackStatisticsTests {
+    func testSourceSwitchDoesNotRepeatPlaytimeAtSourceEndedAndUsesStableOrder() throws {
+        var now: Double = 0
+        let tracker = PlaybackStatisticsTracker(clock: { now })
+        var snapshots: [[String: Any]] = []
+        tracker.emit = { snapshots.append($0) }
+        tracker.begin(sourceURL: "https://example.com/a", sourceType: "hls", sourceIndex: 0, engine: "avplayer")
+        tracker.state(.playing)
+        snapshots.removeAll()
+        now = 1; tracker.endAttempt(reason: "switch")
+        tracker.begin(sourceURL: "https://example.com/b", sourceType: "hls", sourceIndex: 1, engine: "ksmeplayer")
+        XCTAssertTrue(snapshots.contains { $0["reason"] as? String == "sourceEnded" })
+        let logs = snapshots.flatMap { PlaybackStatisticsLog.records(from: $0) }.filter { $0.name == "playtime" }
+        XCTAssertEqual(logs.count, 3)
+        XCTAssertEqual(logs.compactMap { $0.fields["scope"] as? String }, ["attempt", "source", "session"])
+        for log in logs {
+            let scope = try XCTUnwrap(log.fields["scope"] as? String)
+            XCTAssertTrue(log.formattedFields.hasPrefix("scope: \(scope), reason: switch, totalPlayTime: 1s, stall_pct: 0%, \(scope)Id:"))
+        }
+        XCTAssertTrue(logs[0].formattedFields.contains("sourceIndex: 0, engine: avplayer, sourceUrl: https://example.com/a"))
+        XCTAssertTrue(logs[1].formattedFields.contains("sourceIndex: 0, engines: [avplayer], sourceUrl: https://example.com/a"))
+    }
+}
