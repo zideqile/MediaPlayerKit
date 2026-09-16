@@ -13,6 +13,23 @@ extension String {
 }
 
 public final class StreamAPIService: ObservableObject {
+    /// Switching business streams preserves the user's current playback controls.
+    static func playbackConfig(for player: IH5Player?, topicId: String, streamId: String) -> VPlayerConfig {
+        let config = VPlayerConfig()
+        config.topicId = topicId
+        config.streamId = streamId
+        guard let player = player else { return config }
+        func fields(_ json: String) -> [String: Any] {
+            guard let data = json.data(using: .utf8) else { return [:] }
+            return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        }
+        config.volume = (fields(player.get_volume())["volume"] as? NSNumber)?.floatValue ?? config.volume
+        config.speed = (fields(player.get_speed())["speed"] as? NSNumber)?.floatValue ?? config.speed
+        config.muted = fields(player.get_muted())["muted"] as? Bool ?? config.muted
+        config.loop = fields(player.get_loop())["loop"] as? Bool ?? config.loop
+        return config
+    }
+
     public static let shared = StreamAPIService()
     
     private let kApiDomainKey = "StreamAPIService_ApiDomain_V3"

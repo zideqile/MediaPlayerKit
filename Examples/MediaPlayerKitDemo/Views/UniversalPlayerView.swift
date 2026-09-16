@@ -483,6 +483,9 @@ final class UniversalPlayerViewModel: ObservableObject {
             }
             
             // 调用 IH5Player API
+            let config = StreamAPIService.playbackConfig(for: self.vzPlayer,
+                topicId: "topic_demo", streamId: stream.streamid)
+            self.vzPlayer?.setConfig(config)
             self.vzPlayer?.setSources(vzSources)
             self.vzPlayer?.play()
             self.refreshH5State()
@@ -497,6 +500,9 @@ final class UniversalPlayerViewModel: ObservableObject {
         let type = urlStr.lowercased().contains(".flv") ? PlayerSource.TYPE_FLV : PlayerSource.TYPE_HLS
         let source = PlayerSource(url: urlStr, type: type, isLive: true)
         
+        // A custom URL has no business stream ID; explicitly clear the previous ID.
+        let config = StreamAPIService.playbackConfig(for: vzPlayer, topicId: "topic_demo", streamId: "")
+        vzPlayer?.setConfig(config)
         vzPlayer?.setSources([source])
         vzPlayer?.play()
         refreshH5State()

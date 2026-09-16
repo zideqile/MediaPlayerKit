@@ -30,7 +30,9 @@ import Foundation
     /// 设置多播放源列表 (支持优先级与自动容错轮询)
     @objc func setSources(_ sources: [PlayerSource])
     
-    /// 设置运行时策略配置 (对标 Android IH5Player.setConfig(VPlayerConfig))
+    /// 设置运行时策略配置 (对标 Android IH5Player.setConfig(VPlayerConfig))。
+    /// topicId/streamId 在下一次 setSources 时生效；旧流结算仍使用旧 ID。
+    /// 同一业务流内部切地址/内核不需要重新配置。
     @objc func setConfig(_ config: VPlayerConfig)
     
     /// 向播放器派发自定义事件 (如 NEXT_SOURCE, SWITCH_SOURCE)

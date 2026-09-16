@@ -234,5 +234,30 @@ statLogs 在序列化时保留最多两位小数；JSON 数字不会强制补零
 `runtime metrics:` 文本按量级显示单位：bandwidth 使用 bps/Kbps/Mbps（1000 进制）；
 net_bytes/read_bytes 及其 total 使用 B/KiB/MiB（1024 进制）；net_speed/read_speed 使用对应字节单位每秒。
 帧率使用 fps，丢帧（drop）、丢包（drop_packet）与媒体请求数（media_requests）保持纯数字计数，不附加单位。
-例如 `bandwidth=19.49Mbps drop=0 media_requests=2 net_bytes=1.46MiB net_speed=461.19KiB/s`。
+例如 `bandwidth=19.49Mbps drop_frames=0 media_requests=2 net_bytes=1.46MiB net_speed=461.19KiB/s`。
 单位换算仅用于日志文本；statLogs、metrics 和业务回调仍使用原始数值和既有单位。
+
+运行指标文本日志使用显示名：drop → drop_frames、drop_packet → drop_packets、
+fps → display_fps、frame_rate → nominal_fps，分别表示本周期丢帧/丢包数、实际显示/标称帧率。
+statLogs 与 Native/JS 统计快照 metrics 保留原字段名，不受文本显示映射影响。
+
+
+### 业务流的日志归属
+
+`topicId`、`streamId` 通过 `VPlayerConfig` 传入。业务流切换时先调用 `setConfig`，再调用 `setSources`、`play`：
+
+```swift
+let config = VPlayerConfig()
+config.topicId = "business-topic"
+config.streamId = "business-stream"
+// 其他播放策略也在此配置；setConfig 是完整配置，不是字段补丁。
+player.setConfig(config)
+player.setSources(sources)
+player.play()
+```
+
+播放策略仍在 `setConfig` 时应用；两个日志 ID 会立即保存为快照，在下一次 `setSources` 完成旧流统计结算后生效。只调用 `setConfig` 不会改变正在播放的旧流日志归属；未调用 `setConfig` 而再次 `setSources` 则沿用当前 ID。同一业务流的内部地址切换、内核切换无需重传配置。空字符串表示清空 ID，例如从业务流转到没有业务 ID 的自定义 URL。
+
+日志上下文按播放器实例隔离，普通日志、合并日志、`statLogs`、`attachedLogs` 不会跨业务流混合。旧上传队列保留旧 ID 和旧上传地址，并沿用现有最长 5 秒的结束排空机制；新版上传器会按新 ID 重新查询上传地址。全局初始化日志仍属于初始化上下文，用户身份、认证和上传服务配置仍由 `export.Init` 管理，无需每次切流重新初始化 SDK。
+
+`InitConfig.topicId` 非空时覆盖初始化 JSON 的同名字段；为空时保留 JSON 配置。Demo 在线流使用节点的 `streamid`；自定义地址无业务 ID 时传空字符串。H5 URL 页的 `loadURL` 参数也可携带 `topicId`、`streamId`。
