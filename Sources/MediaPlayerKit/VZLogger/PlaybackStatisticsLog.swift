@@ -6,6 +6,16 @@ struct PlaybackStatisticsLog {
     let level: LogLevel
     let fields: [String: Any]
 
+    var formattedFields: String {
+        guard name == "playtime" else { return LogFormatter.formatDictionary(fields) }
+        let order = ["scope", "reason", "totalPlayTime", "stall_pct",
+                     "attemptId", "sourceId", "sessionId", "sourceIndex", "engine", "engines", "sourceUrl", "attempts"]
+        let keys = order.filter { fields[$0] != nil } + fields.keys.filter { !order.contains($0) }.sorted()
+        return keys.compactMap { key in
+            fields[key].map { "\(key): \(LogFormatter.formatValue($0))" }
+        }.joined(separator: ", ")
+    }
+
     static func records(from snapshot: [String: Any]) -> [PlaybackStatisticsLog] {
         let reason = snapshot["reason"] as? String ?? ""
         let context = snapshot.filter { ["sourceIndex", "engine"].contains($0.key) }
@@ -31,8 +41,10 @@ struct PlaybackStatisticsLog {
             fields["createOK"] = snapshot["createOK"]
             result.append(Self(name: "playerCreation", level: .info, fields: fields))
         }
+        // sourceEnded is an API boundary snapshot. The preceding endAttempt
+        // already logged all three scopes, so do not repeat them here.
         let keyReasons: Set<String> = [
-            "paused", "stopped", "seek", "buffering", "recovered", "ended", "sourceEnded"
+            "paused", "stopped", "seek", "buffering", "recovered", "ended"
         ]
         let isKeyActionOrEvent = keyReasons.contains(reason)
         let isAttemptEnded = snapshot["attemptEnded"] as? Bool == true

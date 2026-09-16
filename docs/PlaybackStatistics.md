@@ -244,3 +244,8 @@ attemptId/sourceId/sessionId 仅日志显示 UUID 第一段，完整统计快照
 各层 totalPlayTime 统一使用秒（例如 112.50s），stall_pct 直接显示百分比（例如 0.10%）。
 卡顿占比为卡顿时长 /（播放时长 + 卡顿时长）；0.10% 表示千分之一。未知时长保留 null。
 原始快照 play_ms（毫秒）与 stall_ratio（比例）不变，新增 sourceEngines 表示当前源阶段的内核历史。
+
+
+playtime 日志统一按 scope、reason、totalPlayTime、stall_pct、对应 ID、sourceIndex、engine/engines、sourceUrl 排列。
+sourceEnded 快照继续交付业务统计回调，但不重复输出前一次尝试结算已打印的三层 playtime；
+暂停、Seek 等其他关键事件仍按既有规则记录。

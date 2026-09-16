@@ -142,7 +142,7 @@ final class PlaybackDiagnostics {
     }
     private func logStatistics(_ snapshot: [String: Any]) {
         for entry in PlaybackStatisticsLog.records(from: snapshot) {
-            logger.log(entry.level, messages: [entry.name, entry.fields])
+            logger.log(entry.level, messages: [entry.name, entry.formattedFields])
         }
     }
 
