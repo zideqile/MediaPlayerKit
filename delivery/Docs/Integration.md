@@ -78,3 +78,26 @@ Demo 的 `loadURL` 是业务扩展，不是 SDK 标准方法。H5 输入地址�
 反馈问题时提供完整 SDK/Demo 版本、设备和 iOS 版本、复现步骤、失败前后的日志、期望行为、是否可稳定复现。鉴权地址或日志中的敏感信息通过双方约定的私密渠道提供。
 
 源码参考：Sources/MediaPlayerKit/VZPlayer/{export,IH5Player,PlayerBridge}.swift；详细日志配置见随包 Logging.md。
+
+
+## 默认桥接的绑定与安全边界
+
+以下操作在主线程进行。业务自定义桥接仍可直接调用 `IH5Player`，无需创建 PlayerBridge 或注入 SDK JS。
+
+- `PlayerBridge(player:)` 维持原有行为：创建时注册 H5 事件监听器。
+- 更换默认桥接所服务的播放器，使用 `bridge.bind(player: newPlayer)`，显式绑定新播放器的事件。
+- 直接赋值 `bridge.player` 保持命令分发用途，不自动占用新播放器的监听器，兼容已有自定义处理器。
+- `bridge.detach()` 清空桥接引用；对 SDK H5Player，只在监听器仍属于当前桥接时解绑，避免清除业务后来安装的监听器。对第三方 IH5Player 实现，监听解绑仍由该实现/宿主负责。
+- detach 不销毁播放器，不移除宿主注册的 WKScriptMessageHandler。退出页面时仍需宿主移除处理器，并按播放器所有权决定是否调用 destroy。
+
+默认消息入口仅接受绑定 WebView 的主 frame。设置宿主允许的页面，例如：
+
+```swift
+bridge.allowsPage = { url in
+    url.scheme == "https" && url.host == "player.example.com"
+}
+```
+
+业务需要通过 WKNavigationDelegate 同时限制页面导航；在开始导航时调用 `bridge.invalidatePage()`，使等待中的旧回调失效并暂停派发，直到新文档重新握手。SDK 不接管宿主的 navigationDelegate。未设置 allowsPage 时，SDK 不替业务猜测域名白名单；仅加载可信业务页面。
+
+H5 先注册监听，再调用 `await window.vzPlayerBridge.ready()` 恢复当前状态。原有事件名、错误通知语义及播放源由原生设置的接入模式均不变。

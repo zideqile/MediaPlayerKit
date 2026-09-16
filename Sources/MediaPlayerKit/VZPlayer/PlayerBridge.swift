@@ -6,9 +6,64 @@ import WebKit
 /// 标准化 WKWebView ➔ IH5Player 跨平台通信桥接协调器 (1:1 对标 Android vzPlayerBridge / PlayerBridge)
 @objc(PlayerBridge)
 public final class PlayerBridge: NSObject, H5EventListener {
-    public weak var player: IH5Player?
+    public weak var player: IH5Player? {
+        didSet {
+            guard oldValue !== player else { return }
+            (oldValue as? H5Player)?.removeH5Listener(self)
+            bindingEpoch &+= 1
+            commandDestroyed = false
+            closed = false
+            lastEvent = nil
+        }
+    }
+    /// Explicit event binding. Plain player assignment remains dispatch-only for custom bridges.
+    public func bind(player: IH5Player?) {
+        self.player = player
+        closed = false
+        player?.SetOnH5EventListener(self)
+    }
+    private var bindingEpoch: UInt64 = 0
+    private var commandDestroyed = false
+    private var closed = false
+    private var lastEvent: String?
+
+    /// Disconnects callbacks without destroying the host-owned player or WebView handler.
+    public func detach() {
+        player = nil
+        closed = true
+        #if canImport(WebKit)
+        webView = nil
+        pageID = nil
+        #endif
+    }
     #if canImport(WebKit)
-    public weak var webView: WKWebView?
+    public weak var webView: WKWebView? {
+        didSet { if oldValue !== webView { pageID = nil; pageEpoch &+= 1 } }
+    }
+    private var pageID: String?
+    /// Optional host allowlist, applied to the sending main-frame URL.
+    public var allowsPage: ((URL) -> Bool)?
+
+    /// Call at navigation start to stop sending events until the new page is ready.
+    public func invalidatePage() { pageID = nil; pageInvalidated = true; pageEpoch &+= 1 }
+    private var pageEpoch: UInt64 = 0
+    private var pageInvalidated = false
+
+    private func sendJavaScript(_ script: String) {
+        guard !closed, !pageInvalidated, let target = webView else { return }
+        let token = pageID
+        let binding = bindingEpoch
+        let epoch = pageEpoch
+        DispatchQueue.main.async { [weak self, weak target] in
+            guard let self = self, let target = target, !self.closed,
+                  !self.pageInvalidated, self.webView === target, self.pageID == token,
+                  self.bindingEpoch == binding, self.pageEpoch == epoch else { return }
+            let guarded = token.map {
+                "if (window.vzPlayerBridge?.pageId === \(Self.jsString($0))) { \(script) }"
+            } ?? "if (!window.vzPlayerBridge?.pageId) { \(script) }"
+            target.evaluateJavaScript(guarded, completionHandler: nil)
+        }
+    }
 
     /// Install before creating/loading WKWebView. Message handler registration remains host-owned.
     public static func installJavaScript(in controller: WKUserContentController) throws {
@@ -49,65 +104,58 @@ public final class PlayerBridge: NSObject, H5EventListener {
         #if canImport(WebKit)
         guard let data = try? JSONSerialization.data(withJSONObject: statistics),
               let json = String(data: data, encoding: .utf8) else { return }
-        DispatchQueue.main.async { [weak self] in
-            self?.webView?.evaluateJavaScript("window.vzPlayerBridge?.onStatistics?.(\(json));", completionHandler: nil)
-        }
+        sendJavaScript("window.vzPlayerBridge?.onStatistics?.(\(json));")
         #endif
     }
 
     public func onEvent(_ eventName: String) {
+        lastEvent = eventName
         #if canImport(WebKit)
-        DispatchQueue.main.async { [weak self] in
-            guard let webView = self?.webView else { return }
-            let js = """
-            if (window.vzPlayerBridge && typeof window.vzPlayerBridge.onEvent === 'function') {
-                window.vzPlayerBridge.onEvent(\(Self.jsString(eventName)));
-            } else if (window.vzPlayerBridge && typeof window.vzPlayerBridge.triggerEvent === 'function') {
-                window.vzPlayerBridge.triggerEvent(\(Self.jsString(eventName)));
-            }
-            """
-            webView.evaluateJavaScript(js, completionHandler: nil)
-        }
+        sendJavaScript("""
+        if (typeof window.vzPlayerBridge?.onEvent === 'function') {
+            window.vzPlayerBridge.onEvent(\(Self.jsString(eventName)));
+        } else { window.vzPlayerBridge?.triggerEvent?.(\(Self.jsString(eventName))); }
+        """)
         #endif
     }
-    
+
     public func onError(_ code: Int, errMsg: String) {
         #if canImport(WebKit)
-        DispatchQueue.main.async { [weak self] in
-            guard let webView = self?.webView else { return }
-            let js = """
-            if (window.vzPlayerBridge && typeof window.vzPlayerBridge.onError === 'function') {
-                window.vzPlayerBridge.onError(\(code), \(Self.jsString(errMsg)));
-            } else if (window.vzPlayerBridge && typeof window.vzPlayerBridge.triggerError === 'function') {
-                window.vzPlayerBridge.triggerError(\(code), \(Self.jsString(errMsg)));
-            }
-            """
-            webView.evaluateJavaScript(js, completionHandler: nil)
-        }
+        sendJavaScript("""
+        if (typeof window.vzPlayerBridge?.onError === 'function') {
+            window.vzPlayerBridge.onError(\(code), \(Self.jsString(errMsg)));
+        } else { window.vzPlayerBridge?.triggerError?.(\(code), \(Self.jsString(errMsg))); }
+        """)
         #endif
     }
-    
+
     public func onTimeUpdate(_ currentTime: Int64) {
         #if canImport(WebKit)
-        DispatchQueue.main.async { [weak self] in
-            guard let webView = self?.webView else { return }
-            let js = """
-            if (window.vzPlayerBridge && typeof window.vzPlayerBridge.onTimeUpdate === 'function') {
-                window.vzPlayerBridge.onTimeUpdate(\(currentTime));
-            } else if (window.vzPlayerBridge && typeof window.vzPlayerBridge.triggerTimeUpdate === 'function') {
-                window.vzPlayerBridge.triggerTimeUpdate(\(currentTime));
-            }
-            """
-            webView.evaluateJavaScript(js, completionHandler: nil)
-        }
+        sendJavaScript("""
+        if (typeof window.vzPlayerBridge?.onTimeUpdate === 'function') {
+            window.vzPlayerBridge.onTimeUpdate(\(currentTime));
+        } else { window.vzPlayerBridge?.triggerTimeUpdate?.(\(currentTime)); }
+        """)
         #endif
     }
-    
+
+    private func readyState(_ player: IH5Player) -> [String: Any] {
+        var result: [String: Any] = ["event": lastEvent ?? "", "destroyed": false]
+        for json in [player.get_currentTime(), player.get_duration(), player.get_pause(),
+                     player.get_volume(), player.get_muted(), player.get_loop(), player.get_speed()] {
+            if let fields = parseJSON(json) { result.merge(fields) { _, new in new } }
+        }
+        result["source"] = parseJSON(player.get_currentsource()) ?? [:]
+        result["statistics"] = parseJSON(player.get_statistics?() ?? "{}") ?? [:]
+        return result
+    }
+
     // MARK: - 处理来自 JS 的指令分发 (对标 Android @JavascriptInterface)
     
     @discardableResult
     public func handleScriptMessage(method: String, paramsJson: String = "{}") -> String? {
-        guard let player = player else { return nil }
+        guard !closed, !commandDestroyed, let player = player,
+              (player as? H5Player)?.bridgeIsDestroyed != true else { return nil }
         
         switch method {
         case "play", "Play":
@@ -120,6 +168,7 @@ public final class PlayerBridge: NSObject, H5EventListener {
             player.resume()
             return nil
         case "destroy", "Destroy":
+            commandDestroyed = true
             player.destroy()
             return nil
         case "setCurrentTime", "set_currentTime":
@@ -180,7 +229,7 @@ public final class PlayerBridge: NSObject, H5EventListener {
     
     /// Result acknowledgement means the command was handled, not that playback has completed.
     public func handleRequest(method: String, paramsJson: String = "{}", requestId: String) -> [String: Any] {
-        let supported: Set<String> = ["getStatistics", "get_statistics", "play", "Play", "pause", "Pause", "resume", "Resume", "destroy", "Destroy",
+        let supported: Set<String> = ["bridgeReady", "getStatistics", "get_statistics", "play", "Play", "pause", "Pause", "resume", "Resume", "destroy", "Destroy",
             "setCurrentTime", "set_currentTime", "getCurrentTime", "get_currentTime", "getDuration", "get_duration",
             "getPause", "get_pause", "getVolume", "get_volume", "setVolume", "set_volume", "getMuted", "get_muted",
             "setMuted", "set_muted", "getVideoWidth", "get_videoWidth", "getVideoHeight", "get_videoHeight",
@@ -189,7 +238,17 @@ public final class PlayerBridge: NSObject, H5EventListener {
         guard supported.contains(method) else {
             return ["requestId": requestId, "ok": false, "error": "unsupported_method"]
         }
-        guard player != nil else { return ["requestId": requestId, "ok": false, "error": "player_unavailable"] }
+        guard !closed else { return ["requestId": requestId, "ok": false, "error": "bridge_closed"] }
+        guard let player = player else { return ["requestId": requestId, "ok": false, "error": "player_unavailable"] }
+        if commandDestroyed || (player as? H5Player)?.bridgeIsDestroyed == true {
+            if method == "destroy" || method == "Destroy" {
+                return ["requestId": requestId, "ok": true, "result": NSNull()]
+            }
+            return ["requestId": requestId, "ok": false, "error": "player_destroyed"]
+        }
+        if method == "bridgeReady" {
+            return ["requestId": requestId, "ok": true, "result": readyState(player)]
+        }
         let raw = handleScriptMessage(method: method, paramsJson: paramsJson)
         if raw == "false" || (method == "switchSource" && raw == nil) {
             return ["requestId": requestId, "ok": false, "error": "invalid_parameters_or_rejected"]
@@ -204,7 +263,11 @@ public final class PlayerBridge: NSObject, H5EventListener {
     public static func reply(_ response: [String: Any], to webView: WKWebView?) {
         guard let data = try? JSONSerialization.data(withJSONObject: response),
               let json = String(data: data, encoding: .utf8) else { return }
-        webView?.evaluateJavaScript("window.vzPlayerBridge?.onResponse?.(\(json));", completionHandler: nil)
+        let script = "window.vzPlayerBridge?.onResponse?.(\(json));"
+        let guarded = (response["pageId"] as? String).map {
+            "if (window.vzPlayerBridge?.pageId === \(Self.jsString($0))) { \(script) }"
+        } ?? script
+        webView?.evaluateJavaScript(guarded, completionHandler: nil)
     }
     #endif
 
@@ -224,16 +287,38 @@ public final class PlayerBridge: NSObject, H5EventListener {
 #if canImport(WebKit)
 extension PlayerBridge: WKScriptMessageHandler {
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "vzPlayerBridge",
+        guard !closed, message.name == "vzPlayerBridge", message.frameInfo.isMainFrame,
+              let target = webView, message.webView === target,
               let dict = message.body as? [String: Any],
-              let method = dict["method"] as? String else {
-            return
+              let method = dict["method"] as? String else { return }
+        if let allowsPage = allowsPage {
+            guard let url = message.frameInfo.request.url, allowsPage(url) else { return }
         }
         let paramsJson = dict["paramsJson"] as? String ?? "{}"
-        if let requestId = dict["requestId"] as? String {
-            Self.reply(handleRequest(method: method, paramsJson: paramsJson, requestId: requestId), to: webView)
+        let epoch = pageEpoch
+        let binding = bindingEpoch
+        let perform: (String?) -> Void = { [weak self, weak target] token in
+            guard let self = self, let target = target, !self.closed, self.webView === target, self.pageEpoch == epoch,
+                  self.bindingEpoch == binding else { return }
+            if let token = token { self.pageID = token }
+            self.pageInvalidated = false
+            if let requestId = dict["requestId"] as? String {
+                var response = self.handleRequest(method: method, paramsJson: paramsJson, requestId: requestId)
+                if let token = token { response["pageId"] = token }
+                Self.reply(response, to: target)
+            } else {
+                self.handleScriptMessage(method: method, paramsJson: paramsJson)
+            }
+        }
+        if let token = dict["pageId"] as? String {
+            // Verify the message still belongs to the currently loaded document.
+            target.evaluateJavaScript("window.vzPlayerBridge?.pageId === \(Self.jsString(token))") { value, error in
+                guard error == nil, value as? Bool == true else { return }
+                perform(token)
+            }
         } else {
-            handleScriptMessage(method: method, paramsJson: paramsJson)
+            // Keep the legacy host bridge contract; it has no document identifier.
+            perform(nil)
         }
     }
 }
