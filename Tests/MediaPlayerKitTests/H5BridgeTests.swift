@@ -1,5 +1,8 @@
 import XCTest
 @testable import MediaPlayerKit
+#if canImport(WebKit)
+import WebKit
+#endif
 
 private final class H5LogRecorder: Appender {
     var entries: [(String, String)] = []
