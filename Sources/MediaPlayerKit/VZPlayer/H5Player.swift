@@ -11,6 +11,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     private var isPlayingState: Bool = false
     private var hasEmittedEnded = false
     private var destroyed = false
+    private var playbackState = "idle"
+    var bridgeState: String { executeOnMainThreadSync { self.playbackState } }
     var bridgeIsDestroyed: Bool { executeOnMainThreadSync { self.destroyed } }
     /// Only detach the requesting listener; never clear a replacement installed by the host.
     func removeH5Listener(_ listener: H5EventListener) {
@@ -68,6 +70,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         executeOnMainThread {
             guard !self.destroyed else { return }
             self.destroyed = true
+            self.playbackState = "stopped"
             self.stopTimeUpdateTimer()
             self.multiPlayer.Destroy()
             let finalStatistics = self.multiPlayer.currentStatistics
@@ -82,6 +85,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func setSources(_ sources: [PlayerSource]) {
         executeOnMainThread {
             self.multiPlayer.setSources(sources)
+            self.playbackState = "idle"
         }
     }
     
@@ -367,6 +371,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     public func onStateChanged(state: PlayerState) {
         executeOnMainThread {
+            self.playbackState = state.description
             switch state {
             case .idle, .stopped:
                 self.isPlayingState = false
@@ -418,6 +423,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         executeOnMainThread {
             self.isPlayingState = false
             self.stopTimeUpdateTimer()
+            self.playbackState = "recovering"
             self.h5EventListener?.onRecoveryStarted?(failure)
             self.notifyH5Event("recovering")
         }
@@ -427,6 +433,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         executeOnMainThread {
             self.isPlayingState = false
             self.stopTimeUpdateTimer()
+            self.playbackState = "error"
             // Android H5Player maps the terminal native error to PlayerWARN.
             self.notifyH5Event("PlayerWARN")
         }
@@ -448,6 +455,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     }
     
     private func emitEndedIfNeeded() {
+        playbackState = "completed"
         isPlayingState = false
         stopTimeUpdateTimer()
         guard !hasEmittedEnded else { return }

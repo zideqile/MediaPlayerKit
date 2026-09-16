@@ -33,31 +33,43 @@ public final class PlayerBridge: NSObject, H5EventListener {
         closed = true
         #if canImport(WebKit)
         webView = nil
-        pageID = nil
+        pageGate.invalidate()
         #endif
     }
     #if canImport(WebKit)
     public weak var webView: WKWebView? {
-        didSet { if oldValue !== webView { pageID = nil; pageEpoch &+= 1 } }
+        didSet { if oldValue !== webView { pageGate = BridgePageGate(); pendingHandshakes.removeAll(); webViewEpoch &+= 1 } }
     }
-    private var pageID: String?
+    private var pageGate = BridgePageGate()
+    private var webViewEpoch: UInt64 = 0
+    private var pendingHandshakes: [() -> Void] = []
+    private var pageID: String? { pageGate.pageID }
     /// Optional host allowlist, applied to the sending main-frame URL.
     public var allowsPage: ((URL) -> Bool)?
 
-    /// Call at navigation start to stop sending events until the new page is ready.
-    public func invalidatePage() { pageID = nil; pageInvalidated = true; pageEpoch &+= 1 }
-    private var pageEpoch: UInt64 = 0
-    private var pageInvalidated = false
+    /// Call from didStartProvisionalNavigation; old messages cannot reopen the gate.
+    public func invalidatePage() { pageGate.invalidate(); pendingHandshakes.removeAll() }
+
+    /// Call from didCommit, after WebKit replaces the old document (not at navigation start).
+    public func commitPage() {
+        guard !closed else { return }
+        pageGate.commit()
+        let pending = pendingHandshakes
+        pendingHandshakes.removeAll()
+        for resume in pending { resume() }
+        webView?.evaluateJavaScript("window.vzPlayerBridge?.ready?.().catch(() => {});", completionHandler: nil)
+    }
 
     private func sendJavaScript(_ script: String) {
-        guard !closed, !pageInvalidated, let target = webView else { return }
+        guard !closed, !pageGate.navigating, let target = webView else { return }
         let token = pageID
         let binding = bindingEpoch
-        let epoch = pageEpoch
+        let epoch = pageGate.generation
+        let viewEpoch = webViewEpoch
         DispatchQueue.main.async { [weak self, weak target] in
             guard let self = self, let target = target, !self.closed,
-                  !self.pageInvalidated, self.webView === target, self.pageID == token,
-                  self.bindingEpoch == binding, self.pageEpoch == epoch else { return }
+                  !self.pageGate.navigating, self.webView === target, self.pageID == token,
+                  self.bindingEpoch == binding, self.pageGate.generation == epoch, self.webViewEpoch == viewEpoch else { return }
             let guarded = token.map {
                 "if (window.vzPlayerBridge?.pageId === \(Self.jsString($0))) { \(script) }"
             } ?? "if (!window.vzPlayerBridge?.pageId) { \(script) }"
@@ -141,6 +153,7 @@ public final class PlayerBridge: NSObject, H5EventListener {
 
     private func readyState(_ player: IH5Player) -> [String: Any] {
         var result: [String: Any] = ["event": lastEvent ?? "", "destroyed": false]
+        result["state"] = (player as? H5Player)?.bridgeState ?? "unknown"
         for json in [player.get_currentTime(), player.get_duration(), player.get_pause(),
                      player.get_volume(), player.get_muted(), player.get_loop(), player.get_speed()] {
             if let fields = parseJSON(json) { result.merge(fields) { _, new in new } }
@@ -259,6 +272,23 @@ public final class PlayerBridge: NSObject, H5EventListener {
         return ["requestId": requestId, "ok": true, "result": value]
     }
 
+    /// Shared lifecycle gate for standard and host-defined commands.
+    func handleValidatedRequest(method: String, paramsJson: String, requestId: String,
+                                customHandler: ((String, String) -> [String: Any]?)?) -> [String: Any] {
+        let error: String?
+        if closed { error = "bridge_closed" }
+        else if player == nil { error = "player_unavailable" }
+        else if commandDestroyed || (player as? H5Player)?.bridgeIsDestroyed == true {
+            if method == "destroy" || method == "Destroy" {
+                return handleRequest(method: method, paramsJson: paramsJson, requestId: requestId)
+            }
+            error = "player_destroyed"
+        } else { error = nil }
+        if let error = error { return ["requestId": requestId, "ok": false, "error": error] }
+        return customHandler?(method, paramsJson)
+            ?? handleRequest(method: method, paramsJson: paramsJson, requestId: requestId)
+    }
+
     #if canImport(WebKit)
     public static func reply(_ response: [String: Any], to webView: WKWebView?) {
         guard let data = try? JSONSerialization.data(withJSONObject: response),
@@ -287,6 +317,13 @@ public final class PlayerBridge: NSObject, H5EventListener {
 #if canImport(WebKit)
 extension PlayerBridge: WKScriptMessageHandler {
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        handleMessage(message)
+    }
+
+    /// Custom commands run only after the same origin, document and lifecycle checks.
+    /// Return nil to use the standard SDK dispatcher. Handler executes on the main thread.
+    public func handleMessage(_ message: WKScriptMessage,
+                              customHandler: ((String, String) -> [String: Any]?)? = nil) {
         guard !closed, message.name == "vzPlayerBridge", message.frameInfo.isMainFrame,
               let target = webView, message.webView === target,
               let dict = message.body as? [String: Any],
@@ -294,19 +331,31 @@ extension PlayerBridge: WKScriptMessageHandler {
         if let allowsPage = allowsPage {
             guard let url = message.frameInfo.request.url, allowsPage(url) else { return }
         }
+        if pageGate.navigating {
+            // A new document may announce itself before didCommit. Replay only handshakes,
+            // then recheck the live document; never queue playback commands from the old page.
+            if method == "bridgeReady", dict["pageId"] is String, pendingHandshakes.count < 16 {
+                pendingHandshakes.append { [weak self] in self?.handleMessage(message, customHandler: customHandler) }
+            }
+            return
+        }
         let paramsJson = dict["paramsJson"] as? String ?? "{}"
-        let epoch = pageEpoch
+        let epoch = pageGate.generation
+        let viewEpoch = webViewEpoch
         let binding = bindingEpoch
         let perform: (String?) -> Void = { [weak self, weak target] token in
-            guard let self = self, let target = target, !self.closed, self.webView === target, self.pageEpoch == epoch,
+            guard let self = self, let target = target, !self.closed, self.webView === target, self.pageGate.generation == epoch, self.webViewEpoch == viewEpoch,
                   self.bindingEpoch == binding else { return }
-            if let token = token { self.pageID = token }
-            self.pageInvalidated = false
+            guard self.pageGate.accept(token, handshake: method == "bridgeReady", generation: epoch) else { return }
             if let requestId = dict["requestId"] as? String {
-                var response = self.handleRequest(method: method, paramsJson: paramsJson, requestId: requestId)
+                var response = self.handleValidatedRequest(method: method, paramsJson: paramsJson,
+                    requestId: requestId, customHandler: customHandler)
+                response["requestId"] = requestId
                 if let token = token { response["pageId"] = token }
                 Self.reply(response, to: target)
             } else {
+                if !self.commandDestroyed, (self.player as? H5Player)?.bridgeIsDestroyed != true,
+                   self.player != nil, customHandler?(method, paramsJson) != nil { return }
                 self.handleScriptMessage(method: method, paramsJson: paramsJson)
             }
         }
