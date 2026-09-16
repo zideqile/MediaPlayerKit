@@ -47,6 +47,15 @@ if (bridge) {
     };
     bridge.onTimeUpdate = seconds => { $('time').textContent = `播放进度：${seconds} 秒`; };
     bridge.onError = (code, message) => showError(new Error(`${code}: ${message}`));
+    if (typeof bridge.ready === 'function') {
+        bridge.ready().then(state => {
+            if (!state) return;
+            if (state.event) bridge.onEvent(state.event);
+            bridge.onTimeUpdate(state.currentTime || 0);
+            muted = state.muted === true;
+            $('mute').textContent = muted ? '取消静音' : '静音';
+        }).catch(showError);
+    }
 }
 $('form').addEventListener('submit', async event => {
     event.preventDefault();

@@ -7,6 +7,58 @@ private final class H5LogRecorder: Appender {
 }
 final class H5BridgeTests: XCTestCase {
     override func tearDown() { Logger.destroy(); super.tearDown() }
+    func testBridgeRejectsCommandsAfterDestroyAndCanRebind() {
+        let first = H5Player(playerView: MediaPlayerView())
+        let bridge = PlayerBridge(player: first)
+        XCTAssertEqual(bridge.handleRequest(method: "destroy", requestId: "1")["ok"] as? Bool, true)
+        XCTAssertEqual(bridge.handleRequest(method: "play", requestId: "2")["error"] as? String, "player_destroyed")
+        XCTAssertEqual(bridge.handleRequest(method: "destroy", requestId: "3")["ok"] as? Bool, true)
+        let next = H5Player(playerView: MediaPlayerView())
+        defer { next.destroy() }
+        bridge.bind(player: next)
+        XCTAssertEqual(bridge.handleRequest(method: "getVolume", requestId: "4")["ok"] as? Bool, true)
+        bridge.detach()
+        XCTAssertEqual(bridge.handleRequest(method: "getVolume", requestId: "5")["error"] as? String, "bridge_closed")
+    }
+
+    func testBridgeDetectsNativeDestructionAndReadySnapshot() {
+        let player = H5Player(playerView: MediaPlayerView())
+        let bridge = PlayerBridge(player: player)
+        _ = player.set_muted("{\"muted\":true}")
+        bridge.onEvent("pause")
+        let response = bridge.handleRequest(method: "bridgeReady", requestId: "ready")
+        let snapshot = response["result"] as? [String: Any]
+        XCTAssertEqual(snapshot?["muted"] as? Bool, true)
+        XCTAssertEqual(snapshot?["event"] as? String, "pause")
+        player.destroy()
+        XCTAssertEqual(bridge.handleRequest(method: "play", requestId: "play")["error"] as? String, "player_destroyed")
+    }
+
+    func testDispatchOnlyAssignmentDoesNotStealCustomListener() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        let listener = BridgeEventRecorder()
+        player.SetOnH5EventListener(listener)
+        let bridge = PlayerBridge(player: nil)
+        bridge.player = player
+        _ = bridge.handleRequest(method: "getVolume", requestId: "query")
+        player.onStateChanged(state: .paused)
+        bridge.detach()
+        player.onStateChanged(state: .playing)
+        XCTAssertEqual(listener.events, ["pause", "playing"])
+    }
+
+    func testDetachDoesNotClearAnotherListener() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        let bridge = PlayerBridge(player: player)
+        let replacement = BridgeEventRecorder()
+        player.SetOnH5EventListener(replacement)
+        bridge.detach()
+        player.onStateChanged(state: .paused)
+        XCTAssertEqual(replacement.events, ["pause"])
+    }
+
     func testH5FailuresSharePlayerLogGroupAndPreserveCaller() {
         let recorder = H5LogRecorder()
         Logger.configure { _ in [recorder] }
@@ -49,4 +101,11 @@ final class H5BridgeTests: XCTestCase {
         bridge.player = nil
         XCTAssertEqual(bridge.handleRequest(method: "getVolume", requestId: "5")["error"] as? String, "player_unavailable")
     }
+}
+
+private final class BridgeEventRecorder: NSObject, H5EventListener {
+    var events: [String] = []
+    func onEvent(_ name: String) { events.append(name) }
+    func onError(_ code: Int, errMsg: String) {}
+    func onTimeUpdate(_ currentTime: Int64) {}
 }

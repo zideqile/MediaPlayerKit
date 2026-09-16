@@ -10,6 +10,14 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     private var timeUpdateTimer: Timer?
     private var isPlayingState: Bool = false
     private var hasEmittedEnded = false
+    private var destroyed = false
+    var bridgeIsDestroyed: Bool { executeOnMainThreadSync { self.destroyed } }
+    /// Only detach the requesting listener; never clear a replacement installed by the host.
+    func removeH5Listener(_ listener: H5EventListener) {
+        executeOnMainThread {
+            if self.h5EventListener === listener { self.h5EventListener = nil }
+        }
+    }
     @objc public var failureHistory: [PlaybackAttemptFailure] {
         executeOnMainThreadSync { self.multiPlayer.failureHistory }
     }
@@ -58,6 +66,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     @objc public func destroy() {
         executeOnMainThread {
+            guard !self.destroyed else { return }
+            self.destroyed = true
             self.stopTimeUpdateTimer()
             self.multiPlayer.Destroy()
             let finalStatistics = self.multiPlayer.currentStatistics

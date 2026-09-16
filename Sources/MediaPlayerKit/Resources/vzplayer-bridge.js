@@ -11,10 +11,15 @@ window.vzPlayerBridge.configure = function (options = {}) {
     }
     androidSendEvent = options.androidSendEvent || null;
 };
+// Document identity is independent of playback sessionId and survives script reinstallation.
+const pageId = window.crypto?.randomUUID?.() || `page-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+window.vzPlayerBridge.pageId = pageId;
+let pageActive = true;
 const bridgePending = new Map();
 let bridgeSequence = 0;
 window.vzPlayerBridge.onResponse = function (response) {
     if (!response || typeof response.requestId !== 'string') return;
+    if (!pageActive || (response.pageId !== undefined && response.pageId !== pageId)) return;
     const pending = bridgePending.get(response.requestId);
     if (!pending) return;
     bridgePending.delete(response.requestId);
@@ -24,6 +29,7 @@ window.vzPlayerBridge.onResponse = function (response) {
 };
 window.vzPlayerBridge.request = function (method, params = {}) {
     return new Promise((resolve, reject) => {
+        if (!pageActive) { reject(new Error('page_closed')); return; }
         let paramsJson;
         try { paramsJson = typeof params === 'string' ? params : JSON.stringify(params); }
         catch (error) { reject(error); return; }
@@ -62,19 +68,33 @@ window.vzPlayerBridge.request = function (method, params = {}) {
         }
         const handler = window.webkit?.messageHandlers?.vzPlayerBridge;
         if (!handler) { reject(new Error('bridge_unavailable')); return; }
-        const requestId = `request-${++bridgeSequence}`;
+        const requestId = `${pageId}-request-${++bridgeSequence}`;
         const timer = setTimeout(() => {
             bridgePending.delete(requestId);
             reject(new Error('bridge_timeout'));
         }, 10000);
         bridgePending.set(requestId, {resolve, reject, timer});
-        try { handler.postMessage({method, paramsJson, requestId}); }
+        try { handler.postMessage({method, paramsJson, requestId, pageId}); }
         catch (error) {
             clearTimeout(timer); bridgePending.delete(requestId); reject(error);
         }
     });
 };
+// Register callbacks first, then await ready() to synchronize current native state.
+// Android keeps its existing host bridge contract; no new native method is required.
+window.vzPlayerBridge.ready = function () {
+    if (window.AndroidBridge || window.vzPlayerNative) return Promise.resolve(null);
+    return window.vzPlayerBridge.request('bridgeReady');
+};
+function announcePage() {
+    if (window.AndroidBridge || window.vzPlayerNative) return;
+    try {
+        window.webkit?.messageHandlers?.vzPlayerBridge?.postMessage({method:'bridgeReady', paramsJson:'{}', pageId});
+    } catch (_) { /* Explicit ready() reports unavailable transports to the caller. */ }
+}
+window.addEventListener('pageshow', () => { pageActive = true; announcePage(); });
 window.addEventListener('pagehide', () => {
+    pageActive = false;
     for (const pending of bridgePending.values()) {
         clearTimeout(pending.timer); pending.reject(new Error('page_closed'));
     }
@@ -83,4 +103,5 @@ window.addEventListener('pagehide', () => {
 
 
 window.vzPlayerBridge.request.mediaPlayerKitBridge = true;
+announcePage();
 })();

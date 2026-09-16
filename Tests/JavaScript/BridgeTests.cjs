@@ -11,6 +11,11 @@ function setup(native) {
     else window.webkit = {messageHandlers: {vzPlayerBridge: {postMessage: msg => messages.push(msg)}}};
     const context = vm.createContext({window, setTimeout: fn => { timers.set(++sequence, fn); return sequence; }, clearTimeout: id => timers.delete(id)});
     vm.runInContext(code, context);
+    if (!native) {
+        const hello = messages.shift();
+        assert.equal(hello.method, 'bridgeReady');
+        assert.equal(hello.pageId, window.vzPlayerBridge.pageId);
+    }
     return {bridge: window.vzPlayerBridge, messages, timers, events, reinstall: () => vm.runInContext(code, context)};
 }
 (async () => {
@@ -18,7 +23,24 @@ function setup(native) {
     const statistics = await statisticsNative.bridge.request('getStatistics');
     assert.equal(statistics.sessionId, 's');
     assert.equal(statistics.session.play_ms, 1200);
+    assert.equal(await statisticsNative.bridge.ready(), null);
     const ios = setup();
+    const ready = ios.bridge.ready();
+    const handshake = ios.messages.pop();
+    assert.equal(handshake.method, 'bridgeReady');
+    assert.equal(handshake.pageId, ios.bridge.pageId);
+    ios.bridge.onResponse({requestId: handshake.requestId, pageId: handshake.pageId, ok: true,
+        result: {event: 'playing', currentTime: 12, muted: true}});
+    assert.equal((await ready).currentTime, 12);
+    const newPage = setup();
+    assert.notEqual(newPage.bridge.pageId, ios.bridge.pageId);
+    const isolated = newPage.bridge.request('getVolume');
+    const newRequest = newPage.messages[0];
+    assert.notEqual(newRequest.requestId, handshake.requestId);
+    newPage.bridge.onResponse({requestId: newRequest.requestId, pageId: ios.bridge.pageId, ok: true, result: 'stale'});
+    assert.equal(newPage.timers.size, 1);
+    newPage.bridge.onResponse({requestId: newRequest.requestId, pageId: newPage.bridge.pageId, ok: true, result: 'fresh'});
+    assert.equal(await isolated, 'fresh');
     const first = ios.bridge.request('getVolume');
     const request = ios.bridge.request;
     ios.reinstall();
@@ -35,6 +57,12 @@ function setup(native) {
     const closed = ios.bridge.request('getVolume');
     ios.events.pagehide();
     await assert.rejects(closed, /page_closed/);
+    await assert.rejects(ios.bridge.request('play'), /page_closed/);
+    ios.events.pageshow();
+    const restored = ios.bridge.ready();
+    const restoreRequest = ios.messages.at(-1);
+    ios.bridge.onResponse({requestId: restoreRequest.requestId, ok: true, result: {event:'pause'}});
+    assert.equal((await restored).event, 'pause');
     const android = setup({get_volume: () => '{"volume":0.8}', set_volume: () => false});
     assert.equal((await android.bridge.request('getVolume')).volume, 0.8);
     await assert.rejects(android.bridge.request('setVolume', {volume: 2}), /invalid_parameters/);

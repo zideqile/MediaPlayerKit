@@ -10,7 +10,7 @@ private final class H5URLMessageHandler: NSObject, WKScriptMessageHandler {
     let bridge: PlayerBridge
     private var closed = false
     init(player: IH5Player) { bridge = PlayerBridge(player: player) }
-    func close() { closed = true; bridge.player = nil; bridge.webView = nil }
+    func close() { closed = true; bridge.detach() }
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard !closed, message.name == "vzPlayerBridge", message.frameInfo.isMainFrame,
@@ -21,7 +21,11 @@ private final class H5URLMessageHandler: NSObject, WKScriptMessageHandler {
         }
         guard let requestId = body["requestId"] as? String else { return }
         var response: [String: Any] = ["requestId": requestId, "ok": false, "error": "请输入有效的 HTTP、HTTPS 或 RTMP 播放地址"]
-        defer { PlayerBridge.reply(response, to: bridge.webView) }
+        if let pageID = body["pageId"] as? String { response["pageId"] = pageID }
+        defer {
+            if let pageID = body["pageId"] as? String { response["pageId"] = pageID }
+            PlayerBridge.reply(response, to: bridge.webView)
+        }
         guard let json = body["paramsJson"] as? String, let data = json.data(using: .utf8),
               let params = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let input = params["url"] as? String else { return }
