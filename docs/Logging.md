@@ -91,7 +91,7 @@ Linux 可通过独立临时 Swift Package 编译 VZLogger 文件，并仅在临�
   - `ts_<status>`（如 `ts_200`）：TS/分片请求状态码计数打点（对标 Android `ts_<status>`）
   - `ts_byte`：TS/分片请求下载传输字节数（对标 Android `ts_byte`）
   - `ts_time`：TS/分片请求耗时毫秒数（对标 Android `ts_time`）
-  - `bitrate`：观测码率（对标 Android `bitrate`，同时保留 `bandwidth` 兼容 web）
+  - `bitrate`：观测下载吞吐率，bit/s（保留 Android 同名字段兼容；当前与 `bandwidth` 同源，不代表视频编码码率）
 - 聚合网络与质量指标：除对标 Android vzplayer 的既有字段（`fps`、`frame_rate`、`drop`、`drop_count` 等）严格同名外，其余运行时网络、读取、丢包与请求指标均遵循“言简意赅”原则，消除冗余的平台特异前缀（如 `ios_`）与过度修饰（如 `_delta`、`_per_second`、`_bps`）：
   - `net_bytes`：采样周期网络传输增量字节数
   - `net_speed`：采样周期网络下载速率（字节/秒）
@@ -236,6 +236,8 @@ net_bytes/read_bytes 及其 total 使用 B/KiB/MiB（1024 进制）；net_speed/
 帧率使用 fps，丢帧（drop）、丢包（drop_packet）与媒体请求数（media_requests）保持纯数字计数，不附加单位。
 例如 `bandwidth=19.49Mbps drop_frames=0 media_requests=2 net_bytes=1.46MiB net_speed=461.19KiB/s`。
 单位换算仅用于日志文本；statLogs、metrics 和业务回调仍使用原始数值和既有单位。
+`runtime metrics:` 只显示 `bandwidth`，不重复显示其兼容别名 `bitrate`；仅传入 `bitrate` 时也以 `bandwidth` 显示。统计接口及 statLogs 仍保留两者。
+`bandwidth` 来源于 AVPlayer 的 observedBitrate；`net_speed` 是 SDK 采样窗口内的网络字节增量除以时间，两者统计口径不同。
 
 运行指标文本日志使用显示名：drop → drop_frames、drop_packet → drop_packets、
 fps → display_fps、frame_rate → nominal_fps，分别表示本周期丢帧/丢包数、实际显示/标称帧率。

@@ -140,7 +140,7 @@ schemaVersion 为 2，不同时输出旧别名，业务侧需按版本更新读�
 first_frame_time 沿用 Android 既有名称，单位毫秒；play_ms/create_ms/recover_ms 为毫秒，
 play_sec/stall_sec 为秒，metrics_time 为 Unix 毫秒时间戳。
 
-bandwidth 是 AVPlayer 观测下载吞吐率（bit/s），不是视频编码码率。
+bandwidth 是 AVPlayer 观测下载吞吐率（bit/s），不是视频编码码率。统计接口和 statLogs 中的 bitrate 是同源兼容别名，数值相同；runtime metrics 文本只显示 bandwidth，避免重复。
 net_speed 为本采样周期网络字节增量除以单调时钟间隔（B/s），两者统计区间不同，
 不能简单按 8 倍换算后要求相等。net_bytes/media_requests 为周期增量，_total 后缀为累计值。
 

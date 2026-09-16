@@ -20,6 +20,8 @@ struct RuntimeMetricsSampler {
     mutating func sample(_ metrics: PlayerRuntimeMetrics, at time: TimeInterval) -> [String: Double] {
         guard time.isFinite else { return [:] }
         var result: [String: Double] = [:]
+        // Preserve bitrate as a compatibility alias for throughput in statistical APIs.
+        // Text logs display only bandwidth; neither field is encoded video bitrate.
         for (key, value) in [("fps", metrics.displayFPS), ("frame_rate", metrics.nominalFrameRate),
                              ("bandwidth", metrics.observedBitrate), ("bitrate", metrics.observedBitrate)] {
             if let value = value, value.isFinite, value >= 0,

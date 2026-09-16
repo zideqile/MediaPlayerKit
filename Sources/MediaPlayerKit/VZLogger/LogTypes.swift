@@ -32,6 +32,12 @@ public enum LogFormatter {
     }
     /// Human-readable units only for runtime log text; metric samples remain numeric.
     static func formatRuntimeMetrics(_ fields: [String: Double]) -> String {
+        // bitrate is a legacy alias for observed throughput, not encoded media bitrate.
+        // Normalize a copy for display; raw metrics/statLogs retain both keys.
+        var fields = fields
+        if let legacy = fields.removeValue(forKey: "bitrate"), fields["bandwidth"] == nil {
+            fields["bandwidth"] = legacy
+        }
         let displayNames = ["drop": "drop_frames", "drop_packet": "drop_packets",
                             "fps": "display_fps", "frame_rate": "nominal_fps"]
         return fields.keys.sorted().compactMap { name in
