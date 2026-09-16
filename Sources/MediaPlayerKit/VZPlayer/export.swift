@@ -18,7 +18,7 @@ public final class export: NSObject {
         let options = initConfig ?? InitConfig()
         if initConfig != nil {
             config.userId = options.userId
-            config.topicId = options.topicId
+            if !options.topicId.isEmpty { config.topicId = options.topicId }
         }
         config.userIdUuid = "\(config.userId)_\(UUID().uuidString)"
         self.playerConfig = config

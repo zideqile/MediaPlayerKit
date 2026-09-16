@@ -34,6 +34,135 @@ private final class MockLogTransport: LogHTTPTransport {
 }
 final class LoggingTests: XCTestCase {
     override func tearDown() { Logger.destroy(); super.tearDown() }
+    #if canImport(UIKit)
+    func testPlayerStagesStreamIdentityUntilSourcesAreReplaced() throws {
+        let initial = VPlayerConfig(); initial.topicId = "topic"; initial.streamId = "old"
+        let options = InitConfig(); options.appenders = ["ESAppender"]
+        let transport = MockLogTransport()
+        try Logger.initialize(config: initial, initConfig: options, transport: transport)
+        let player = MultiSourcePlayer(playerView: MediaPlayerView(), config: initial)
+        defer { player.Destroy() }
+        let next = VPlayerConfig(); next.topicId = "topic"; next.streamId = "new"
+        player.setConfig(next)
+        player.SetMuted(true)
+        Logger.flushLog()
+        next.streamId = "caller-mutated"
+        player.setSources([])
+        player.SetMuted(false)
+        Logger.flushLog()
+        let records = try transport.requests.flatMap { request -> [[String: Any]] in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [[String: Any]])
+        }
+        let old = try XCTUnwrap(records.first { ($0["logs"] as? String)?.contains("set_muted: true") == true })
+        let new = try XCTUnwrap(records.first { ($0["logs"] as? String)?.contains("set_muted: false") == true })
+        XCTAssertEqual(old["streamId"] as? String, "old")
+        XCTAssertEqual(new["streamId"] as? String, "new")
+    }
+    #endif
+
+    func testStreamContextSwitchPreservesOldBuffersAndOtherPlayers() throws {
+        let config = VPlayerConfig()
+        config.topicId = "topic-old"; config.streamId = "old"; config.userId = 42
+        let options = InitConfig(); options.appenders = ["ESAppender"]
+        let transport = MockLogTransport()
+        try Logger.initialize(config: config, initConfig: options, transport: transport)
+        let player = Logger.getLogger("player-a")
+        player.onSourceChanged(srcUrl: "https://old.example/live.m3u8", srcType: "hls")
+        player.logAI("old attached state")
+        player.logSI("fps", 25)
+        player.logMI(1, "old merged {}", "message")
+        let other = Logger.getLogger("player-b")
+        other.logI("other player")
+        let next = VPlayerConfig(); next.topicId = "topic-new"; next.streamId = "new"
+        let snapshot = LogContext(config: next)
+        next.streamId = "mutated-after-snapshot"
+        Logger.configureStream("player-a", context: snapshot)
+        player.logI("new message")
+        Logger.flushLog()
+        let records = try transport.requests.flatMap { request -> [[String: Any]] in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [[String: Any]])
+        }
+        let old = try XCTUnwrap(records.first { ($0["logs"] as? String)?.contains("old merged") == true })
+        let new = try XCTUnwrap(records.first { ($0["logs"] as? String)?.contains("new message") == true })
+        let independent = try XCTUnwrap(records.first { $0["logGroup"] as? String == "player-b" })
+        XCTAssertEqual(old["streamId"] as? String, "old")
+        XCTAssertEqual(old["topicId"] as? String, "topic-old")
+        XCTAssertTrue((old["attachedLogs"] as? String)?.contains("old attached state") == true)
+        XCTAssertEqual((old["statLogs"] as? [String: [Double]])?["fps"], [25])
+        XCTAssertEqual(new["streamId"] as? String, "new")
+        XCTAssertEqual(new["topicId"] as? String, "topic-new")
+        XCTAssertEqual(new["userId"] as? Int, 42)
+        XCTAssertEqual(new["attachedLogs"] as? String, "")
+        XCTAssertNil(new["statLogs"])
+        XCTAssertEqual((new["currentPlayerInfo"] as? [String: String])?["srcUrl"], "")
+        XCTAssertEqual(independent["streamId"] as? String, "old")
+        XCTAssertEqual(Set(records.compactMap { $0["index"] as? Int }).count, records.count)
+    }
+
+    func testSameStreamKeepsBufferAndEmptyIDsClearContext() throws {
+        let config = VPlayerConfig(); config.topicId = "topic"; config.streamId = "stream"
+        let options = InitConfig(); options.appenders = ["ESAppender"]
+        let transport = MockLogTransport()
+        try Logger.initialize(config: config, initConfig: options, transport: transport)
+        let player = Logger.getLogger("player")
+        player.logAI("retained")
+        player.logI("before")
+        Logger.configureStream("player", context: LogContext(config: config))
+        XCTAssertTrue(transport.requests.isEmpty)
+        player.logI("after")
+        Logger.configureStream("player", context: LogContext(config: VPlayerConfig()))
+        player.logI("cleared")
+        player.flushLog()
+        let records = try transport.requests.flatMap { request -> [[String: Any]] in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [[String: Any]])
+        }
+        XCTAssertEqual(records.count, 2)
+        XCTAssertTrue((records[0]["logs"] as? String)?.contains("after") == true)
+        XCTAssertTrue((records[0]["attachedLogs"] as? String)?.contains("retained") == true)
+        XCTAssertEqual(records[1]["streamId"] as? String, "")
+        XCTAssertEqual(records[1]["topicId"] as? String, "")
+    }
+
+    func testStreamContextRefreshesNewUploaderLookup() throws {
+        let transport = MockLogTransport()
+        let response = Data("""
+        {"isok":true,"code":0,"dataObj":[{"type":2,"expires":200,"now":100,"url":"https://upload.example/record"}]}
+        """.utf8)
+        transport.responses = [.success(response), .success(Data()), .success(response), .success(Data())]
+        let config = VPlayerConfig(); config.topicId = "topic-a"; config.streamId = "a"
+        let options = InitConfig(); options.appenders = ["ESAppender"]
+        options.getAuthorizationCallback = { "token" }
+        let uploaded = expectation(description: "two uploads")
+        try Logger.initialize(config: config, initConfig: options, transport: transport)
+        let player = Logger.getLogger("player")
+        player.logI("first"); player.flushLog()
+        let first = expectation(description: "first upload")
+        DispatchQueue.global().async {
+            let deadline = Date().addingTimeInterval(1.5)
+            while transport.requests.count < 2 && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            first.fulfill()
+        }
+        wait(for: [first], timeout: 2)
+        config.topicId = "topic-b"; config.streamId = "b"
+        Logger.configureStream("player", context: LogContext(config: config))
+        player.logI("second"); player.flushLog()
+        DispatchQueue.global().async {
+            let deadline = Date().addingTimeInterval(1.5)
+            while transport.requests.count < 4 && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            uploaded.fulfill()
+        }
+        wait(for: [uploaded], timeout: 2)
+        let lookups = transport.requests.filter { $0.url?.path == "/log/usertrack_list" }
+        XCTAssertEqual(lookups.count, 2)
+        guard lookups.count == 2 else { return }
+        let identities = lookups.map { request in
+            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+        }
+        XCTAssertEqual(identities[0].first { $0.name == "streamId" }?.value, "a")
+        XCTAssertEqual(identities[1].first { $0.name == "streamId" }?.value, "b")
+        XCTAssertEqual(identities[1].first { $0.name == "topicId" }?.value, "topic-b")
+    }
+
     func testLevelAndStatisticsContract() {
         let appender = RecordingAppender()
         let logger = InternalLogger(logGroup: "test", level: .warn)
@@ -808,10 +937,10 @@ extension LoggingTests {
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics([
             "bandwidth": 19488186, "drop": 0, "media_requests": 2,
             "net_bytes": 1534832, "net_speed": 472257.16
-        ]), "bandwidth=19.49Mbps drop=0 media_requests=2 net_bytes=1.46MiB net_speed=461.19KiB/s")
+        ]), "bandwidth=19.49Mbps drop_frames=0 media_requests=2 net_bytes=1.46MiB net_speed=461.19KiB/s")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics([
             "read_bytes": 1024, "read_speed": 0, "fps": 24, "drop_packet": 1
-        ]), "drop_packet=1 fps=24fps read_bytes=1KiB read_speed=0B/s")
+        ]), "drop_packets=1 display_fps=24fps read_bytes=1KiB read_speed=0B/s")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bandwidth": 1000]), "bandwidth=1Kbps")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["net_bytes": 1023]), "net_bytes=1023B")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["net_bytes": 1023.999]), "net_bytes=1KiB")
@@ -880,3 +1009,13 @@ extension LoggingTests {
     }
 }
 
+
+
+extension LoggingTests {
+    func testRuntimeMetricDisplayNamesPreserveRawKeys() {
+        let fields: [String: Double] = ["drop": 2, "drop_packet": 3, "fps": 29.5, "frame_rate": 30]
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(fields),
+                       "drop_frames=2 drop_packets=3 display_fps=29.50fps nominal_fps=30fps")
+        XCTAssertEqual(Set(fields.keys), Set(["drop", "drop_packet", "fps", "frame_rate"]))
+    }
+}

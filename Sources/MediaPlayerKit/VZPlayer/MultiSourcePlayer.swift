@@ -56,6 +56,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     private var terminalFailure = false
     private var wantsToPlay = true
     private let diagnostics = PlaybackDiagnostics()
+    // Snapshot immediately: callers may reuse/mutate their VPlayerConfig instance.
+    private var pendingLogContext: LogContext?
     private var watchdog = PlaybackWatchdog()
     private var stallDetector = StallDetector()
     private var stallSeeking = false
@@ -76,6 +78,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         self.savedLoop = config.loop
         self.savedSpeed = config.speed
         super.init()
+        Logger.configureStream(diagnostics.group, context: LogContext(config: config))
         #if canImport(UIKit)
         appActive = UIApplication.shared.applicationState == .active
         NotificationCenter.default.addObserver(self, selector: #selector(suspendWatchdog),
@@ -317,6 +320,10 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         guard !isDestroyed else { return }
         stopWatchdog()
         diagnostics.newSources()
+        if let context = pendingLogContext {
+            Logger.configureStream(diagnostics.group, context: context)
+            pendingLogContext = nil
+        }
         playerView.playbackStatistics = [:]
         generation &+= 1 // Cancel a queued retry, even before Play is called.
         terminalFailure = false
@@ -337,6 +344,8 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func setConfig(_ config: VPlayerConfig) {
+        guard !isDestroyed else { return }
+        pendingLogContext = LogContext(config: config)
         stallDetector.reset()
         diagnostics.configureRequests(threshold: Double(config.slowRequestThreshold), isLive: config.isLive)
         diagnostics.configureStatistics(interval: Double(config.generalStatisticsUploadInterval) / 1000)

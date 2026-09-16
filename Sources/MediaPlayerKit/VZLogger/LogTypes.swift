@@ -32,7 +32,9 @@ public enum LogFormatter {
     }
     /// Human-readable units only for runtime log text; metric samples remain numeric.
     static func formatRuntimeMetrics(_ fields: [String: Double]) -> String {
-        fields.keys.sorted().compactMap { name in
+        let displayNames = ["drop": "drop_frames", "drop_packet": "drop_packets",
+                            "fps": "display_fps", "frame_rate": "nominal_fps"]
+        return fields.keys.sorted().compactMap { name in
             guard let value = fields[name] else { return nil }
             let text: String
             switch name {
@@ -47,7 +49,7 @@ public enum LogFormatter {
             default:
                 text = formatValue(value)
             }
-            return "\(name)=\(text)"
+            return "\(displayNames[name] ?? name)=\(text)"
         }.joined(separator: " ")
     }
 

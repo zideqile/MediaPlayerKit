@@ -36,7 +36,9 @@ private final class H5URLMessageHandler: NSObject, WKScriptMessageHandler {
         }
         let isLive = params["isLive"] as? Bool ?? true
         let source = PlayerSource(url: address, type: type, tag: "H5 输入", isLive: isLive)
-        let config = VPlayerConfig()
+        let config = StreamAPIService.playbackConfig(for: player,
+            topicId: params["topicId"] as? String ?? "topic_h5_url",
+            streamId: params["streamId"] as? String ?? "")
         config.isLive = isLive
         player.setConfig(config)
         player.setSources([source])

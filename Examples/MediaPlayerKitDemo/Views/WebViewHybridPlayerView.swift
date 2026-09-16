@@ -248,6 +248,9 @@ final class PlayerJSBridgeCoordinator: NSObject, WKScriptMessageHandler, H5Event
                 self.currentStreamSources = vzSources
                 self.currentSourceIndex = 0
                 self.streamFetchError = nil
+                let config = StreamAPIService.playbackConfig(for: player,
+                    topicId: "topic_webview_hybrid", streamId: streamId)
+                player.setConfig(config)
                 player.setSources(vzSources)
                 player.play()
             } else {

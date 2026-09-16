@@ -50,6 +50,15 @@ public final class InternalLogger {
             }
         }
     }
+    /// Flush mergers before replacing the sink so pending text retains its old identity.
+    func replaceAppender(_ old: Appender, with replacement: Appender) {
+        executor.sync {
+            guard !closed else { return }
+            removeAppender(old)
+            old.finish()
+            addAppender(replacement)
+        }
+    }
     public func onSourceChanged(srcUrl: String, srcType: String) {
         executor.sync {
             guard !closed else { return }
@@ -81,6 +90,9 @@ public enum Logger {
     private static var owned: [Appender] = []
     private static var ownedByGroup: [String: [Appender]] = [:]
     private static var factory: ((String) -> [Appender])?
+    private static var streamFactory: ((String, LogContext) throws -> ESUploadAppender?)?
+    private static var baseContext: LogContext?
+    private static var streamContexts: [String: LogContext] = [:]
     private static var minimumLevel: LogLevel = .info
     private static var currentSource: (url: String, type: String)?
 
@@ -105,12 +117,21 @@ public enum Logger {
             .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
         policy.statLogIsAttachedToLog = app["statLogIsAttachedToLog"] as? Bool ?? false
         policy.statsMinUploadIntervalMs = app["statsMinUploadIntervalMs"] as? Double ?? 180000
-        let uploader: ESUploader?
-        if enabled.contains("ESAppender") {
-            if app["forceUseNewESUploader"] as? Bool != false, let auth = initConfig.getAuthorizationCallback {
-                uploader = try NewESUploader(env: config.env, topicId: config.topicId, userId: String(config.userId), streamId: config.streamId, clusterDomain: initConfig.clusterDomain, authorization: auth, transport: transport)
-            } else { uploader = try OldESUploader(server: config.logServerConfig, env: config.env, transport: transport) }
-        } else { uploader = nil }
+        // Capture routing settings by value; callers may reuse their configuration.
+        let env = config.env
+        let clusterDomain = initConfig.clusterDomain
+        let authorization = initConfig.getAuthorizationCallback
+        let useNewUploader = app["forceUseNewESUploader"] as? Bool != false && authorization != nil
+        let oldUploader: ESUploader? = enabled.contains("ESAppender") && !useNewUploader
+            ? try OldESUploader(server: config.logServerConfig, env: env, transport: transport) : nil
+        let makeUploader: (LogContext) throws -> ESUploader? = { context in
+            guard enabled.contains("ESAppender") else { return nil }
+            if useNewUploader, let auth = authorization {
+                return try NewESUploader(env: env, topicId: context.topicId, userId: String(context.userId), streamId: context.streamId, clusterDomain: clusterDomain, authorization: auth, transport: transport)
+            }
+            return oldUploader
+        }
+        let uploader = try makeUploader(context)
         let file: FileAppender?
         if let path = initConfig.fileAppenderPath, !path.isEmpty {
             file = try FileAppender(fileURL: URL(fileURLWithPath: path))
@@ -121,6 +142,15 @@ public enum Logger {
             if let file = file { result.append(file) }
             if let uploader = uploader { result.append(ESUploadAppender(context: context, logGroup: group, policy: policy, uploader: uploader)) }
             return result
+        }
+        executor.sync {
+            baseContext = context
+            if uploader != nil {
+                streamFactory = { group, context in
+                    guard let uploader = try makeUploader(context) else { return nil }
+                    return ESUploadAppender(context: context, logGroup: group, policy: policy, uploader: uploader)
+                }
+            }
         }
         for appender in initConfig.externalAppenders { addAppender(appender) }
     }
@@ -140,12 +170,40 @@ public enum Logger {
             return logger
         }
     }
+    /// Changes only this player's stream identity. Call after settling the old stream.
+    /// Old sinks drain asynchronously with their original context and upload endpoint.
+    static func configureStream(_ group: String, context requested: LogContext) {
+        executor.sync {
+            guard var context = baseContext else { return }
+            context.topicId = requested.topicId
+            context.streamId = requested.streamId
+            context.playerConfig = requested.playerConfig
+            let previous = streamContexts[group] ?? baseContext
+            let logger = getLogger(group)
+            guard previous?.topicId != context.topicId || previous?.streamId != context.streamId else { return }
+            do {
+                if let replacement = try streamFactory?(group, context),
+                   let old = ownedByGroup[group]?.first(where: { $0 is ESUploadAppender }) {
+                    logger.replaceAppender(old, with: replacement)
+                    ownedByGroup[group]?.removeAll { $0 === old }
+                    ownedByGroup[group]?.append(replacement)
+                    owned.removeAll { $0 === old }
+                    owned.append(replacement)
+                }
+                streamContexts[group] = context
+            } catch {
+                logger.logE("stream_log_context_failed", error.localizedDescription)
+            }
+        }
+    }
+
     /// Releases only this group's owned outputs; shared/external appenders remain alive.
     public static func releaseLogger(_ group: String) {
         executor.sync {
             guard let logger = loggers.removeValue(forKey: group) else { return }
             logger.flushLog()
             logger.destroy()
+            streamContexts.removeValue(forKey: group)
             let candidates = ownedByGroup.removeValue(forKey: group) ?? []
             for appender in candidates {
                 let shared = ownedByGroup.values.contains { $0.contains { $0 === appender } }
@@ -182,6 +240,7 @@ public enum Logger {
             for appender in owned { appender.destroy() }
             loggers.removeAll(); owned.removeAll(); ownedByGroup.removeAll(); external.removeAll(); factory = nil
             currentSource = nil
+            streamFactory = nil; baseContext = nil; streamContexts.removeAll()
         }
     }
 }
