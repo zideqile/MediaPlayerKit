@@ -51,6 +51,10 @@ function setup(native) {
     ios.bridge.onResponse({requestId: ios.messages[0].requestId, ok: true, result: {volume: 0.5}});
     assert.equal((await first).volume, 0.5);
     assert.equal(ios.timers.size, 0);
+    const notReady = ios.bridge.request('play');
+    const notReadyReq = ios.messages.at(-1);
+    ios.bridge.onResponse({requestId: notReadyReq.requestId, pageId: ios.bridge.pageId, ok: false, error: 'page_not_ready'});
+    await assert.rejects(notReady, /page_not_ready/);
     const timeout = ios.bridge.request('getVolume');
     [...ios.timers.values()][0]();
     await assert.rejects(timeout, /bridge_timeout/);

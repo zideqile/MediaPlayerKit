@@ -6,6 +6,8 @@ struct BridgePageGate {
     private(set) var pageID: String?
     private(set) var navigating = false
 
+    var strict = false
+
     mutating func invalidate() {
         generation &+= 1
         navigating = true
@@ -23,7 +25,11 @@ struct BridgePageGate {
             if handshake { pageID = token }
             return pageID == token
         }
-        // Legacy pages remain supported, but cannot downgrade an established modern session.
-        return pageID == nil
+        // In strict mode, an established modern session requires pageId on all messages.
+        // In default compatible mode, legacy callers without pageId can coexist without clearing the session.
+        if strict {
+            return pageID == nil
+        }
+        return true
     }
 }

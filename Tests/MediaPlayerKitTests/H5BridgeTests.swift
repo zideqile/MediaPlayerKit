@@ -130,6 +130,52 @@ final class H5BridgeTests: XCTestCase {
         bridge.player = nil
         XCTAssertEqual(bridge.handleRequest(method: "getVolume", requestId: "5")["error"] as? String, "player_unavailable")
     }
+
+    func testSetSourcesPreservesPlaybackStateAndMarksPendingSource() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        player.onStateChanged(state: .playing)
+        let bridge = PlayerBridge(player: player)
+        let source = PlayerSource(url: "https://example.com/live.m3u8", type: "hls")
+        player.setSources([source])
+        let snapshot = bridge.handleRequest(method: "bridgeReady", requestId: "ready-1")["result"] as? [String: Any]
+        XCTAssertEqual(snapshot?["state"] as? String, "playing")
+        XCTAssertEqual(snapshot?["pendingSource"] as? Bool, true)
+        XCTAssertEqual(snapshot?["hasPendingSource"] as? Bool, true)
+        player.play()
+        let afterPlay = bridge.handleRequest(method: "bridgeReady", requestId: "ready-2")["result"] as? [String: Any]
+        XCTAssertEqual(afterPlay?["pendingSource"] as? Bool, false)
+        XCTAssertEqual(afterPlay?["hasPendingSource"] as? Bool, false)
+    }
+
+    func testMixedLegacyAndModernCallsInPlayerBridge() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        let bridge = PlayerBridge(player: player)
+        XCTAssertFalse(bridge.strictPageIsolation)
+        let ready = bridge.handleRequest(method: "bridgeReady", requestId: "ready")
+        XCTAssertEqual(ready["ok"] as? Bool, true)
+        let legacyResult = bridge.handleRequest(method: "getVolume", requestId: "legacy-1")
+        XCTAssertEqual(legacyResult["ok"] as? Bool, true)
+        bridge.strictPageIsolation = true
+        XCTAssertTrue(bridge.strictPageIsolation)
+    }
+
+    #if canImport(WebKit)
+    func testWebKitBridgeInstallationAndPageIsolation() {
+        let controller = WKUserContentController()
+        XCTAssertNoThrow(try PlayerBridge.installJavaScript(in: controller))
+        XCTAssertTrue(controller.userScripts.contains(where: { $0.source.contains("vzPlayerBridge") }))
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        let webView = WKWebView()
+        let bridge = PlayerBridge(player: player, webView: webView)
+        XCTAssertFalse(bridge.strictPageIsolation)
+        bridge.invalidatePage()
+        bridge.commitPage()
+        bridge.detach()
+    }
+    #endif
 }
 
 private final class BridgeEventRecorder: NSObject, H5EventListener {

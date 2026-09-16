@@ -52,6 +52,7 @@ if (bridge) {
             if (!state) return;
             const states = {idle:'等待播放',preparing:'正在准备',readyToPlay:'已就绪',playing:'播放中',paused:'已暂停',buffering:'缓冲中',completed:'播放结束',error:'播放失败',stopped:'已停止',recovering:'正在尝试恢复'};
             if (states[state.state]) $('status').textContent = states[state.state];
+            if (state.pendingSource && state.state === 'idle') $('status').textContent = '新源待加载';
             bridge.onTimeUpdate(state.currentTime || 0);
             muted = state.muted === true;
             $('mute').textContent = muted ? '取消静音' : '静音';
