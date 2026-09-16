@@ -49,6 +49,7 @@ final class PlaybackStatisticsTracker {
     private var sourceType = ""
     private var sourceIndex = 0
     private var engine = ""
+    private var sourceEngines: [String] = []
     private var lifetime = PlaybackTimeAccumulator()
     private var lifetimeAttempts = 0
     private var finished = false
@@ -92,11 +93,13 @@ final class PlaybackStatisticsTracker {
                 sourceSwitchCount += 1
             }
             source = PlaybackTimeAccumulator(); sourceID = UUID().uuidString
+            sourceEngines = []
         } else if !self.engine.isEmpty, self.engine != engine {
             engineSwitchCount += 1
         }
         self.sourceKey = key; self.sourceURL = sourceURL; self.sourceType = sourceType
         self.sourceIndex = sourceIndex; self.engine = engine
+        if !engine.isEmpty, !sourceEngines.contains(engine) { sourceEngines.append(engine) }
         attempt = PlaybackTimeAccumulator(); attemptID = UUID().uuidString
         attemptStarted = clock(); active = true; sessionStarted = true; attemptCount += 1; lifetimeAttempts += 1
         firstFrameMs = nil; creationMs = nil; creationOK = false; metrics = [:]; metricsSampleTime = nil; lastError = nil
@@ -179,6 +182,7 @@ final class PlaybackStatisticsTracker {
     }
     func reset() {
         finish(reason: "newSources")
+        sourceEngines = []
         sessionID = UUID().uuidString; sourceID = ""; attemptID = ""; sourceKey = ""; engine = ""
         session = PlaybackTimeAccumulator(); source = PlaybackTimeAccumulator(); attempt = PlaybackTimeAccumulator()
         attemptCount = 0; sourceSwitchCount = 0; engineSwitchCount = 0; errorCount = 0
@@ -208,6 +212,7 @@ final class PlaybackStatisticsTracker {
             "time": Int64(Date().timeIntervalSince1970 * 1000), "reason": reason,
             "sourceUrl": sourceURL, "sourceType": sourceType, "sourceIndex": sourceIndex,
             "sourceDomain": URL(string: sourceURL)?.host ?? "", "engine": engine,
+            "sourceEngines": sourceEngines,
             "session": session.fields(at: time), "source": source.fields(at: time),
             "attempt": attempt.fields(at: time), "window": window,
             "attemptEnded": attemptEnded,

@@ -220,8 +220,8 @@ extension PlaybackStatisticsTests {
         let logs = PlaybackStatisticsLog.records(from: record)
         XCTAssertEqual(logs.count, 1)
         XCTAssertEqual(logs.first?.name, "playtime")
-        XCTAssertEqual(logs.first?.fields["totalPlayTime"] as? String, "1043266.60ms")
-        XCTAssertEqual(LogFormatter.formatValue(logs.first?.fields["stall_pct"] ?? NSNull()), "0.06")
+        XCTAssertEqual(logs.first?.fields["totalPlayTime"] as? String, "1043.27s")
+        XCTAssertEqual(LogFormatter.formatValue(logs.first?.fields["stall_pct"] ?? NSNull()), "0.06%")
         XCTAssertNil(logs.first?.fields["session"])
         XCTAssertNil(logs.first?.fields["metrics"])
         var periodic = record; periodic["reason"] = "periodic"; periodic["attemptEnded"] = false
@@ -255,10 +255,10 @@ extension PlaybackStatisticsTests {
         XCTAssertEqual(attempts.count, 3)
         let finalAttempts = attempts.filter { ["newSources", "destroy"].contains($0.fields["reason"] as? String) }
         XCTAssertEqual(finalAttempts.count, 2)
-        XCTAssertEqual(finalAttempts.map { $0.fields["totalPlayTime"] as? String }, ["3000ms", "4000ms"])
+        XCTAssertEqual(finalAttempts.map { $0.fields["totalPlayTime"] as? String }, ["3s", "4s"])
         let totals = logs.filter { $0.fields["scope"] as? String == "lifetime" }
         XCTAssertEqual(totals.count, 1)
-        XCTAssertEqual(totals.first?.fields["totalPlayTime"] as? String, "7000ms")
+        XCTAssertEqual(totals.first?.fields["totalPlayTime"] as? String, "7s")
         XCTAssertEqual(totals.first?.fields["attempts"] as? Int, 2)
     }
 
@@ -289,7 +289,7 @@ extension PlaybackStatisticsTests {
         let attempts = logs.filter { $0.fields["scope"] as? String == "attempt" }
         XCTAssertEqual(attempts.count, 1)
         XCTAssertEqual(attempts.first?.fields["reason"] as? String, "terminalError")
-        XCTAssertEqual(attempts.first?.fields["totalPlayTime"] as? String, "1000ms")
+        XCTAssertEqual(attempts.first?.fields["totalPlayTime"] as? String, "1s")
     }
 
     func testPlaybackDurationSettlementAtKeyEventsAcrossDimensions() {
@@ -304,19 +304,55 @@ extension PlaybackStatisticsTests {
         now = 5; tracker.state(.paused); tracker.pause()
         let pauseLogs = logs.filter { $0.fields["reason"] as? String == "paused" }
         XCTAssertEqual(pauseLogs.count, 3)
-        XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "5000ms")
-        XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "source" }?.fields["totalPlayTime"] as? String, "5000ms")
-        XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "session" }?.fields["totalPlayTime"] as? String, "5000ms")
+        XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "5s")
+        XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "source" }?.fields["totalPlayTime"] as? String, "5s")
+        XCTAssertEqual(pauseLogs.first { $0.fields["scope"] as? String == "session" }?.fields["totalPlayTime"] as? String, "5s")
 
         now = 8; tracker.state(.playing)
         now = 11; tracker.seek()
         let seekLogs = logs.filter { $0.fields["reason"] as? String == "seek" }
         XCTAssertEqual(seekLogs.count, 3)
-        XCTAssertEqual(seekLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "8000ms")
+        XCTAssertEqual(seekLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "8s")
 
         now = 12; tracker.failed(error: NSError(domain: "test", code: -1), willRecover: true)
         let errorLogs = logs.filter { $0.fields["reason"] as? String == "error" }
         XCTAssertEqual(errorLogs.count, 3)
-        XCTAssertEqual(errorLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "9000ms")
+        XCTAssertEqual(errorLogs.first { $0.fields["scope"] as? String == "attempt" }?.fields["totalPlayTime"] as? String, "9s")
+    }
+}
+
+
+extension PlaybackStatisticsTests {
+    func testReadablePlaybackScopesAndSourceEngineHistory() throws {
+        var now: Double = 0
+        let tracker = PlaybackStatisticsTracker(clock: { now })
+        let url = "https://example.com/live.m3u8"
+        tracker.begin(sourceURL: url, sourceType: "hls", sourceIndex: 0, engine: "avplayer")
+        tracker.state(.playing)
+        now = 1
+        tracker.begin(sourceURL: url, sourceType: "hls", sourceIndex: 0, engine: "ksmeplayer")
+        tracker.state(.playing)
+        now = 2; tracker.endAttempt(reason: "switch")
+        let snapshot = tracker.latest
+        XCTAssertEqual(snapshot["sourceEngines"] as? [String], ["avplayer", "ksmeplayer"])
+        let logs = PlaybackStatisticsLog.records(from: snapshot)
+        for scope in ["attempt", "source", "session"] {
+            let entry = try XCTUnwrap(logs.first { $0.fields["scope"] as? String == scope })
+            let id = try XCTUnwrap(snapshot[scope + "Id"] as? String)
+            XCTAssertEqual(entry.fields[scope + "Id"] as? String, String(id.prefix { $0 != "-" }))
+            XCTAssertTrue(id.contains("-"))
+            XCTAssertEqual(entry.fields["stall_pct"] as? String, "0%")
+            if scope != "session" { XCTAssertEqual(entry.fields["sourceUrl"] as? String, url) }
+        }
+        XCTAssertEqual(logs.first { $0.fields["scope"] as? String == "attempt" }?.fields["engine"] as? String, "ksmeplayer")
+        XCTAssertEqual(logs.first { $0.fields["scope"] as? String == "source" }?.fields["engines"] as? [String], ["avplayer", "ksmeplayer"])
+        tracker.begin(sourceURL: "https://example.com/other", sourceType: "hls", sourceIndex: 1, engine: "avplayer")
+        tracker.publish()
+        XCTAssertEqual(tracker.latest["sourceEngines"] as? [String], ["avplayer"])
+        let example: [String: Any] = ["reason": "switch", "attemptEnded": true,
+            "attempt": ["play_ms": 112501.98, "stall_ratio": 0.001]]
+        let log = try XCTUnwrap(PlaybackStatisticsLog.records(from: example).first)
+        XCTAssertEqual(log.fields["totalPlayTime"] as? String, "112.50s")
+        XCTAssertEqual(log.fields["stall_pct"] as? String, "0.10%")
     }
 }
