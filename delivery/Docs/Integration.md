@@ -89,6 +89,7 @@ Demo 的 `loadURL` 是业务扩展，不是 SDK 标准方法。H5 输入地址�
 - 直接赋值 `bridge.player` 保持命令分发用途，不自动占用新播放器的监听器，兼容已有自定义处理器。
 - `bridge.detach()` 清空桥接引用；对 SDK H5Player，只在监听器仍属于当前桥接时解绑，避免清除业务后来安装的监听器。对第三方 IH5Player 实现，监听解绑仍由该实现/宿主负责。
 - detach 不销毁播放器，不移除宿主注册的 WKScriptMessageHandler。退出页面时仍需宿主移除处理器，并按播放器所有权决定是否调用 destroy。
+- `bridge.strictPageIsolation`：默认 false（兼容模式），允许已建立现代 `pageId` 会话后混用无 `pageId` 的旧指令；设为 true 后开启严格文档隔离，拦截无标识消息。
 
 默认消息入口仅接受绑定 WebView 的主 frame。设置宿主允许的页面，例如：
 
@@ -98,7 +99,7 @@ bridge.allowsPage = { url in
 }
 ```
 
-业务需要通过 WKNavigationDelegate 同时限制页面导航；在开始导航时调用 `bridge.invalidatePage()`，使等待中的旧回调失效并暂停派发，在 `didCommit` 调用 `bridge.commitPage()` 后，才允许新文档重新握手。SDK 不接管宿主的 navigationDelegate。未设置 allowsPage 时，SDK 不替业务猜测域名白名单；仅加载可信业务页面。
+业务需要通过 WKNavigationDelegate 同时限制页面导航；在开始导航时调用 `bridge.invalidatePage()`，使等待中的旧回调失效并暂停派发，在 `didCommit` 调用 `bridge.commitPage()` 后，才允许新文档重新握手。SDK 不接管宿主的 navigationDelegate。未设置 allowsPage 时，SDK 不替业务猜测域名白名单；仅加载可信业务页面。对已确认属于当前页面但在导航/未就绪阶段到达的带 requestId 请求，SDK 立即返回 `page_not_ready` 错误回执，避免前端 10 秒超时。
 
 H5 先注册监听，再调用 `await window.vzPlayerBridge.ready()` 恢复当前状态。原有事件名、错误通知语义及播放源由原生设置的接入模式均不变。
 

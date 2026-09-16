@@ -41,6 +41,12 @@ public final class PlayerBridge: NSObject, H5EventListener {
         didSet { if oldValue !== webView { pageGate = BridgePageGate(); pendingHandshakes.removeAll(); webViewEpoch &+= 1 } }
     }
     private var pageGate = BridgePageGate()
+    /// When true, rejects legacy messages without pageId once a modern page has handshaken.
+    /// Defaults to false (compatible mode) to allow legacy callers to coexist with the modern bridge.
+    public var strictPageIsolation: Bool {
+        get { pageGate.strict }
+        set { pageGate.strict = newValue }
+    }
     private var webViewEpoch: UInt64 = 0
     private var pendingHandshakes: [() -> Void] = []
     private var pageID: String? { pageGate.pageID }
@@ -153,7 +159,10 @@ public final class PlayerBridge: NSObject, H5EventListener {
 
     private func readyState(_ player: IH5Player) -> [String: Any] {
         var result: [String: Any] = ["event": lastEvent ?? "", "destroyed": false]
-        result["state"] = (player as? H5Player)?.bridgeState ?? "unknown"
+        let h5 = player as? H5Player
+        result["state"] = h5?.bridgeState ?? "unknown"
+        result["pendingSource"] = h5?.bridgePendingSource ?? false
+        result["hasPendingSource"] = result["pendingSource"]
         for json in [player.get_currentTime(), player.get_duration(), player.get_pause(),
                      player.get_volume(), player.get_muted(), player.get_loop(), player.get_speed()] {
             if let fields = parseJSON(json) { result.merge(fields) { _, new in new } }
@@ -336,6 +345,19 @@ extension PlayerBridge: WKScriptMessageHandler {
             // then recheck the live document; never queue playback commands from the old page.
             if method == "bridgeReady", dict["pageId"] is String, pendingHandshakes.count < 16 {
                 pendingHandshakes.append { [weak self] in self?.handleMessage(message, customHandler: customHandler) }
+                return
+            }
+            if let requestId = dict["requestId"] as? String {
+                if let token = dict["pageId"] as? String {
+                    target.evaluateJavaScript("window.vzPlayerBridge?.pageId === \(Self.jsString(token))") { [weak self, weak target] value, error in
+                        guard error == nil, value as? Bool == true, let target = target, self?.webView === target else { return }
+                        var response: [String: Any] = ["requestId": requestId, "ok": false, "error": "page_not_ready", "pageId": token]
+                        Self.reply(response, to: target)
+                    }
+                } else if !self.pageGate.strict {
+                    var response: [String: Any] = ["requestId": requestId, "ok": false, "error": "page_not_ready"]
+                    Self.reply(response, to: target)
+                }
             }
             return
         }
@@ -346,7 +368,14 @@ extension PlayerBridge: WKScriptMessageHandler {
         let perform: (String?) -> Void = { [weak self, weak target] token in
             guard let self = self, let target = target, !self.closed, self.webView === target, self.pageGate.generation == epoch, self.webViewEpoch == viewEpoch,
                   self.bindingEpoch == binding else { return }
-            guard self.pageGate.accept(token, handshake: method == "bridgeReady", generation: epoch) else { return }
+            guard self.pageGate.accept(token, handshake: method == "bridgeReady", generation: epoch) else {
+                if let requestId = dict["requestId"] as? String {
+                    var response: [String: Any] = ["requestId": requestId, "ok": false, "error": "page_not_ready"]
+                    if let token = token { response["pageId"] = token }
+                    Self.reply(response, to: target)
+                }
+                return
+            }
             if let requestId = dict["requestId"] as? String {
                 var response = self.handleValidatedRequest(method: method, paramsJson: paramsJson,
                     requestId: requestId, customHandler: customHandler)

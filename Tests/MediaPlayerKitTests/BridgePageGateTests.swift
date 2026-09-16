@@ -22,8 +22,27 @@ final class BridgePageGateTests: XCTestCase {
         var gate = BridgePageGate()
         XCTAssertTrue(gate.accept(nil, handshake: false, generation: gate.generation))
         XCTAssertTrue(gate.accept("page", handshake: true, generation: gate.generation))
-        XCTAssertFalse(gate.accept(nil, handshake: false, generation: gate.generation))
+        // In default compatible mode, legacy calls can coexist without clearing the modern session.
+        XCTAssertTrue(gate.accept(nil, handshake: false, generation: gate.generation))
+        XCTAssertEqual(gate.pageID, "page")
+        XCTAssertTrue(gate.accept("page", handshake: false, generation: gate.generation))
+        XCTAssertFalse(gate.accept("stale", handshake: false, generation: gate.generation))
         XCTAssertFalse(gate.accept("", handshake: true, generation: gate.generation))
+
+        // In strict mode, legacy calls without pageId are rejected once modern pageId is set.
+        gate.strict = true
+        XCTAssertFalse(gate.accept(nil, handshake: false, generation: gate.generation))
+        XCTAssertTrue(gate.accept("page", handshake: false, generation: gate.generation))
+    }
+    func testMixedLegacyAndModernCoexistence() {
+        var gate = BridgePageGate()
+        XCTAssertFalse(gate.strict)
+        XCTAssertTrue(gate.accept("session-1", handshake: true, generation: gate.generation))
+        // Multiple alternating modern and legacy calls in compatible mode:
+        XCTAssertTrue(gate.accept(nil, handshake: false, generation: gate.generation))
+        XCTAssertTrue(gate.accept("session-1", handshake: false, generation: gate.generation))
+        XCTAssertTrue(gate.accept(nil, handshake: false, generation: gate.generation))
+        XCTAssertEqual(gate.pageID, "session-1")
     }
     func testCommittedBackNavigationCanReconnectRetainedDocument() {
         var gate = BridgePageGate()

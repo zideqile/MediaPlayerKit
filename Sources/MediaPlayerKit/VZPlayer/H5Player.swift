@@ -12,7 +12,9 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     private var hasEmittedEnded = false
     private var destroyed = false
     private var playbackState = "idle"
+    private var pendingSource = false
     var bridgeState: String { executeOnMainThreadSync { self.playbackState } }
+    var bridgePendingSource: Bool { executeOnMainThreadSync { self.pendingSource } }
     var bridgeIsDestroyed: Bool { executeOnMainThreadSync { self.destroyed } }
     /// Only detach the requesting listener; never clear a replacement installed by the host.
     func removeH5Listener(_ listener: H5EventListener) {
@@ -49,6 +51,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     @objc public func play() {
         executeOnMainThread {
+            self.pendingSource = false
             self.multiPlayer.Play()
         }
     }
@@ -70,6 +73,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         executeOnMainThread {
             guard !self.destroyed else { return }
             self.destroyed = true
+            self.pendingSource = false
             self.playbackState = "stopped"
             self.stopTimeUpdateTimer()
             self.multiPlayer.Destroy()
@@ -85,7 +89,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func setSources(_ sources: [PlayerSource]) {
         executeOnMainThread {
             self.multiPlayer.setSources(sources)
-            self.playbackState = "idle"
+            self.pendingSource = !sources.isEmpty
         }
     }
     
@@ -114,6 +118,7 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     @objc public func switchSource(index: Int) -> Bool {
         return executeOnMainThreadSync {
+            self.pendingSource = false
             return self.multiPlayer.switchToSource(index: index)
         }
     }
@@ -372,6 +377,9 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     public func onStateChanged(state: PlayerState) {
         executeOnMainThread {
             self.playbackState = state.description
+            if state == .preparing || state == .playing {
+                self.pendingSource = false
+            }
             switch state {
             case .idle, .stopped:
                 self.isPlayingState = false
