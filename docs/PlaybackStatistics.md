@@ -59,14 +59,14 @@ Native 回调和通知在主线程异步交付，避免业务回调重入切源�
 | `playerCreation` | 创建完成时输出 `elapsed`（带 ms 单位）、`createOK` |
 | `playtime` | 关键动作与事件（暂停、跳转、停止、卡顿、恢复、播放结束、切源、重试错误等）及尝试/会话结束时，结算并输出各类维度（attempt 内核+地址、source 当前地址、session 当前会话）的累计时长；实例销毁输出 lifetime 总时长和 attempts |
 
-`playtime.totalPlayTime` 单位为毫秒（带 ms 单位）；`scope` 区分 attempt/source/session/lifetime，`reason` 标识结算原因。
+`playtime.totalPlayTime` 日志值以秒为单位（带 s 后缀，例如 `5s`、`112.50s`）；`scope` 区分 attempt/source/session/lifetime，`reason` 标识结算原因。
 不同 scope 有包含关系，不能混合相加。
 新增关键动作与事件实时结算，便于在会话进行中随时从日志检索各维度播放时长。
 新增 `lifetime` 快照包含实例整个生命周期的时长、卡顿和 `attempts`（内部播放器尝试数，含失败尝试），
 不随 setSources 重置；`session` 仍在 setSources 时重置。`attemptEnded` 表示本条快照是尝试最终结算。
 实例销毁在原 sessionEnded:destroy 快照之后追加 lifetimeEnded 快照，重复销毁不重复输出。
 这里的实例指一个 MultiSourcePlayer，不汇总 App 中多个独立播放器实例。
-`stall_pct` 为百分比，两位小数，例如 `0.06` 表示 0.06%；业务快照中的 `stall_ratio` 仍为原始比例。
+`stall_pct` 为附带 % 的百分比，例如 `0.06%`；业务快照中的 `stall_ratio` 仍为原始比例。
 首帧、恢复与错误沿用已有专项日志；性能采样沿用 statLogs，不重复附带整份 metrics。
 
 周期快照仍持续交付业务回调。平稳周期不产生上述汇总日志，但普通事件日志和 statLogs 仍可能上传。
@@ -234,3 +234,13 @@ Seek 完成回调按控制器、播放 generation 和 seek generation 隔离，�
 这只影响恢复策略的卡顿样本，现有播放统计的累计口径不变。
 
 watchdog 的过期 Timer 会主动 invalidate；仅当它仍是当前 Timer 时清空引用，避免误清理新任务。
+
+
+### playtime 日志可读性
+
+attempt 输出 sourceUrl 和实际 engine；source 输出 sourceUrl 和本源阶段实际尝试过的 engines（去重、保留尝试顺序）。
+sourceId 标识同一 sourceIndex+URL 的连续使用阶段，切离再回来会生成新 ID，不是 URL 永久标识。
+attemptId/sourceId/sessionId 仅日志显示 UUID 第一段，完整统计快照中的 ID 保持不变，可靠关联和去重使用完整 ID。
+各层 totalPlayTime 统一使用秒（例如 112.50s），stall_pct 直接显示百分比（例如 0.10%）。
+卡顿占比为卡顿时长 /（播放时长 + 卡顿时长）；0.10% 表示千分之一。未知时长保留 null。
+原始快照 play_ms（毫秒）与 stall_ratio（比例）不变，新增 sourceEngines 表示当前源阶段的内核历史。

@@ -42,20 +42,23 @@ struct PlaybackStatisticsLog {
         if isAttemptEnded || isKeyActionOrEvent {
             if snapshot["attempt"] != nil {
                 var attemptContext = context
+                attemptContext["sourceUrl"] = snapshot["sourceUrl"]
                 if let attemptId = snapshot["attemptId"] as? String, !attemptId.isEmpty {
-                    attemptContext["attemptId"] = attemptId
+                    attemptContext["attemptId"] = shortID(attemptId)
                 }
                 result.append(playtime(snapshot, scope: "attempt", reason: reason, context: attemptContext))
             }
             if snapshot["source"] != nil {
                 var sourceContext: [String: Any] = [:]
+                sourceContext["sourceUrl"] = snapshot["sourceUrl"]
+                sourceContext["engines"] = snapshot["sourceEngines"] ?? (snapshot["engine"].map { [$0] } ?? [])
                 if let idx = snapshot["sourceIndex"] as? Int { sourceContext["sourceIndex"] = idx }
-                if let sourceId = snapshot["sourceId"] as? String, !sourceId.isEmpty { sourceContext["sourceId"] = sourceId }
+                if let sourceId = snapshot["sourceId"] as? String, !sourceId.isEmpty { sourceContext["sourceId"] = shortID(sourceId) }
                 result.append(playtime(snapshot, scope: "source", reason: reason, context: sourceContext))
             }
             if snapshot["session"] != nil {
                 var sessionContext: [String: Any] = [:]
-                if let sessionId = snapshot["sessionId"] as? String, !sessionId.isEmpty { sessionContext["sessionId"] = sessionId }
+                if let sessionId = snapshot["sessionId"] as? String, !sessionId.isEmpty { sessionContext["sessionId"] = shortID(sessionId) }
                 result.append(playtime(snapshot, scope: "session", reason: reason, context: sessionContext))
             }
         } else if isSessionEnded {
@@ -68,24 +71,27 @@ struct PlaybackStatisticsLog {
         return result
     }
 
+    private static func shortID(_ id: String) -> String { String(id.prefix { $0 != "-" }) }
+
     private static func playtime(_ snapshot: [String: Any], scope: String, reason: String,
                                  context: [String: Any]) -> PlaybackStatisticsLog {
         let stats = snapshot[scope] as? [String: Any] ?? [:]
         var fields = context
         fields["scope"] = scope
         fields["reason"] = reason
-        if let ms = (stats["play_ms"] as? NSNumber)?.doubleValue, ms.isFinite {
-            fields["totalPlayTime"] = "\(LogFormatter.formatValue(ms))ms"
-        } else if let ms = stats["play_ms"] as? Double, ms.isFinite {
-            fields["totalPlayTime"] = "\(LogFormatter.formatValue(ms))ms"
-        } else if let playMs = stats["play_ms"], !(playMs is NSNull) {
-            fields["totalPlayTime"] = "\(LogFormatter.formatValue(playMs))ms"
+        if let ms = (stats["play_ms"] as? Double) ?? (stats["play_ms"] as? NSNumber)?.doubleValue, ms.isFinite {
+            fields["totalPlayTime"] = "\(LogFormatter.formatValue(ms / 1000))s"
         } else {
             fields["totalPlayTime"] = NSNull()
         }
+        if scope == "session", let id = snapshot["sessionId"] as? String, !id.isEmpty {
+            fields["sessionId"] = shortID(id)
+        }
         if scope == "lifetime" { fields["attempts"] = stats["attempts"] }
         // Percentage preserves readable small ratios at the two-decimal log precision.
-        if let ratio = stats["stall_ratio"] as? NSNumber { fields["stall_pct"] = ratio.doubleValue * 100 }
+        if let ratio = (stats["stall_ratio"] as? Double) ?? (stats["stall_ratio"] as? NSNumber)?.doubleValue, ratio.isFinite {
+            fields["stall_pct"] = "\(LogFormatter.formatValue(ratio * 100))%"
+        }
         return Self(name: "playtime", level: .info, fields: fields)
     }
 }
