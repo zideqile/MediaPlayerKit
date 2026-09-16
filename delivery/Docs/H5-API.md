@@ -49,8 +49,13 @@ const state = await bridge.ready();
 if (state) renderCurrentState(state);
 ```
 
-`ready()` 对应 iOS `bridgeReady`，返回 `event`、`currentTime`、`duration`、`pause`、`volume`、`muted`、`loop`、`speed`、`source`、`statistics`、`destroyed`。首次尚无事件时 `event` 为空字符串。页面隐藏会拒绝未完成请求，恢复显示后自动重新通知原生；业务在需要恢复 UI 时再次调用 `ready()`。早于监听注册的历史事件不逐条缓存，应使用快照恢复界面。
+`ready()` 对应 iOS `bridgeReady`，返回 `state`、`event`、`currentTime`、`duration`、`pause`、`volume`、`muted`、`loop`、`speed`、`source`、`statistics`、`destroyed`。首次尚无事件时 `event` 为空字符串。页面隐藏会拒绝未完成请求，恢复显示后自动重新通知原生；业务在需要恢复 UI 时再次调用 `ready()`。早于监听注册的历史事件不逐条缓存，应使用快照恢复界面。
 
 默认桥接销毁播放器后，后续请求拒绝为 `player_destroyed`；重复 destroy 保持幂等。此规则不修改 Android 销毁后可重建的原生行为。`bridge.detach()` 后请求拒绝为 `bridge_closed`。
 
-旧版无 pageId 消息仍兼容，但不具备文档隔离保证。业务自定义处理器直接调用 `handleRequest`/`reply` 时，来源验证和页面隔离由业务负责；原样回传请求中的 `pageId` 可启用 reply 的页面校验。
+旧版无 pageId 消息仍兼容，但不具备文档隔离保证。业务自定义处理器直接调用 `handleRequest`/`reply` 时，来源验证和页面隔离由业务负责；原样回传请求中的 `pageId` 只能保护回执，不能阻止过期指令执行。建议使用 `bridge.handleMessage(message, customHandler: ...)`，扩展指令在统一来源、文档及销毁检查后执行。
+
+
+`state` 来自 H5Player 自身记录的当前状态，不依赖 PlayerBridge 何时绑定；取值包括 idle、preparing、readyToPlay、playing、paused、buffering、completed、error、stopped、recovering。第三方 IH5Player 实现没有提供此内部能力时返回 unknown。event 仅为当前桥接最近收到的事件，不能替代 state 渲染当前状态。
+
+导航开始调用 invalidatePage 后，所有普通指令都不能解除失效状态。宿主必须在 WKNavigationDelegate.didCommit 调用 commitPage；新文档握手才会恢复通信。提前到达的带 pageId 握手最多暂存 16 个，提交后重新验证当前文档，旧播放指令不会排队重放。没有 pageId 的旧协议保留支持，但不得降级已建立的现代页面会话。

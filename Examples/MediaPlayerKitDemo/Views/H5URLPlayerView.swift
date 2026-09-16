@@ -6,38 +6,44 @@ import UIKit
 #endif
 
 /// App-specific URL submission; all standard controls/events use the SDK bridge.
-private final class H5URLMessageHandler: NSObject, WKScriptMessageHandler {
+private final class H5URLMessageHandler: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     let bridge: PlayerBridge
     private var closed = false
+    private var currentNavigation: WKNavigation?
     init(player: IH5Player) { bridge = PlayerBridge(player: player) }
     func close() { closed = true; bridge.detach() }
 
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        currentNavigation = navigation
+        bridge.invalidatePage()
+    }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard navigation === currentNavigation else { return }
+        bridge.commitPage()
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard navigation === currentNavigation else { return }
+        // Navigation failed before replacing the document; explicitly reconnect the retained page.
+        bridge.commitPage()
+    }
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard !closed, message.name == "vzPlayerBridge", message.frameInfo.isMainFrame,
-              let body = message.body as? [String: Any], let method = body["method"] as? String else { return }
-        guard method == "loadURL" else {
-            bridge.userContentController(controller, didReceive: message)
-            return
+        guard !closed else { return }
+        bridge.handleMessage(message) { [weak self] method, json in
+            guard method == "loadURL" else { return nil }
+            return self?.loadURL(json) ?? ["ok": false, "error": "bridge_closed"]
         }
-        guard let requestId = body["requestId"] as? String else { return }
-        var response: [String: Any] = ["requestId": requestId, "ok": false, "error": "请输入有效的 HTTP、HTTPS 或 RTMP 播放地址"]
-        if let pageID = body["pageId"] as? String { response["pageId"] = pageID }
-        defer {
-            if let pageID = body["pageId"] as? String { response["pageId"] = pageID }
-            PlayerBridge.reply(response, to: bridge.webView)
-        }
-        guard let json = body["paramsJson"] as? String, let data = json.data(using: .utf8),
+    }
+    private func loadURL(_ json: String) -> [String: Any] {
+        let invalid: [String: Any] = ["ok": false, "error": "请输入有效的 HTTP、HTTPS 或 RTMP 播放地址"]
+        guard let data = json.data(using: .utf8),
               let params = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let input = params["url"] as? String else { return }
+              let input = params["url"] as? String else { return invalid }
         let address = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: address), let scheme = url.scheme?.lowercased(),
               ["http", "https", "rtmp"].contains(scheme), let host = url.host, !host.isEmpty,
               let type = params["type"] as? String, ["hls", "flv", "rtmp"].contains(type),
-              (scheme == "rtmp") == (type == "rtmp") else { return }
-        guard let player = bridge.player else {
-            response["error"] = "播放器已关闭"
-            return
-        }
+              (scheme == "rtmp") == (type == "rtmp") else { return invalid }
+        guard let player = bridge.player else { return ["ok": false, "error": "player_unavailable"] }
         let isLive = params["isLive"] as? Bool ?? true
         let source = PlayerSource(url: address, type: type, tag: "H5 输入", isLive: isLive)
         let config = StreamAPIService.playbackConfig(for: player,
@@ -47,8 +53,9 @@ private final class H5URLMessageHandler: NSObject, WKScriptMessageHandler {
         player.setConfig(config)
         player.setSources([source])
         player.play()
-        response = ["requestId": requestId, "ok": true, "result": ["url": address]]
+        return ["ok": true, "result": ["url": address, "muted": config.muted]]
     }
+
 }
 
 private final class H5URLPlayerModel: ObservableObject {
@@ -84,6 +91,7 @@ private final class H5URLPlayerModel: ObservableObject {
             configuration.userContentController = content
             let webView = WKWebView(frame: .zero, configuration: configuration)
             handler.bridge.webView = webView
+            webView.navigationDelegate = handler
             self.player = player
             self.handler = handler
             self.webView = webView
@@ -94,6 +102,8 @@ private final class H5URLPlayerModel: ObservableObject {
     }
 
     func teardown() {
+        handler?.bridge.invalidatePage()
+        webView?.navigationDelegate = nil
         webView?.stopLoading()
         webView?.configuration.userContentController.removeScriptMessageHandler(forName: "vzPlayerBridge")
         handler?.close()

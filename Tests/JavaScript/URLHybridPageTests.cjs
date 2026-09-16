@@ -12,13 +12,16 @@ function element(id) {
 }
 const calls = [];
 let failure;
-const bridge = {request: async (method, params) => {
+const bridge = {ready: async () => ({state:'stopped', event:'playing', muted:false, currentTime:7}), request: async (method, params) => {
     calls.push({method, params});
     if (failure) throw new Error(failure);
-    return {};
+    return method === 'loadURL' ? {muted: true} : {};
 }};
 vm.runInNewContext(script, {window:{vzPlayerBridge:bridge}, document:{getElementById:element}, Date});
 (async () => {
+    await Promise.resolve();
+    assert.equal(element('status').textContent, '已停止');
+    assert.match(element('time').textContent, /7/);
     element('url').value = '  https://example.com/live.m3u8  ';
     element('type').value = 'hls'; element('live').checked = true;
     await element('form').submit({preventDefault(){}});
@@ -28,7 +31,10 @@ vm.runInNewContext(script, {window:{vzPlayerBridge:bridge}, document:{getElement
     assert.equal(element('submit').disabled, false);
     bridge.onEvent('playing'); assert.equal(element('status').textContent, '播放中');
     bridge.onTimeUpdate(12); assert.match(element('time').textContent, /12/);
-    await element('mute').onclick(); assert.equal(calls.at(-1).params.muted, true);
+    assert.equal(element('mute').textContent, '取消静音');
+    await element('mute').onclick(); assert.equal(calls.at(-1).params.muted, false);
+    await element('form').submit({preventDefault(){}});
+    assert.equal(element('mute').textContent, '取消静音');
     failure = 'invalid address';
     await element('form').submit({preventDefault(){}});
     assert.equal(element('error').textContent, 'invalid address');

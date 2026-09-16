@@ -50,7 +50,8 @@ if (bridge) {
     if (typeof bridge.ready === 'function') {
         bridge.ready().then(state => {
             if (!state) return;
-            if (state.event) bridge.onEvent(state.event);
+            const states = {idle:'等待播放',preparing:'正在准备',readyToPlay:'已就绪',playing:'播放中',paused:'已暂停',buffering:'缓冲中',completed:'播放结束',error:'播放失败',stopped:'已停止',recovering:'正在尝试恢复'};
+            if (states[state.state]) $('status').textContent = states[state.state];
             bridge.onTimeUpdate(state.currentTime || 0);
             muted = state.muted === true;
             $('mute').textContent = muted ? '取消静音' : '静音';
@@ -62,10 +63,11 @@ $('form').addEventListener('submit', async event => {
     const address = $('url').value.trim();
     $('submit').disabled = true;
     try {
-        await command('loadURL', {url:address, type:$('type').value, isLive:$('live').checked});
+        const result = await command('loadURL', {url:address, type:$('type').value, isLive:$('live').checked});
         $('url').blur();
         $('time').textContent = '播放进度：0 秒';
-        muted = false; $('mute').textContent = '静音';
+        if (typeof result?.muted === 'boolean') muted = result.muted;
+        $('mute').textContent = muted ? '取消静音' : '静音';
         record('播放地址已受理');
     } catch (error) { showError(error); }
     finally { $('submit').disabled = false; }

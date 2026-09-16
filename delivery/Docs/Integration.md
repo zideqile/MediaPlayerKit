@@ -98,6 +98,31 @@ bridge.allowsPage = { url in
 }
 ```
 
-业务需要通过 WKNavigationDelegate 同时限制页面导航；在开始导航时调用 `bridge.invalidatePage()`，使等待中的旧回调失效并暂停派发，直到新文档重新握手。SDK 不接管宿主的 navigationDelegate。未设置 allowsPage 时，SDK 不替业务猜测域名白名单；仅加载可信业务页面。
+业务需要通过 WKNavigationDelegate 同时限制页面导航；在开始导航时调用 `bridge.invalidatePage()`，使等待中的旧回调失效并暂停派发，在 `didCommit` 调用 `bridge.commitPage()` 后，才允许新文档重新握手。SDK 不接管宿主的 navigationDelegate。未设置 allowsPage 时，SDK 不替业务猜测域名白名单；仅加载可信业务页面。
 
 H5 先注册监听，再调用 `await window.vzPlayerBridge.ready()` 恢复当前状态。原有事件名、错误通知语义及播放源由原生设置的接入模式均不变。
+
+
+导航代理示意（多次快速导航时应像 Demo 一样核对 WKNavigation 身份）：
+
+```swift
+func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    bridge.invalidatePage()
+}
+func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    bridge.commitPage()
+}
+```
+
+若当前导航在提交前失败、宿主明确保留旧页面，可调用 commitPage 重新连接；旧导航的取消回调不可恢复新的导航。SDK 不自动接管 navigationDelegate。
+
+自定义指令采用统一入口：
+
+```swift
+bridge.handleMessage(message) { method, paramsJson in
+    guard method == "loadURL" else { return nil } // nil 交回 SDK 标准分发
+    return loadValidatedURL(paramsJson) // 返回 ["ok": true, "result": ...] 或错误
+}
+```
+
+业务处理器负责参数校验；SDK 负责执行前的页面、来源、播放器存活检查，并填入 requestId/pageId 后发送回执。处理器按同步指令受理返回，不代表网络播放完成。

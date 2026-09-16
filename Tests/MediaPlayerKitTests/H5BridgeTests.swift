@@ -7,6 +7,35 @@ private final class H5LogRecorder: Appender {
 }
 final class H5BridgeTests: XCTestCase {
     override func tearDown() { Logger.destroy(); super.tearDown() }
+    func testCustomCommandDoesNotRunAfterNativeDestroyOrDetach() {
+        let player = H5Player(playerView: MediaPlayerView())
+        let bridge = PlayerBridge(player: player)
+        var calls = 0
+        let command: (String, String) -> [String: Any]? = { _, _ in calls += 1; return ["ok": true] }
+        _ = bridge.handleValidatedRequest(method: "loadURL", paramsJson: "{}", requestId: "1", customHandler: command)
+        XCTAssertEqual(calls, 1)
+        player.destroy()
+        let result = bridge.handleValidatedRequest(method: "loadURL", paramsJson: "{}", requestId: "2", customHandler: command)
+        XCTAssertEqual(result["error"] as? String, "player_destroyed")
+        bridge.detach()
+        let detached = bridge.handleValidatedRequest(method: "loadURL", paramsJson: "{}", requestId: "3", customHandler: command)
+        XCTAssertEqual(detached["error"] as? String, "bridge_closed")
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testReadyReadsStateWhenBridgeBindsAfterPlaybackStarted() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        player.onStateChanged(state: .playing)
+        let bridge = PlayerBridge(player: player)
+        var snapshot = bridge.handleRequest(method: "bridgeReady", requestId: "1")["result"] as? [String: Any]
+        XCTAssertEqual(snapshot?["state"] as? String, "playing")
+        XCTAssertEqual(snapshot?["event"] as? String, "")
+        player.onStateChanged(state: .stopped)
+        snapshot = bridge.handleRequest(method: "bridgeReady", requestId: "2")["result"] as? [String: Any]
+        XCTAssertEqual(snapshot?["state"] as? String, "stopped")
+    }
+
     func testBridgeRejectsCommandsAfterDestroyAndCanRebind() {
         let first = H5Player(playerView: MediaPlayerView())
         let bridge = PlayerBridge(player: first)
