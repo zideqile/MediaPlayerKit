@@ -933,6 +933,22 @@ extension LoggingTests {
 
 
 extension LoggingTests {
+    func testRuntimeLogDeduplicatesThroughputWithoutChangingStatistics() {
+        var sampler = RuntimeMetricsSampler()
+        var metrics = PlayerRuntimeMetrics()
+        metrics.observedBitrate = 19_340_000
+        let fields = sampler.sample(metrics, at: 1)
+        XCTAssertEqual(fields["bandwidth"], 19_340_000)
+        XCTAssertEqual(fields["bitrate"], 19_340_000)
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(fields), "bandwidth=19.34Mbps")
+        // Prefer the canonical field even if a caller supplies conflicting aliases.
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bandwidth": 1000, "bitrate": 2000]),
+                       "bandwidth=1Kbps")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["video_bitrate": 2_000_000]),
+                       "video_bitrate=2Mbps")
+        XCTAssertEqual(fields["bitrate"], 19_340_000)
+    }
+
     func testRuntimeLogUnitsAndScaling() {
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics([
             "bandwidth": 19488186, "drop": 0, "media_requests": 2,
@@ -945,7 +961,7 @@ extension LoggingTests {
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["net_bytes": 1023]), "net_bytes=1023B")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["net_bytes": 1023.999]), "net_bytes=1KiB")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bandwidth": 999.999]), "bandwidth=1Kbps")
-        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bitrate": 500_000]), "bitrate=500Kbps")
+        XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["bitrate": 500_000]), "bandwidth=500Kbps")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["display_fps": 60]), "display_fps=60fps")
         XCTAssertEqual(LogFormatter.formatRuntimeMetrics(["dropped_frames": 3]), "dropped_frames=3")
     }
