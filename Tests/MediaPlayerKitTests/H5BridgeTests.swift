@@ -134,6 +134,22 @@ final class H5BridgeTests: XCTestCase {
         XCTAssertEqual(bridge.handleRequest(method: "getVolume", requestId: "5")["error"] as? String, "player_unavailable")
     }
 
+    func testRejectedSourceSwitchPreservesPendingSource() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        let bridge = PlayerBridge(player: player)
+        player.setSources([PlayerSource(url: "https://example.com/live.m3u8", type: "hls")])
+        for index in [-1, 1] {
+            XCTAssertFalse(player.switchSource(index: index))
+            let snapshot = bridge.handleRequest(method: "bridgeReady", requestId: "ready")["result"] as? [String: Any]
+            XCTAssertEqual(snapshot?["pendingSource"] as? Bool, true)
+            XCTAssertEqual(snapshot?["hasPendingSource"] as? Bool, true)
+        }
+        let rejected = bridge.handleRequest(method: "switchSource", paramsJson: "{\"index\":99}", requestId: "switch")
+        XCTAssertEqual(rejected["ok"] as? Bool, false)
+        XCTAssertTrue(player.bridgePendingSource)
+    }
+
     func testSetSourcesPreservesPlaybackStateAndMarksPendingSource() {
         let player = H5Player(playerView: MediaPlayerView())
         defer { player.destroy() }
@@ -165,6 +181,25 @@ final class H5BridgeTests: XCTestCase {
     }
 
     #if canImport(WebKit)
+    func testStrictIsolationSurvivesWebViewBindingAndDetach() {
+        let bridge = PlayerBridge(player: nil)
+        bridge.strictPageIsolation = true
+        let first = WKWebView()
+        let second = WKWebView()
+        bridge.webView = first
+        XCTAssertTrue(bridge.strictPageIsolation)
+        bridge.invalidatePage()
+        bridge.webView = second
+        XCTAssertTrue(bridge.strictPageIsolation)
+        bridge.detach()
+        XCTAssertTrue(bridge.strictPageIsolation)
+        bridge.webView = first
+        XCTAssertTrue(bridge.strictPageIsolation)
+        bridge.strictPageIsolation = false
+        bridge.webView = second
+        XCTAssertFalse(bridge.strictPageIsolation)
+    }
+
     func testWebKitBridgeInstallationAndPageIsolation() {
         let controller = WKUserContentController()
         XCTAssertNoThrow(try PlayerBridge.installJavaScript(in: controller))

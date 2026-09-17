@@ -2,6 +2,21 @@ import XCTest
 @testable import MediaPlayerKit
 
 final class BridgePageGateTests: XCTestCase {
+    func testDocumentResetPreservesStrictPolicyAndInvalidatesOldGeneration() {
+        var gate = BridgePageGate()
+        gate.strict = true
+        XCTAssertTrue(gate.accept("old", handshake: true, generation: gate.generation))
+        let oldGeneration = gate.generation
+        gate.invalidate()
+        gate.commit()
+        XCTAssertTrue(gate.strict)
+        XCTAssertNil(gate.pageID)
+        XCTAssertFalse(gate.navigating)
+        XCTAssertFalse(gate.accept("old", handshake: true, generation: oldGeneration))
+        XCTAssertTrue(gate.accept("new", handshake: true, generation: gate.generation))
+        XCTAssertFalse(gate.accept(nil, handshake: false, generation: gate.generation))
+    }
+
     func testOldDocumentCannotReopenGateDuringNavigation() {
         var gate = BridgePageGate()
         XCTAssertTrue(gate.accept("old", handshake: true, generation: gate.generation))
