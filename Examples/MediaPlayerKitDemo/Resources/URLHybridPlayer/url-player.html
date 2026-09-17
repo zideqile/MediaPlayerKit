@@ -39,7 +39,12 @@ async function command(method, params = {}) {
 }
 function showError(error) { $('error').textContent = error.message; record(error.message); }
 if (bridge) {
-    bridge.onEvent = event => {
+    bridge.onEvent = (event, detail) => {
+        if (event === 'statechange' && detail?.state === 'error') {
+            $('status').textContent = detail.pendingSource ? '当前播放已出错，新源待加载' : '播放失败';
+            record(event + ': ' + detail.state);
+            return;
+        }
         const names = {play:'正在准备',playing:'播放中',pause:'已暂停',waiting:'缓冲中',ended:'播放结束',recovering:'正在尝试恢复',PlayerWARN:'播放失败，请检查地址或更换播放源',canplaythrough:'已就绪'};
         $('status').textContent = names[event] || event;
         if (event === 'PlayerWARN') $('error').textContent = '播放器已无法继续恢复，请检查播放地址、格式和网络。';

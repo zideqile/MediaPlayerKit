@@ -58,3 +58,29 @@ if (state) renderCurrentState(state);
 `state` 来自 H5Player 自身记录的当前状态，不依赖 PlayerBridge 何时绑定；取值包括 idle、preparing、readyToPlay、playing、paused、buffering、completed、error、stopped、recovering。调用 `setSources` 不会强行重置正在播放的 `state`，而是置位 `pendingSource`，待后续 `play()` 时正式装载。第三方 IH5Player 实现未提供此内部能力时返回 unknown。
 
 导航开始调用 invalidatePage 后，普通指令不能解除失效状态。宿主在 WKNavigationDelegate.didCommit 调用 commitPage；新文档握手才会恢复通信。提前到达的握手最多暂存 16 个并在提交后自动放行，旧播放指令不排队重放。
+
+
+### 新源待加载期间的状态
+
+setSources 后、调用 play 或成功切换地址之前，旧播放器可以继续运行。此时 pendingSource/hasPendingSource 来自底层待加载状态，不会因旧播放器恢复播放而清除；state 和播放进度继续反映当前显示的旧播放器。source 表示新配置中选定的待加载源，不能在 pendingSource 为 true 时将其当作当前画面的地址。
+
+旧播放器的暂停、恢复、缓冲和结束继续通知 H5；已结算的旧播放器不再向新会话采集状态/请求统计，也不会触发新源恢复。旧播放器错误只更新当前状态，不作为新源的 PlayerWARN。新内核替换旧内核后，旧内核全部回调继续被忽略。
+
+### 待加载期间的状态通知（iOS 扩展）
+
+当 `setSources` 后尚未播放新源、当前显示的旧播放器出错时，SDK 发出
+`onEvent("statechange", {state: "error", pendingSource: true, scope: "displayed"})`。
+该通知表示旧播放器状态，不表示待加载源失败，不触发 `PlayerWARN` 或自动切源。
+连续重复的 error 回调只通知一次；现有 Android 事件名称和参数保持不变。
+默认桥接的 `triggerEvent` 兼容入口也接收相同的第二参数。
+自定义原生桥接可监听 `H5EventListener.onEvent("statechange")`，并通过
+`PlayerBridge.handleRequest(method: "bridgeReady")` 获取状态快照（或自行维护状态）。
+
+```javascript
+bridge.onEvent = (event, detail) => {
+    if (event === 'statechange' && detail?.state === 'error') {
+        // 当前显示的播放已出错；detail.pendingSource 为 true 时仍有新源待播放。
+        showStatus('当前播放出错，新源待加载');
+    }
+};
+```

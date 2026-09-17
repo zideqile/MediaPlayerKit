@@ -134,6 +134,35 @@ final class H5BridgeTests: XCTestCase {
         XCTAssertEqual(bridge.handleRequest(method: "getVolume", requestId: "5")["error"] as? String, "player_unavailable")
     }
 
+    func testPendingSourceSurvivesOldPlaybackStateChanges() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        let listener = BridgeEventRecorder()
+        player.SetOnH5EventListener(listener)
+        player.setSources([PlayerSource(url: "https://example.com/new.m3u8", type: "hls")])
+        for state: PlayerState in [.paused, .playing, .buffering, .completed] {
+            player.onStateChanged(state: state)
+            XCTAssertEqual(player.bridgeState, state.description)
+            XCTAssertTrue(player.bridgePendingSource)
+        }
+        player.onPlayToEnd()
+        XCTAssertEqual(listener.events, ["pause", "playing", "waiting", "ended"])
+    }
+
+    func testPendingSourceErrorNotifiesOnceWithoutTerminalWarning() {
+        let player = H5Player(playerView: MediaPlayerView())
+        defer { player.destroy() }
+        let listener = BridgeEventRecorder()
+        player.SetOnH5EventListener(listener)
+        player.setSources([PlayerSource(url: "https://example.com/new.m3u8", type: "hls")])
+        player.onStateChanged(state: .playing)
+        player.onStateChanged(state: .error)
+        player.onStateChanged(state: .error)
+        XCTAssertEqual(listener.events, ["playing", "statechange"])
+        XCTAssertEqual(player.bridgeState, "error")
+        XCTAssertTrue(player.bridgePendingSource)
+    }
+
     func testRejectedSourceSwitchPreservesPendingSource() {
         let player = H5Player(playerView: MediaPlayerView())
         defer { player.destroy() }

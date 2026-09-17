@@ -12,9 +12,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     private var hasEmittedEnded = false
     private var destroyed = false
     private var playbackState = "idle"
-    private var pendingSource = false
     var bridgeState: String { executeOnMainThreadSync { self.playbackState } }
-    var bridgePendingSource: Bool { executeOnMainThreadSync { self.pendingSource } }
+    var bridgePendingSource: Bool { executeOnMainThreadSync { self.multiPlayer.hasPendingSource } }
     var bridgeIsDestroyed: Bool { executeOnMainThreadSync { self.destroyed } }
     /// Only detach the requesting listener; never clear a replacement installed by the host.
     func removeH5Listener(_ listener: H5EventListener) {
@@ -51,7 +50,6 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     @objc public func play() {
         executeOnMainThread {
-            self.pendingSource = false
             self.multiPlayer.Play()
         }
     }
@@ -73,7 +71,6 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
         executeOnMainThread {
             guard !self.destroyed else { return }
             self.destroyed = true
-            self.pendingSource = false
             self.playbackState = "stopped"
             self.stopTimeUpdateTimer()
             self.multiPlayer.Destroy()
@@ -89,7 +86,6 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func setSources(_ sources: [PlayerSource]) {
         executeOnMainThread {
             self.multiPlayer.setSources(sources)
-            self.pendingSource = !sources.isEmpty
         }
     }
     
@@ -119,7 +115,6 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     @objc public func switchSource(index: Int) -> Bool {
         return executeOnMainThreadSync {
             let switched = self.multiPlayer.switchToSource(index: index)
-            if switched { self.pendingSource = false }
             return switched
         }
     }
@@ -377,10 +372,8 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     public func onStateChanged(state: PlayerState) {
         executeOnMainThread {
+            let previousState = self.playbackState
             self.playbackState = state.description
-            if state == .preparing || state == .playing {
-                self.pendingSource = false
-            }
             switch state {
             case .idle, .stopped:
                 self.isPlayingState = false
@@ -412,6 +405,11 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
             case .error:
                 self.isPlayingState = false
                 self.stopTimeUpdateTimer()
+                // The old displayed player failed while a replacement is still pending.
+                // Do not report the pending source as a terminal PlayerWARN failure.
+                if self.multiPlayer.hasPendingSource && previousState != state.description {
+                    self.notifyH5Event("statechange")
+                }
             }
         }
     }

@@ -135,10 +135,17 @@ public final class PlayerBridge: NSObject, H5EventListener {
     public func onEvent(_ eventName: String) {
         lastEvent = eventName
         #if canImport(WebKit)
+        // Capture at emission time; queued JS must not read a later playback state.
+        let detail: String
+        if eventName == "statechange", let h5 = player as? H5Player {
+            detail = ", {state: \(Self.jsString(h5.bridgeState)), pendingSource: \(h5.bridgePendingSource), scope: 'displayed'}"
+        } else {
+            detail = ""
+        }
         sendJavaScript("""
         if (typeof window.vzPlayerBridge?.onEvent === 'function') {
-            window.vzPlayerBridge.onEvent(\(Self.jsString(eventName)));
-        } else { window.vzPlayerBridge?.triggerEvent?.(\(Self.jsString(eventName))); }
+            window.vzPlayerBridge.onEvent(\(Self.jsString(eventName))\(detail));
+        } else { window.vzPlayerBridge?.triggerEvent?.(\(Self.jsString(eventName))\(detail)); }
         """)
         #endif
     }
