@@ -30,6 +30,8 @@ vm.runInNewContext(script, {window:{vzPlayerBridge:bridge}, document:{getElement
     assert.equal(calls[0].params.isLive, true);
     assert.equal(element('submit').disabled, false);
     bridge.onEvent('playing'); assert.equal(element('status').textContent, '播放中');
+    bridge.onEvent('statechange', {state:'error', pendingSource:true, scope:'displayed'});
+    assert.equal(element('status').textContent, '当前播放已出错，新源待加载');
     bridge.onTimeUpdate(12); assert.match(element('time').textContent, /12/);
     assert.equal(element('mute').textContent, '取消静音');
     await element('mute').onclick(); assert.equal(calls.at(-1).params.muted, false);

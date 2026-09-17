@@ -41,6 +41,9 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     private var currentEngineIndex: Int = 0
     
     private var controller: MediaPlayerController?
+    // Internal construction seam for deterministic delegate/lifecycle tests.
+    var makeController: (PlayerConfig) -> MediaPlayerController = { MediaPlayerController(config: $0) }
+    var hasPendingSource: Bool { !isDestroyed && needsReloadSource && !sources.isEmpty }
     private let playerView: MediaPlayerView
     private var playerConfig: VPlayerConfig
     
@@ -173,8 +176,10 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         watchdog.suspend()
         controller?.config.autoPlay = false
         controller?.pause()
-        diagnostics.state(.paused)
-        diagnostics.command("pause player")
+        if !needsReloadSource {
+            diagnostics.state(.paused)
+            diagnostics.command("pause player")
+        }
     }
     
     public func Resume() {
@@ -182,7 +187,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         controller?.config.autoPlay = true
         controller?.play()
         ensureWatchdog()
-        diagnostics.command("resume player")
+        if !needsReloadSource { diagnostics.command("resume player") }
     }
     
     public func Destroy() {
@@ -504,7 +509,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
         config.autoPlay = wantsToPlay
         config.customHeaders = playerConfig.headers
         
-        let ctrl = MediaPlayerController(config: config)
+        let ctrl = makeController(config)
         ctrl.delegate = self
         self.controller = ctrl
         ensureWatchdog()
@@ -512,7 +517,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
                                     ? "engineAggregate" : ctrl.requestScope)
         ctrl.requestEventHandler = { [weak self, weak ctrl] event in
             guard let self = self, let ctrl = ctrl, self.controller === ctrl,
-                  !self.isDestroyed, !self.attemptHandled else { return }
+                  !self.isDestroyed, !self.needsReloadSource, !self.attemptHandled else { return }
             self.diagnostics.request(event)
         }
         diagnostics.created()
@@ -631,8 +636,22 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     
     // MARK: - MediaPlayerDelegate 代理桥接
     
+    private func forwardState(_ state: PlayerState) {
+        let token = generation
+        delegate?.multiSourcePlayer(self, stateDidChange: state)
+        guard generation == token, !isDestroyed else { return }
+        notifyListeners { $0.onStateChanged(state: state) }
+    }
+
     public func player(_ player: MediaPlayerController, stateDidChange state: PlayerState) {
-        guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
+        guard player === controller, !isDestroyed else { return }
+        if needsReloadSource {
+            // The displayed old controller may still play/pause/end. Forward UI state only:
+            // its attempt is already settled and must not enter the new session's diagnostics.
+            forwardState(state)
+            return
+        }
+        guard !attemptHandled else { return }
         // An engine error is an attempt failure, not yet a terminal player error.
         guard state != .error else { return }
         if state == .completed || state == .stopped { stopWatchdog() }
@@ -646,10 +665,7 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
             return
         }
         diagnostics.state(state)
-        let token = generation
-        delegate?.multiSourcePlayer(self, stateDidChange: state)
-        guard generation == token, !isDestroyed else { return }
-        notifyListeners { $0.onStateChanged(state: state) }
+        forwardState(state)
     }
     
     public func playerDidRenderFirstFrame(_ player: MediaPlayerController) {
@@ -663,11 +679,13 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func player(_ player: MediaPlayerController, currentTime: TimeInterval, totalDuration: TimeInterval) {
-        guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
+        guard player === controller, !isDestroyed, needsReloadSource || !attemptHandled else { return }
         let token = generation
-        if wantsToPlay && appActive && player.state == .playing { watchdog.progress(currentTime) }
-        diagnostics.sampleMetrics(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds)) {
-            player.runtimeMetrics
+        if !needsReloadSource {
+            if wantsToPlay && appActive && player.state == .playing { watchdog.progress(currentTime) }
+            diagnostics.sampleMetrics(interval: Double(playerConfig.runtimeStateCollect.collectIntervalSeconds)) {
+                player.runtimeMetrics
+            }
         }
         delegate?.multiSourcePlayer(self, currentTime: currentTime, totalDuration: totalDuration)
         guard generation == token, !isDestroyed else { return }
@@ -675,14 +693,19 @@ public final class MultiSourcePlayer: NSObject, IPlayer, MediaPlayerDelegate {
     }
     
     public func player(_ player: MediaPlayerController, didOccurError error: NSError) {
-        guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
+        guard player === controller, !isDestroyed else { return }
+        if needsReloadSource {
+            forwardState(.error)
+            return
+        }
+        guard !attemptHandled else { return }
         handleRetry(error: error)
     }
     
     public func playerDidPlayToEndTime(_ player: MediaPlayerController) {
-        guard player === controller, !isDestroyed, !needsReloadSource, !attemptHandled else { return }
+        guard player === controller, !isDestroyed, needsReloadSource || !attemptHandled else { return }
         let token = generation
-        diagnostics.command("player is eof")
+        if !needsReloadSource { diagnostics.command("player is eof") }
         delegate?.multiSourcePlayerDidPlayToEnd(self)
         guard generation == token, !isDestroyed else { return }
         notifyListeners { $0.onPlayToEnd() }
