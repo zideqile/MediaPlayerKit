@@ -38,7 +38,13 @@ public final class PlayerBridge: NSObject, H5EventListener {
     }
     #if canImport(WebKit)
     public weak var webView: WKWebView? {
-        didSet { if oldValue !== webView { pageGate = BridgePageGate(); pendingHandshakes.removeAll(); webViewEpoch &+= 1 } }
+        didSet {
+            guard oldValue !== webView else { return }
+            // Reset document state, retaining the host's strict-isolation policy.
+            pageGate.commit()
+            pendingHandshakes.removeAll()
+            webViewEpoch &+= 1
+        }
     }
     private var pageGate = BridgePageGate()
     /// When true, rejects legacy messages without pageId once a modern page has handshaken.

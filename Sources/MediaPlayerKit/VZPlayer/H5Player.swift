@@ -118,8 +118,9 @@ public final class H5Player: NSObject, IH5Player, IPlayer, PlayerEventListener {
     
     @objc public func switchSource(index: Int) -> Bool {
         return executeOnMainThreadSync {
-            self.pendingSource = false
-            return self.multiPlayer.switchToSource(index: index)
+            let switched = self.multiPlayer.switchToSource(index: index)
+            if switched { self.pendingSource = false }
+            return switched
         }
     }
     
